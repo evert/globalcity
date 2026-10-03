@@ -1,0 +1,10 @@
+# Caddy reverse proxy for GlobalCity.
+# With a DOMAIN set, Caddy obtains and renews a Let's Encrypt certificate automatically
+# and the client will use wss://. WebSockets are proxied transparently.
+#
+# The setup script substitutes {$DOMAIN}; if you have no domain yet it falls back to
+# plain http on port 80 (set DOMAIN to ":80").
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8787
+}

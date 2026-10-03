@@ -1,0 +1,15 @@
+{
+  "name": "@globalcity/tools",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "gen": "tsx src/gen-world.ts",
+    "gen:world": "tsx src/gen-world.ts",
+    "gen:places": "tsx src/gen-places.ts",
+    "stats": "tsx src/stats.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": { "@globalcity/shared": "*" },
+  "devDependencies": { "@types/node": "^22", "tsx": "^4", "typescript": "^5.6" }
+}

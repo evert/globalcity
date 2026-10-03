@@ -1,0 +1,8 @@
+node_modules/
+dist/
+data/world/
+data/save*/
+data/raw/
+*.log
+.DS_Store
+.env

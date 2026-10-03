@@ -1,0 +1,29 @@
+[Unit]
+Description=GlobalCity game server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=globalcity
+Group=globalcity
+WorkingDirectory=/opt/globalcity
+Environment=NODE_ENV=production
+Environment=PORT=8787
+# Bind to loopback only; Caddy terminates TLS and proxies to this port.
+Environment=HOST=127.0.0.1
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=3
+# SIGTERM makes the server flush dirty chunks and state.json before exiting.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/globalcity/data
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

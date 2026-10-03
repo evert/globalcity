@@ -1,0 +1,48 @@
+// Routes server messages into state / map / renderer / ui. Shared by main.ts and the self test
+// so synthetic messages take exactly the same path as real ones.
+import type { ServerMsg } from '@globalcity/shared';
+import type { TileMap } from './map.ts';
+import type { Renderer } from './renderer.ts';
+import type { AppState } from './state.ts';
+import type { UI } from './ui.ts';
+
+export interface DispatchTargets { state: AppState; map: TileMap; renderer: Renderer; ui: UI }
+
+export function handleServerMsg(msg: ServerMsg, { state, map, renderer, ui }: DispatchTargets): void {
+  switch (msg.t) {
+    case 'welcome': {
+      const { token: _token, ...me } = msg.player;
+      state.setMe(me);
+      state.replaceClaims(msg.claims);
+      state.setStats(msg.stats);
+      state.setTime(msg.time, msg.online);
+      if (msg.world.chunk !== 64 || msg.world.w !== 8192 || msg.world.h !== 4096) {
+        console.warn('[main] server world size differs from shared constants', msg.world);
+      }
+      break;
+    }
+    case 'tiles': map.applyTiles(msg.u); break;
+    case 'claim': {
+      const prev = state.claimAt(msg.claim.cx, msg.claim.cy);
+      state.setClaim(msg.claim);
+      if (!prev || prev.ownerId !== msg.claim.ownerId) renderer.rebuildChunk(msg.claim.cx, msg.claim.cy);
+      ui.onClaimChanged(msg.claim);
+      break;
+    }
+    case 'claims': state.mergeClaims(msg.claims); break;
+    case 'stats': state.setStats(msg.stats); break;
+    case 'time': state.setTime(msg.time, msg.online); break;
+    case 'freeSpot': ui.onFreeSpot(msg.cx, msg.cy); break;
+    case 'query': ui.showQuery(msg.info); break;
+    case 'toast': ui.toast(msg.msg, msg.kind, undefined, msg.at); break;
+    case 'leaderboard': state.setLeaderboard(msg.entries, msg.me); break;
+    case 'presence': state.setPresence(Array.isArray(msg.players) ? msg.players : []); break;
+    case 'unclaim': {
+      const prev = state.removeClaim(msg.cx, msg.cy);
+      if (prev) { renderer.rebuildChunk(msg.cx, msg.cy); ui.onUnclaim(prev); }
+      break;
+    }
+    case 'pong': break;
+    default: console.warn('[main] unknown message', msg);
+  }
+}

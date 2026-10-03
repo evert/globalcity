@@ -1,0 +1,339 @@
+// Players and chunk claims. Each player is one "city" = the union of their claimed chunks.
+
+import crypto from 'node:crypto';
+import {
+  STARTING_FUNDS, EXTRA_CLAIM_COST, CHUNKS_X, CHUNKS_Y, CHUNK, MAX_CHUNKS_PER_PLAYER,
+  chunkKey, parseChunkKey, colorForId,
+  type PlayerStats, type PlayerPublic, type ClaimInfo, type GameTime, START_YEAR,
+} from '@globalcity/shared';
+import { World, validChunk } from './world.ts';
+import type { Places } from './places.ts';
+
+export interface PlayerRecord {
+  id: string;
+  token: string; // secret, never sent except in 'welcome' to its owner
+  name: string;
+  /** city name: '' until the first claim, then defaulted from the nearest populated place; kept when claims are released */
+  cityName: string;
+  color: string;
+  funds: number;
+  chunks: string[]; // chunk keys "cx,cy"
+  stats: PlayerStats;
+  createdAt: number;
+  lastSeen: number;
+  /** city participates in the simulation (has built something; cleared when no zones/plants remain) */
+  active: boolean;
+  /** fractional tax accumulator and running total for the current game year */
+  incomeAcc: number;
+  yearIncome: number;
+}
+
+export interface StateFile {
+  version: 1;
+  time: GameTime;
+  players: PlayerRecord[];
+  claims: [string, string][]; // chunkKey -> playerId
+}
+
+export type ClaimResult = { ok: true; cost: number } | { ok: false; msg: string };
+
+const FIND_FREE_MAX_RADIUS = 40;
+
+export function sanitizeName(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  // eslint-disable-next-line no-control-regex
+  const s = raw.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim().slice(0, 24);
+  return s.length > 0 ? s : null;
+}
+
+export const MAX_CITY_NAME = 32;
+
+export function sanitizeCityName(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  // eslint-disable-next-line no-control-regex
+  const s = raw.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').replace(/\s+/g, ' ').trim().slice(0, MAX_CITY_NAME).trim();
+  return s.length > 0 ? s : null;
+}
+
+export interface PlayersOptions {
+  /** length of an abandonment "day" in ms (default 86400000; tests shorten it) */
+  dayMs?: number;
+}
+
+export function emptyStats(funds: number): PlayerStats {
+  return {
+    funds, population: 0, resPop: 0, comPop: 0, indPop: 0,
+    powerSupply: 0, powerDemand: 0, demand: { r: 0, c: 0, i: 0 }, chunks: 0, lastIncome: 0,
+    powerImported: 0, powerExported: 0, powerTradeNet: 0,
+    fires: 0, fireStations: 0,
+    neighbours: 0, neighbourDemand: { r: 0, c: 0, i: 0 }, railLinks: 0, railDemand: 0,
+  };
+}
+
+export class Players {
+  readonly players = new Map<string, PlayerRecord>();
+  readonly claims = new Map<string, string>();
+  time: GameTime = { year: START_YEAR, month: 0 };
+  /** state changed since last save */
+  dirty = false;
+  /** bumped whenever the claims map changes (consumers cache per version: neighbours, rail networks) */
+  claimsVersion = 0;
+  readonly dayMs: number;
+  private neighbourCache = new Map<string, Set<string>>();
+  private neighbourCacheVersion = -1;
+
+  constructor(private readonly world: World, private readonly places: Places, opts: PlayersOptions = {}) {
+    this.dayMs = opts.dayMs ?? 86_400_000;
+  }
+
+  create(name?: string | null): PlayerRecord {
+    const id = crypto.randomUUID();
+    const now = Date.now();
+    const p: PlayerRecord = {
+      id,
+      token: crypto.randomBytes(16).toString('hex'),
+      name: name ?? `Mayor-${crypto.randomBytes(2).toString('hex').toUpperCase()}`,
+      cityName: '',
+      color: colorForId(id),
+      funds: STARTING_FUNDS,
+      chunks: [],
+      stats: emptyStats(STARTING_FUNDS),
+      createdAt: now,
+      lastSeen: now,
+      active: false,
+      incomeAcc: 0,
+      yearIncome: 0,
+    };
+    this.players.set(id, p);
+    this.dirty = true;
+    return p;
+  }
+
+  resume(id: unknown, token: unknown): PlayerRecord | null {
+    if (typeof id !== 'string' || typeof token !== 'string') return null;
+    const p = this.players.get(id);
+    if (!p || p.token !== token) return null;
+    p.lastSeen = Date.now();
+    this.dirty = true;
+    return p;
+  }
+
+  rename(p: PlayerRecord, name: string): void {
+    p.name = name;
+    this.dirty = true;
+  }
+
+  /** Mark the player as seen now (any message from their socket). */
+  touch(p: PlayerRecord): void {
+    p.lastSeen = Date.now();
+    this.dirty = true;
+  }
+
+  /** Whole days since the owner was last seen (0 while online, since every message touches lastSeen). */
+  idleDays(p: PlayerRecord, now = Date.now()): number {
+    return Math.max(0, Math.floor((now - p.lastSeen) / this.dayMs));
+  }
+
+  // ---- city names ----
+
+  /** True if another player (not `except`) already uses this city name (case-insensitive). */
+  cityNameTaken(name: string, except?: PlayerRecord): boolean {
+    const key = name.toLowerCase();
+    for (const q of this.players.values()) if (q !== except && q.cityName.toLowerCase() === key) return true;
+    return false;
+  }
+
+  /** `name`, else "New name", else "name 2", "name 3", ... whichever is free. */
+  private uniqueCityName(name: string, except?: PlayerRecord): string {
+    if (!this.cityNameTaken(name, except)) return name;
+    const alt = `New ${name}`.slice(0, MAX_CITY_NAME).trim();
+    if (!this.cityNameTaken(alt, except)) return alt;
+    for (let n = 2; ; n++) {
+      const suffix = ` ${n}`;
+      const cand = `${name.slice(0, MAX_CITY_NAME - suffix.length)}${suffix}`;
+      if (!this.cityNameTaken(cand, except)) return cand;
+    }
+  }
+
+  /** Default city name for a city founded on chunk (cx,cy): nearest populated place, made unique. */
+  defaultCityName(cx: number, cy: number, except?: PlayerRecord): string {
+    const x = cx * CHUNK + CHUNK / 2, y = cy * CHUNK + CHUNK / 2;
+    const base = this.places.nearestName(x, y) ?? `Settlement ${cx},${cy}`;
+    return this.uniqueCityName(sanitizeCityName(base) ?? `Settlement ${cx},${cy}`, except);
+  }
+
+  renameCity(p: PlayerRecord, name: string): { ok: true } | { ok: false; msg: string } {
+    if (this.cityNameTaken(name, p)) return { ok: false, msg: `There is already a city called ${name}` };
+    p.cityName = name;
+    this.dirty = true;
+    return { ok: true };
+  }
+
+  publicOf(p: PlayerRecord): PlayerPublic {
+    return { id: p.id, name: p.name, color: p.color, cityName: p.cityName };
+  }
+
+  ownerOf(cx: number, cy: number): PlayerRecord | undefined {
+    const id = this.claims.get(chunkKey(cx, cy));
+    return id === undefined ? undefined : this.players.get(id);
+  }
+
+  ownsChunk(p: PlayerRecord, cx: number, cy: number): boolean {
+    return this.claims.get(chunkKey(cx, cy)) === p.id;
+  }
+
+  /** Unclaimed and enough land. */
+  isClaimable(cx: number, cy: number): boolean {
+    return validChunk(cx, cy) && !this.claims.has(chunkKey(cx, cy)) && this.world.hasEnoughLand(cx, cy);
+  }
+
+  /**
+   * Claim a chunk. The first claim is free; later ones cost EXTRA_CLAIM_COST and must be
+   * 4-adjacent to a chunk the player already owns.
+   */
+  claim(p: PlayerRecord, cx: number, cy: number): ClaimResult {
+    if (!validChunk(cx, cy)) return { ok: false, msg: 'Invalid chunk' };
+    const key = chunkKey(cx, cy);
+    if (this.claims.has(key)) {
+      return { ok: false, msg: this.claims.get(key) === p.id ? 'You already own this chunk' : 'Chunk already claimed' };
+    }
+    if (!this.world.hasEnoughLand(cx, cy)) return { ok: false, msg: 'Not enough land here to found a city' };
+    if (p.chunks.length >= MAX_CHUNKS_PER_PLAYER) return { ok: false, msg: `Your city is at the maximum of ${MAX_CHUNKS_PER_PLAYER} plots` };
+    let cost = 0;
+    if (p.chunks.length > 0) {
+      const adjacent = p.chunks.some((k) => {
+        const c = parseChunkKey(k);
+        return Math.abs(c.cx - cx) + Math.abs(c.cy - cy) === 1;
+      });
+      if (!adjacent) return { ok: false, msg: 'New chunks must be adjacent to your city' };
+      cost = EXTRA_CLAIM_COST;
+      if (p.funds < cost) return { ok: false, msg: `Not enough funds (claiming costs $${cost})` };
+    }
+    p.funds -= cost;
+    if (p.chunks.length === 0 && !p.cityName) p.cityName = this.defaultCityName(cx, cy, p);
+    p.chunks.push(key);
+    p.stats.chunks = p.chunks.length;
+    p.stats.funds = p.funds;
+    this.claims.set(key, p.id);
+    this.claimsVersion++;
+    this.dirty = true;
+    return { ok: true, cost };
+  }
+
+  /**
+   * Release every claim of an abandoned city. The player keeps funds and city name; stats reset to
+   * an empty city. Tiles are left as they are (ruins for the next claimant). Returns the released chunks.
+   */
+  release(p: PlayerRecord): { cx: number; cy: number }[] {
+    const out: { cx: number; cy: number }[] = [];
+    for (const key of p.chunks) {
+      if (this.claims.get(key) === p.id) this.claims.delete(key);
+      out.push(parseChunkKey(key));
+    }
+    p.chunks = [];
+    p.active = false;
+    p.incomeAcc = 0;
+    p.yearIncome = 0;
+    p.stats = emptyStats(p.funds);
+    if (out.length > 0) this.claimsVersion++;
+    this.dirty = true;
+    return out;
+  }
+
+  // ---- neighbours: other players owning a chunk 8-adjacent to one of mine (cached per claimsVersion) ----
+
+  neighboursOf(p: PlayerRecord): Set<string> {
+    if (this.neighbourCacheVersion !== this.claimsVersion) { this.neighbourCache.clear(); this.neighbourCacheVersion = this.claimsVersion; }
+    let s = this.neighbourCache.get(p.id);
+    if (s) return s;
+    s = new Set();
+    for (const key of p.chunks) {
+      const { cx, cy } = parseChunkKey(key);
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (!dx && !dy) continue;
+          const id = this.claims.get(chunkKey(cx + dx, cy + dy));
+          if (id !== undefined && id !== p.id) s.add(id);
+        }
+      }
+    }
+    this.neighbourCache.set(p.id, s);
+    return s;
+  }
+
+  /** Nearest claimable chunk to (cx,cy) by expanding square rings; null if none within the radius cap. */
+  findFree(cx: number, cy: number): { cx: number; cy: number } | null {
+    cx = Math.min(Math.max(Math.round(cx), 0), CHUNKS_X - 1);
+    cy = Math.min(Math.max(Math.round(cy), 0), CHUNKS_Y - 1);
+    if (this.isClaimable(cx, cy)) return { cx, cy };
+    for (let r = 1; r <= FIND_FREE_MAX_RADIUS; r++) {
+      let best: { cx: number; cy: number; d: number } | null = null;
+      for (let dy = -r; dy <= r; dy++) {
+        const edgeRow = Math.abs(dy) === r;
+        for (let dx = -r; dx <= r; dx += edgeRow ? 1 : 2 * r) {
+          const x = cx + dx, y = cy + dy;
+          if (!validChunk(x, y) || !this.isClaimable(x, y)) continue;
+          const d = dx * dx + dy * dy;
+          if (!best || d < best.d) best = { cx: x, cy: y, d };
+        }
+      }
+      if (best) return { cx: best.cx, cy: best.cy };
+    }
+    return null;
+  }
+
+  claimInfo(cx: number, cy: number, p: PlayerRecord, now = Date.now()): ClaimInfo {
+    return { cx, cy, ownerId: p.id, ownerName: p.name, cityName: p.cityName, color: p.color, pop: p.stats.population, idleDays: this.idleDays(p, now) };
+  }
+
+  claimInfosOf(p: PlayerRecord): ClaimInfo[] {
+    const now = Date.now();
+    return p.chunks.map((k) => { const c = parseChunkKey(k); return this.claimInfo(c.cx, c.cy, p, now); });
+  }
+
+  allClaims(): ClaimInfo[] {
+    const out: ClaimInfo[] = [];
+    const now = Date.now();
+    for (const [key, id] of this.claims) {
+      const p = this.players.get(id);
+      if (!p) continue;
+      const c = parseChunkKey(key);
+      out.push(this.claimInfo(c.cx, c.cy, p, now));
+    }
+    return out;
+  }
+
+  serialize(): StateFile {
+    return { version: 1, time: { ...this.time }, players: [...this.players.values()], claims: [...this.claims.entries()] };
+  }
+
+  /** Load a state file; players saved by older versions get the new fields (cityName derived from their first chunk, lastSeen = now). */
+  load(state: StateFile): void {
+    this.time = { ...state.time };
+    const now = Date.now();
+    const unnamed: PlayerRecord[] = [];
+    for (const raw of state.players) {
+      const legacy = raw as Partial<PlayerRecord>;
+      const stats = { ...emptyStats(raw.funds), ...raw.stats };
+      stats.neighbourDemand = { ...emptyStats(0).neighbourDemand, ...(raw.stats?.neighbourDemand ?? {}) };
+      const p: PlayerRecord = {
+        ...raw,
+        cityName: typeof legacy.cityName === 'string' ? legacy.cityName : '',
+        lastSeen: typeof legacy.lastSeen === 'number' && Number.isFinite(legacy.lastSeen) ? legacy.lastSeen : now,
+        chunks: Array.isArray(raw.chunks) ? raw.chunks : [],
+        stats,
+      };
+      p.stats.funds = p.funds;
+      p.stats.chunks = p.chunks.length;
+      this.players.set(p.id, p);
+      if (!p.cityName && p.chunks.length > 0) unnamed.push(p);
+    }
+    for (const [key, id] of state.claims) if (this.players.has(id)) this.claims.set(key, id);
+    for (const p of unnamed) {
+      const c = parseChunkKey(p.chunks[0]);
+      p.cityName = this.defaultCityName(c.cx, c.cy, p);
+      this.dirty = true;
+    }
+    this.claimsVersion++;
+  }
+}
