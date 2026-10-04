@@ -5,8 +5,8 @@
 import {
   LOMASK, ZONEBIT, BULLBIT, PWRBIT, BNCNBIT,
   FREEZ, RZB, COMCLR, CZB, INDCLR, IZB, HOUSE, HHTHR, RESBASE, HOSPITALBASE, COMBASE, COMLAST, INDBASE, INDLAST,
-  POWERPLANT, NUCLEAR,
-  zoneSizeForCenter, resZonePop, comZonePop, indZonePop, inWorld,
+  POWERPLANT, NUCLEAR, RADAR0, RADAR7, SMOKEBASE, FOOTBALLGAME2, NUKESWIRL1, NUKESWIRL4,
+  zoneSizeForCenter, resZonePop, comZonePop, indZonePop, inWorld, isZoneTile,
 } from '@globalcity/shared';
 import type { World } from './world.ts';
 
@@ -21,6 +21,19 @@ export function zoneKind(centerTile: number): ZoneKind {
   if (id === NUCLEAR) return 'nuclear';
   return 'other';
 }
+
+/**
+ * True for any tile that belongs to a multi-tile zone/building: the plain footprint ids (isZoneTile) plus the
+ * animated cells the simulator swaps in (airport radar 832..839, industrial smoke 852..859 and 884..915,
+ * coal smoke 916..931, stadium game 932..947, nuclear swirl 952..955). Use this, not isZoneTile, wherever a
+ * hit on one tile must find the whole building (bulldozer, fire, decay, query).
+ */
+export const isBuildingTile = (v: number): boolean => {
+  if (isZoneTile(v)) return true;
+  const t = v & LOMASK;
+  return (t >= RADAR0 && t <= RADAR7) || (t >= SMOKEBASE && t <= SMOKEBASE + 7)
+    || (t >= SMOKEBASE + 32 && t <= FOOTBALLGAME2 + 7) || (t >= NUKESWIRL1 && t <= NUKESWIRL4);
+};
 
 export const isPlantCenter = (v: number): boolean => {
   if ((v & ZONEBIT) === 0) return false;

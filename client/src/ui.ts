@@ -1,6 +1,6 @@
 // DOM overlay: top bar, toolbar, RCI, toasts, query popover, welcome/about panels, minimap widget.
 import type { ClaimInfo, Demand, LeaderboardEntry, QueryInfo, ToolId } from '@globalcity/shared';
-import { CHUNK, EXTRA_CLAIM_COST, MAX_CHUNKS_PER_PLAYER, POWER_PRICE_PER_UNIT, TOOLS, TOOL_ORDER, WORLD_H, WORLD_W, chunkOf, lonLatToTile } from '@globalcity/shared';
+import { CHUNK, claimCost, MILESTONE_BUILDINGS, MILESTONE_ORDER, isMilestoneTool, type MilestoneBuilding, MAX_CHUNKS_PER_PLAYER, POWER_PRICE_PER_UNIT, TOOLS, TOOL_ORDER, WORLD_H, WORLD_W, chunkOf, lonLatToTile } from '@globalcity/shared';
 import type { Actions } from './actions.ts';
 import type { Minimap, SpriteSheet } from './assets.ts';
 import { drawTile } from './assets.ts';
@@ -14,6 +14,15 @@ const WELCOMED_KEY = 'globalcity.welcomed';
 const TOAST_DEDUP_MS = 3000;
 const POWER_TRADE_HELP = 'Power flows over wires across plot borders; surplus is sold at $1 per unit per month.';
 export const NEIGHBOUR_HELP = "Neighbouring cities' jobs and shoppers add demand across the border; rail connecting your zones to theirs boosts commerce.";
+export const POLICE_HELP = 'Police stations cover 14 tiles; uncovered lots lose land value once the city grows (crime)';
+export const TRAFFIC_HELP = 'Average traffic on your roads: zones send cars along nearby roads; busy roads are drawn with traffic.';
+export const SPECIALS_HELP = 'Powered special buildings boost demand: a stadium attracts residents, a seaport (near water) industry, an airport commerce once another mayor has an airport to fly to.';
+
+/** Traffic word for stats.traffic (0..1), or '' when there is none. */
+export function trafficLabel(t: number): '' | 'light' | 'moderate' | 'heavy' {
+  if (!(t > 0)) return '';
+  return t < 0.15 ? 'light' : t < 0.5 ? 'moderate' : 'heavy';
+}
 
 export type ToastKind = 'info' | 'error' | 'success';
 export interface ToastAt { x: number; y: number }
@@ -29,6 +38,29 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string,
   return e;
 }
 
+/** 1234 -> "1,234", 1234567 -> "1.23M", 1.2e9 -> "1.2B" (top-bar sized). */
+/** Community Discord invite (top bar, welcome panel, about panel). */
+export const DISCORD_URL = 'https://discord.gg/xUXsw7Vzb';
+/** Discord's logo mark (path from Simple Icons, CC0). Used only to link to our Discord server. */
+const DISCORD_SVG_PATH = 'M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z';
+function discordIcon(): SVGSVGElement {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('class', 'discord-icon');
+  const path = document.createElementNS(NS, 'path'); path.setAttribute('d', DISCORD_SVG_PATH); path.setAttribute('fill', 'currentColor');
+  svg.appendChild(path);
+  return svg;
+}
+const discordLink = (text: string, cls = ''): HTMLAnchorElement =>
+  el('a', { href: DISCORD_URL, target: '_blank', rel: 'noopener noreferrer', ...(cls ? { class: cls } : {}) }, text);
+
+export function fmtCompact(n: number): string {
+  if (n < 10_000) return n.toLocaleString('en-US');
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 100_000 ? 1 : 0)}k`;
+  if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  return `${(n / 1_000_000_000).toFixed(2)}B`;
+}
+
 export function fmtMoney(n: number): string {
   const s = Math.abs(Math.round(n)).toLocaleString('en-US');
   return (n < 0 ? '-$' : '$') + s;
@@ -37,14 +69,16 @@ export function fmtDate(year: number, month: number): string { return `${MONTHS[
 
 export class UI {
   readonly root: HTMLElement;
-  private funds!: HTMLElement; private pop!: HTMLElement; private date!: HTMLElement; private online!: HTMLElement;
+  private funds!: HTMLElement; private pop!: HTMLElement; private date!: HTMLElement; private online!: HTMLElement; private worldPop!: HTMLElement; private lbWorld!: HTMLElement;
   private nameBtn!: HTMLButtonElement; private cityNameBtn!: HTMLButtonElement; private plots!: HTMLElement; private plotsStat!: HTMLElement;
   private status!: HTMLElement; private offline!: HTMLElement;
   private claimBtn!: HTMLButtonElement; private findBtn!: HTMLButtonElement; private cityBtn!: HTMLButtonElement; private worldBtn!: HTMLButtonElement;
   private toolButtons = new Map<ToolId, HTMLButtonElement>();
   private rciBars!: Record<'r' | 'c' | 'i', HTMLElement>; private rciBoost!: Record<'r' | 'c' | 'i', HTMLElement>;
-  private powerText!: HTMLElement; private stationsText!: HTMLElement; private tradeText!: HTMLElement; private neighbourText!: HTMLElement;
+  private powerText!: HTMLElement; private stationsText!: HTMLElement; private tradeText!: HTMLElement; private neighbourText!: HTMLElement; private budgetText!: HTMLElement;
+  private policeText!: HTMLElement; private crimeText!: HTMLElement; private trafficText!: HTMLElement; private trafficWord!: HTMLElement; private trafficFill!: HTMLElement; private specialsText!: HTMLElement;
   private toasts!: HTMLElement; private lastToast: { msg: string; kind: ToastKind; el: HTMLElement; at: number; timer: ReturnType<typeof setTimeout> } | null = null;
+  private milestones!: HTMLElement; private msRows!: HTMLElement; private msBtn!: HTMLButtonElement;
   private leaderboard!: HTMLElement; private lbRows!: HTMLElement; private lbMe!: HTMLElement; private lbBtn!: HTMLButtonElement;
   private fireBtn!: HTMLButtonElement; private fireCycle = 0;
   private query!: HTMLElement; private queryPos = { x: 0, y: 0 }; private queryTimer: ReturnType<typeof setTimeout> | null = null; private queryPending = false;
@@ -68,11 +102,14 @@ export class UI {
     this.buildRci();
     this.toasts = el('div', { id: 'toasts' });
     this.query = el('div', { id: 'query', class: 'panel hidden' });
+    this.buildTouchBar();
+    this.buildBanners();
     this.buildWelcome();
     this.buildAbout();
     this.buildLeaderboard();
+    this.buildMilestones();
     this.buildMinimap();
-    this.root.append(this.toasts, this.query);
+    this.root.append(this.toasts, this.query, this.touchBar, this.banners);
     this.bind();
     this.refreshAll();
     this.measureOverlay();
@@ -85,6 +122,7 @@ export class UI {
     this.pop = el('span', { class: 'val', text: '0' });
     this.date = el('span', { class: 'val', text: fmtDate(this.state.time.year, this.state.time.month) });
     this.online = el('span', { class: 'val', text: '0' });
+    this.worldPop = el('span', { class: 'val', text: '0' });
     this.status = el('span', { id: 'status', class: 'status', text: 'Connecting…' });
     this.nameBtn = el('button', { class: 'btn ghost', id: 'nameBtn', title: 'Click to rename' }, '…');
     this.nameBtn.onclick = () => this.promptRename();
@@ -100,10 +138,16 @@ export class UI {
     this.cityBtn.onclick = () => this.actions.goToMyCity();
     this.worldBtn = el('button', { class: 'btn', id: 'worldBtn', title: 'Show the whole world (H)' }, 'World');
     this.worldBtn.onclick = () => this.renderer.showWorld();
+    this.msBtn = el('button', { class: 'btn', id: 'msBtn', title: 'Milestones: special buildings your city unlocks as it grows' }, '🏛 Milestones');
+    this.msBtn.onclick = () => this.toggleMilestones();
     this.lbBtn = el('button', { class: 'btn', id: 'lbBtn', title: 'Leaderboard: the most populous cities on the planet' }, '🏆 Top cities');
     this.lbBtn.onclick = () => this.toggleLeaderboard();
     this.fireBtn = el('button', { class: 'btn fire hidden', id: 'fireBtn', title: 'Your city is burning! Click to jump to the next fire.' }, '🔥 0 fires');
     this.fireBtn.onclick = () => this.nextFire();
+    const discordBtn = discordLink('', 'btn ghost discord-btn');
+    discordBtn.append(discordIcon(), el('span', { class: 'discord-label' }, 'Discord'));
+    discordBtn.setAttribute('aria-label', 'GlobalCity Discord');
+    discordBtn.title = 'Join the GlobalCity Discord: chat with other mayors, report bugs, suggest features';
     const aboutBtn = el('button', { class: 'btn ghost round', id: 'aboutBtn', title: 'About & attribution' }, 'ⓘ');
     aboutBtn.onclick = () => this.toggle(this.about);
     const bar = el('div', { id: 'topbar' },
@@ -112,10 +156,11 @@ export class UI {
       el('div', { class: 'stat', title: 'Population' }, el('span', { class: 'ico' }, '👥'), this.pop),
       el('div', { class: 'stat', title: 'Date' }, el('span', { class: 'ico' }, '📅'), this.date),
       el('div', { class: 'stat', title: 'Players online' }, el('span', { class: 'ico' }, '●'), this.online),
+      el('div', { class: 'stat world-pop', title: 'World population: every city on the planet combined' }, el('span', { class: 'ico' }, '🌍'), this.worldPop),
       this.plotsStat,
-      this.claimBtn, this.findBtn, this.cityBtn, this.worldBtn, this.lbBtn, this.fireBtn,
+      this.claimBtn, this.findBtn, this.cityBtn, this.worldBtn, this.msBtn, this.lbBtn, this.fireBtn,
       el('div', { class: 'spacer' }),
-      this.status, this.cityNameBtn, this.nameBtn, aboutBtn,
+      this.status, this.cityNameBtn, this.nameBtn, discordBtn, aboutBtn,
     );
     this.offline = el('div', { id: 'offline', class: 'hidden' }, 'Connecting to server…');
     this.root.append(bar, this.offline);
@@ -129,6 +174,7 @@ export class UI {
     const left = tb && tb.width > 0 && tb.top < window.innerHeight / 2 && tb.right < window.innerWidth / 2 ? tb.right : 0;
     const top = hb && hb.height > 0 ? hb.bottom : 0;
     this.renderer.overlayInset = { left, top };
+    this.root.style.setProperty('--overlay-top', `${top + 8}px`);
   }
 
   private buildToolbar(): void {
@@ -165,13 +211,24 @@ export class UI {
     this.rciBoost = { r: r.boost, c: c.boost, i: i.boost };
     this.powerText = el('span', { class: 'power', text: '⚡ 0 / 0' });
     this.stationsText = el('span', { class: 'stations hidden', title: 'Powered fire stations (each protects 12 tiles around it)' }, '🚒 0 stations');
+    this.policeText = el('span', { class: 'police hidden', id: 'police', title: POLICE_HELP }, '👮 0 police');
+    this.crimeText = el('span', { class: 'crime bad hidden', id: 'crime', title: `Crime is high and no police station is powered. ${POLICE_HELP}` }, '⚠ crime');
+    this.trafficWord = el('span', { class: 'word' });
+    this.trafficFill = el('span', { class: 'fill' });
+    this.trafficText = el('div', { class: 'traffic hidden', id: 'traffic', title: TRAFFIC_HELP }, el('span', { text: '🚗 ' }), this.trafficWord, el('span', { class: 'meter' }, this.trafficFill));
+    this.specialsText = el('div', { class: 'specials hidden', id: 'specials', title: SPECIALS_HELP });
     this.tradeText = el('div', { class: 'trade hidden', id: 'powerTrade', title: POWER_TRADE_HELP });
     this.neighbourText = el('div', { class: 'neighbours hidden', id: 'neighbours', title: NEIGHBOUR_HELP });
+    this.budgetText = el('div', { class: 'budget', id: 'budget', title: 'Net budget over the last game year: taxes on your population minus upkeep for roads, rail, stations and power plants. The economy idles while you are away.' });
     const box = el('div', { id: 'rci', class: 'panel', title: 'Residential / Commercial / Industrial demand' },
       el('div', { class: 'rci-bars' }, r.wrap, c.wrap, i.wrap),
       el('div', { class: 'power-line' }, this.powerText, this.stationsText),
+      el('div', { class: 'power-line', id: 'safety' }, this.policeText, this.crimeText),
+      this.trafficText,
+      this.specialsText,
       this.tradeText,
-      this.neighbourText);
+      this.neighbourText,
+      this.budgetText);
     this.root.append(box);
   }
 
@@ -191,6 +248,7 @@ export class UI {
       el('p', { text: 'The whole Earth is one giant SimCity map shared by everyone online. Claim a 64×64 plot (your first one is free), then zone, wire and pave it to grow a city — neighbours can build right next to you. Zoom in to build, zoom out to see every city on the planet.' }),
       el('div', { class: 'row' }, locBtn, pickBtn, freeBtn),
       this.welcomeStatus,
+      el('p', { class: 'muted community' }, 'Meet your neighbours, find trading partners and suggest features on ', discordLink('our Discord'), '.'),
     );
     this.root.append(this.welcome);
   }
@@ -203,10 +261,12 @@ export class UI {
       close,
       el('h2', { text: 'About GlobalCity' }),
       el('p', {}, 'A massively multiplayer SimCity-classic style game on a tile map of the whole Earth.'),
-      el('p', {}, 'Tile artwork is from ', link('https://github.com/SimHacker/micropolis', 'Micropolis'),
-        ', the GPLv3 release of SimCity Classic by Electronic Arts / Don Hopkins.'),
+      el('p', {}, 'Tile artwork is the original SimCity Classic art by Will Wright and Maxis (1989), used via ',
+        link('https://github.com/SimHacker/micropolis', 'Micropolis'),
+        ', the GPLv3 release of SimCity that Electronic Arts open-sourced in 2008 through the work of Don Hopkins.'),
       el('p', {}, 'Map data is derived from ', link('https://www.naturalearthdata.com/', 'Natural Earth'), ' (public domain).'),
       el('p', {}, 'SimCity is a trademark of Electronic Arts. This project is not affiliated with or endorsed by EA or Maxis.'),
+      el('p', {}, 'Community, bug reports and feature ideas: ', discordLink('join the GlobalCity Discord'), '.'),
       el('p', {}, 'GlobalCity is free software, licensed GPL-3.0-or-later. See ', el('a', { href: '/ATTRIBUTION.md' }, 'ATTRIBUTION.md'), ' for details.'),
       el('p', { class: 'muted' }, 'Controls: drag to pan (query tool, middle/right button or hold Space), wheel to zoom, double-click a plot in the world view to zoom in, hotkeys select tools, Esc returns to query.'),
     );
@@ -218,6 +278,7 @@ export class UI {
     close.onclick = () => this.hide(this.leaderboard);
     this.lbRows = el('div', { class: 'lb-rows' });
     this.lbMe = el('div', { class: 'lb-me muted' });
+    this.lbWorld = el('div', { class: 'lb-world muted' });
     this.leaderboard = el('div', { id: 'leaderboard', class: 'panel card hidden' },
       close,
       el('h2', { text: '🏆 Top cities' }),
@@ -226,6 +287,7 @@ export class UI {
         el('span', { class: 'pop', text: 'Population' }), el('span', { class: 'chunks', text: 'Plots' }), el('span', { class: 'fires' }), el('span', { class: 'visit' })),
       this.lbRows,
       this.lbMe,
+      this.lbWorld,
     );
     this.root.append(this.leaderboard);
   }
@@ -243,13 +305,13 @@ export class UI {
 
   // ---------- binding ----------
   private bind(): void {
-    this.state.on('stats', () => { this.refreshStats(); this.refreshTools(); this.refreshClaimButtons(); this.refreshWelcome(); });
+    this.state.on('stats', () => { this.refreshStats(); this.refreshTools(); this.refreshClaimButtons(); this.refreshWelcome(); this.refreshMilestones(); });
     this.state.on('me', () => { this.refreshName(); this.refreshClaimButtons(); this.refreshLeaderboard(); this.miniDirty = true; this.scheduleMini(); });
     this.state.on('city', () => { this.refreshName(); this.refreshWelcome(); });
     this.state.on('leaderboard', () => this.refreshLeaderboard());
     this.state.on('time', () => this.refreshTime());
     this.state.on('tool', () => this.refreshTools());
-    this.state.on('claims', () => { this.refreshClaimButtons(); this.refreshWelcome(); this.miniDirty = true; this.scheduleMini(); });
+    this.state.on('claims', () => { this.refreshClaimButtons(); this.refreshWelcome(); this.miniDirty = true; this.scheduleMini(); this.refreshWorldPop(); this.refreshLeaderboard(); });
     this.state.on('connection', (v) => { this.offline.classList.toggle('hidden', v); if (v) this.status.textContent = 'Online'; this.status.classList.toggle('bad', !v); });
     this.net.on('status', (s) => { this.status.textContent = s; this.offline.textContent = s; });
     this.renderer.on('camera', () => { this.hideQuery(); this.miniDirty = true; this.scheduleMini(); });
@@ -282,6 +344,10 @@ export class UI {
       boost.style.top = `${50 - h}%`;
       boost.classList.toggle('hidden', bh <= 0);
     }
+    const net = s?.lastIncome ?? 0;
+    this.budgetText.textContent = `💰 ${net >= 0 ? '+' : '−'}${fmtMoney(Math.abs(net))} last year`;
+    this.budgetText.classList.toggle('bad', net < 0);
+    this.budgetText.classList.toggle('hidden', !s);
     const neighbours = s?.neighbours ?? 0, railLinks = s?.railLinks ?? 0;
     this.neighbourText.textContent = `🤝 ${neighbours} ${neighbours === 1 ? 'neighbour' : 'neighbours'} · 🚆 ${railLinks} ${railLinks === 1 ? 'rail link' : 'rail links'}`;
     this.neighbourText.classList.toggle('hidden', neighbours <= 0 && railLinks <= 0);
@@ -296,6 +362,26 @@ export class UI {
     const fires = s?.fires ?? 0;
     this.fireBtn.textContent = `🔥 ${fires} ${fires === 1 ? 'fire' : 'fires'}`;
     this.fireBtn.classList.toggle('hidden', fires <= 0);
+    // police / crime (old servers omit these: treat as no police, no crime)
+    const police = s?.policeStations ?? 0, crime = s?.crime ?? 0;
+    this.policeText.textContent = `👮 ${police} police`;
+    this.policeText.classList.toggle('hidden', !s);
+    this.crimeText.classList.toggle('hidden', !(crime >= 0.5 && police === 0));
+    // traffic
+    const traffic = Math.max(0, Math.min(1, s?.traffic ?? 0));
+    const word = trafficLabel(traffic);
+    this.trafficWord.textContent = word ? `${word} traffic` : '';
+    this.trafficFill.style.width = `${Math.round(traffic * 100)}%`;
+    this.trafficFill.className = `fill ${word}`;
+    this.trafficText.classList.toggle('hidden', !word);
+    // special-building boosts
+    const sp = s?.specials;
+    const chips: string[] = [];
+    if (sp && sp.stadium > 0) chips.push('🏟 stadium');
+    if (sp && sp.seaport > 0) chips.push('⚓ seaport');
+    if (sp && sp.airport > 0) chips.push('✈ airport');
+    this.specialsText.replaceChildren(...chips.map((c) => el('span', { class: 'chip', text: c })));
+    this.specialsText.classList.toggle('hidden', chips.length === 0);
   }
 
   /** Second line of the power widget: what we buy/sell over the borders and what it costs/earns. */
@@ -329,10 +415,77 @@ export class UI {
   }
 
   private refreshTools(): void {
+    const st = this.state.stats;
     for (const [id, btn] of this.toolButtons) {
       btn.classList.toggle('selected', this.state.tool === id);
       btn.classList.toggle('poor', this.state.funds < TOOLS[id].cost);
+      if (!isMilestoneTool(id)) continue;
+      // Milestone buildings: locked until the population milestone, then one per city.
+      const m = MILESTONE_BUILDINGS[id];
+      const unlocked = st?.unlocked?.includes(id) ?? false;
+      const built = (st?.built?.[id] ?? 0) > 0;
+      btn.classList.toggle('locked', !unlocked);
+      btn.classList.toggle('built', unlocked && built);
+      const cost = btn.querySelector('.cost');
+      if (cost) cost.textContent = !unlocked ? `🔒 ${fmtCompact(m.pop)} pop` : built ? 'Built' : fmtMoney(TOOLS[id].cost);
+      btn.title = !unlocked ? `${m.name}: unlocks at ${m.pop.toLocaleString('en-US')} people. ${m.benefits.join('. ')}.`
+        : built ? `${m.name}: your city already has one (one per city). It can be rebuilt if it is destroyed.`
+        : `${m.name} — ${fmtMoney(TOOLS[id].cost)} (${TOOLS[id].hotkey.toUpperCase()}). ${m.benefits.join('. ')}.`;
     }
+  }
+
+  // ---------- milestones ----------
+  private buildMilestones(): void {
+    const close = el('button', { class: 'btn ghost round close', title: 'Close' }, '×');
+    close.onclick = () => this.hide(this.milestones);
+    this.msRows = el('div', { class: 'ms-rows' });
+    this.milestones = el('div', { id: 'milestones', class: 'panel card hidden' },
+      close,
+      el('h2', { text: '🏛 Milestones' }),
+      el('p', { class: 'muted', text: 'As your city grows it unlocks special buildings. Each city can have one of each, and a destroyed one can be rebuilt.' }),
+      this.msRows,
+    );
+    this.root.append(this.milestones);
+  }
+  toggleMilestones(): void {
+    if (!this.milestones.classList.contains('hidden')) { this.hide(this.milestones); return; }
+    this.hide(this.about); this.hide(this.leaderboard);
+    this.milestones.classList.remove('hidden');
+    this.refreshMilestones();
+  }
+  private msIcon(b: MilestoneBuilding): HTMLCanvasElement {
+    const t = TOOLS[MILESTONE_BUILDINGS[b].tool];
+    const n = t.size, px = 72;
+    const c = el('canvas', { class: 'ms-icon', width: String(px), height: String(px) });
+    const g = c.getContext('2d')!;
+    g.imageSmoothingEnabled = false;
+    const cell = px / n;
+    for (let k = 0; k < n * n; k++) drawTile(g, this.sheet, t.base! + k, (k % n) * cell, Math.floor(k / n) * cell, cell, cell);
+    return c;
+  }
+  private refreshMilestones(): void {
+    if (!this.milestones || this.milestones.classList.contains('hidden')) return;
+    const st = this.state.stats;
+    const peak = st?.peakPop ?? 0;
+    const rows = MILESTONE_ORDER.map((b) => {
+      const m = MILESTONE_BUILDINGS[b];
+      const unlocked = st?.unlocked?.includes(b) ?? false;
+      const built = (st?.built?.[b] ?? 0) > 0;
+      const status = built ? { cls: 'done', text: 'Built' } : unlocked ? { cls: 'ready', text: 'Unlocked: build it from the toolbar' }
+        : { cls: 'locked', text: `${(m.pop - peak).toLocaleString('en-US')} more people` };
+      const pct = Math.max(0, Math.min(100, (peak / m.pop) * 100));
+      const t = TOOLS[m.tool];
+      return el('div', { class: `ms-row ${status.cls}` },
+        this.msIcon(b),
+        el('div', { class: 'ms-body' },
+          el('div', { class: 'ms-head' }, el('strong', { text: m.name }), el('span', { class: 'chip', text: `${m.pop.toLocaleString('en-US')} people` })),
+          el('ul', { class: 'ms-benefits' }, ...m.benefits.map((x) => el('li', { text: x }))),
+          el('div', { class: 'ms-meta muted', text: `${fmtMoney(t.cost)} · ${t.size}×${t.size} tiles` }),
+          unlocked ? el('div', { class: `ms-status ${status.cls}`, text: status.text })
+            : el('div', { class: 'ms-progress' }, el('div', { class: 'ms-bar' }, el('div', { class: 'ms-fill', style: `width:${pct.toFixed(1)}%` })), el('span', { class: 'ms-status locked', text: status.text })),
+        ));
+    });
+    this.msRows.replaceChildren(...rows);
   }
 
   private refreshClaimButtons(): void {
@@ -350,10 +503,10 @@ export class UI {
       const { cx, cy } = this.renderer.centerChunk();
       if (this.state.canClaim(cx, cy)) {
         showClaim = true;
-        const cost = owned === 0 ? 0 : EXTRA_CLAIM_COST;
-        this.claimBtn.textContent = owned === 0 ? 'Claim this plot (free)' : `Claim this plot (${fmtMoney(cost)})`;
+        const cost = claimCost(owned);
+        this.claimBtn.textContent = owned === 0 ? 'Claim this plot (free)' : `Claim plot #${owned + 1} (${fmtMoney(cost)})`;
         this.claimBtn.disabled = this.state.funds < cost;
-        this.claimBtn.title = this.claimBtn.disabled ? 'Not enough funds' : `Claim chunk ${cx},${cy}`;
+        this.claimBtn.title = this.claimBtn.disabled ? `Not enough funds: plot #${owned + 1} costs ${fmtMoney(cost)}` : `Claim chunk ${cx},${cy}. Each extra plot costs more than the last.`;
       } else if (owned === 0) {
         showFind = true;
       }
@@ -484,6 +637,12 @@ export class UI {
 
   toggleLeaderboard(): void { if (this.isLeaderboardOpen()) this.hide(this.leaderboard); else this.openLeaderboard(); }
 
+  private refreshWorldPop(): void {
+    const { total, cities } = this.state.worldPopulation();
+    this.worldPop.textContent = fmtCompact(total);
+    this.worldPop.parentElement!.title = `World population: ${total.toLocaleString('en-US')} people in ${cities} ${cities === 1 ? 'city' : 'cities'}`;
+  }
+
   private refreshLeaderboard(): void {
     if (!this.isLeaderboardOpen()) return;
     const me = this.state.me;
@@ -501,6 +660,8 @@ export class UI {
       this.lbMe.textContent = 'Not ranked yet — build something!';
       this.lbMe.classList.add('muted');
     }
+    const w = this.state.worldPopulation();
+    this.lbWorld.textContent = `🌍 World population: ${w.total.toLocaleString('en-US')} in ${w.cities} ${w.cities === 1 ? 'city' : 'cities'}`;
   }
 
   private leaderboardRow(e: LeaderboardEntry, rank: number, mine: boolean): HTMLElement {
@@ -562,6 +723,68 @@ export class UI {
 
   // ---------- toasts ----------
   /** Show a toast. With `at` the toast is clickable and flies to that tile. Identical toasts within 3 s refresh instead of stacking. */
+  // ---------- banners: admin announcements and "new version" ----------
+  private banners!: HTMLElement;
+  private annBanner!: HTMLElement;
+  private annText!: HTMLElement;
+  private annId = '';
+  private annTimer: ReturnType<typeof setTimeout> | null = null;
+  private updBanner!: HTMLElement;
+  private buildBanners(): void {
+    this.annText = el('span', { class: 'banner-text' });
+    const annClose = el('button', { class: 'btn ghost round', title: 'Dismiss', type: 'button' }, '×');
+    annClose.onclick = () => {
+      try { localStorage.setItem('globalcity.annDismissed', this.annId); } catch { /* ignore */ }
+      this.annBanner.classList.add('hidden');
+    };
+    this.annBanner = el('div', { class: 'banner announce hidden', role: 'status' }, el('span', { class: 'banner-ico' }, '📣'), this.annText, annClose);
+    this.updBanner = el('div', { class: 'banner update hidden', role: 'status' }, el('span', { class: 'banner-text' }, '✨ A new version of GlobalCity is available.'));
+    this.banners = el('div', { id: 'banners' }, this.annBanner, this.updBanner);
+  }
+  showAnnouncement(id: string, msg: string, level: 'info' | 'warn', until: number): void {
+    this.annId = id;
+    let dismissed = false;
+    try { dismissed = localStorage.getItem('globalcity.annDismissed') === id; } catch { /* ignore */ }
+    this.annText.textContent = msg;
+    this.annBanner.classList.toggle('warn', level === 'warn');
+    this.annBanner.classList.toggle('hidden', dismissed);
+    if (this.annTimer) clearTimeout(this.annTimer);
+    const left = until - Date.now();
+    if (left > 0 && left < 2 ** 31) this.annTimer = setTimeout(() => this.clearAnnouncement(), left);
+  }
+  clearAnnouncement(): void { this.annBanner.classList.add('hidden'); this.annId = ''; }
+  showUpdateBanner(reload: () => void): void {
+    if (!this.updBanner.querySelector('button')) {
+      const btn = el('button', { class: 'btn primary', type: 'button' }, 'Reload');
+      btn.onclick = reload;
+      this.updBanner.append(btn);
+    }
+    this.updBanner.classList.remove('hidden');
+  }
+
+  // ---------- touch placement confirm bar ----------
+  private touchBar!: HTMLElement;
+  private touchWhat!: HTMLElement;
+  private touchTile: { x: number; y: number } | null = null;
+  onTouchBuild: () => void = () => {};
+  onTouchCancel: () => void = () => {};
+  private buildTouchBar(): void {
+    this.touchWhat = el('span', { class: 'what' });
+    const build = el('button', { class: 'primary', type: 'button' }, 'Build');
+    const cancel = el('button', { type: 'button' }, 'Cancel');
+    build.addEventListener('click', () => this.onTouchBuild());
+    cancel.addEventListener('click', () => this.onTouchCancel());
+    this.touchBar = el('div', { id: 'touchbar', class: 'hidden' }, this.touchWhat, build, cancel);
+  }
+  /** Touch aimed a build tool at a tile (null = hide). Tap the same tile again or press Build. */
+  setTouchTarget(tile: { x: number; y: number } | null): void {
+    this.touchTile = tile;
+    if (!tile) { this.touchBar.classList.add('hidden'); return; }
+    const t = TOOLS[this.state.tool];
+    this.touchWhat.textContent = `${t.name} here${t.cost ? ` · ${fmtMoney(t.cost)}` : ''} — tap again or`;
+    this.touchBar.classList.remove('hidden');
+  }
+
   toast(msg: string, kind: ToastKind = 'info', ms = 4000, at?: ToastAt): HTMLElement {
     const now = performance.now();
     const last = this.lastToast;

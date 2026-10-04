@@ -1,4 +1,5 @@
 import type { ToolId } from './tools.ts';
+import type { AirportInfo } from './flights.ts';
 import { CHUNK } from './constants.ts';
 
 export interface PlayerPublic {
@@ -49,6 +50,17 @@ export interface PlayerStats {
   neighbourDemand: Demand; // part of `demand` contributed by neighbours (jobs/shoppers across the border)
   railLinks: number; // neighbour cities reachable from my zones over connected rail
   railDemand: number; // commercial demand added by rail links (already included in demand.c)
+  // Special buildings
+  crime: number; // 0..1 city crime level (lowers land value of uncovered lots)
+  policeStations: number; // powered police stations
+  specials: { stadium: number; seaport: number; airport: number }; // powered, counted for demand boosts
+  traffic: number; // 0..1 average road density in the city (for the UI)
+  // Milestones
+  peakPop: number; // highest population reached (milestones are based on it)
+  nextMilestone: number | null; // population needed for the next unlock (null when all are reached)
+  unlocked: string[]; // milestone buildings this city may build (reached or grandfathered)
+  built: Record<string, number>; // milestone buildings currently standing, by id (seaport/airport/cityhall)
+  cityHall: number; // powered city halls (benefits apply)
 }
 
 export interface LeaderboardEntry {
@@ -88,7 +100,7 @@ export interface QueryInfo {
 
 // ---------- client -> server (JSON) ----------
 export type ClientMsg =
-  | { t: 'hello'; id?: string; token?: string; name?: string }
+  | { t: 'hello'; id?: string; token?: string; name?: string; v?: string } // v: client build version (absent on old clients)
   | { t: 'sub'; chunks: [number, number][] } // replaces the whole subscription set
   | { t: 'claim'; cx: number; cy: number }
   | { t: 'build'; tool: ToolId; x: number; y: number }
@@ -121,7 +133,11 @@ export type ServerMsg =
   | { t: 'toast'; msg: string; kind: 'info' | 'error' | 'success'; at?: { x: number; y: number } } // `at`: clickable, fly there
   | { t: 'leaderboard'; entries: LeaderboardEntry[]; me?: { rank: number; population: number } } // top cities; also pushed periodically
   | { t: 'presence'; players: Presence[] } // every PRESENCE_INTERVAL_MS, online players except the receiver
+  | { t: 'airports'; airports: AirportInfo[]; now: number } // powered airports (sent on welcome and when the set changes); `now` = server clock ms, for flight sync
   | { t: 'unclaim'; cx: number; cy: number } // a chunk was released (abandoned); ruins stay
+  | { t: 'version'; version: string } // current client build on the server (on welcome and whenever a new build lands)
+  | { t: 'announce'; id: string; msg: string; level: 'info' | 'warn'; until: number } // admin announcement banner; until = ms epoch
+  | { t: 'announceClear' }
   | { t: 'pong' };
 
 // ---------- binary frames (server -> client) ----------

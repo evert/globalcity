@@ -27,7 +27,13 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-export async function loadSpriteSheet(url = '/assets/micropolis/tiles.png'): Promise<SpriteSheet> {
+/**
+ * Static files in public/ keep their names across builds, so caches (the browser, Cloudflare) can serve a
+ * stale copy after a deploy. Tag their URLs with the build version so each build fetches fresh ones.
+ */
+export const versioned = (url: string): string => (__BUILD_VERSION__ === 'dev' ? url : `${url}?v=${encodeURIComponent(__BUILD_VERSION__)}`);
+
+export async function loadSpriteSheet(url = versioned('/assets/micropolis/tiles.png')): Promise<SpriteSheet> {
   try {
     const img = await loadImage(url);
     const cols = Math.max(1, Math.floor(img.naturalWidth / TILE_PX));
@@ -40,7 +46,7 @@ export async function loadSpriteSheet(url = '/assets/micropolis/tiles.png'): Pro
   }
 }
 
-export async function loadMinimap(url = '/assets/world-minimap.png'): Promise<Minimap> {
+export async function loadMinimap(url = versioned('/assets/world-minimap.png')): Promise<Minimap> {
   try {
     const img = await loadImage(url);
     return { image: img, width: img.naturalWidth, height: img.naturalHeight, procedural: false };

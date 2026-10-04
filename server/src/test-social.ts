@@ -340,8 +340,8 @@ async function main(): Promise<void> {
   // =========================================================================
   const C = new TestClient('Carl');
   await C.connect();
-  C.sendRaw({ t: 'devFunds', amount: 100_000 });
-  await waitFor(() => (C.stats?.funds ?? 0) >= 100_000, 'devFunds applied');
+  C.sendRaw({ t: 'devFunds', amount: 6_000_000 }); // 10 plots cost ~$5.1M with the escalating price
+  await waitFor(() => (C.stats?.funds ?? 0) >= 6_000_000, 'devFunds applied');
   let start: { cx: number; cy: number } | null = null;
   for (const [lon, lat] of [...INTERIOR].reverse()) {
     const t = lonLatToTile(lon, lat);

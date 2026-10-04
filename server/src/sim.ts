@@ -1,34 +1,53 @@
 // Simulation: one tick = one game month, run for every active city (player with built tiles).
 // Rules are a readable simplification of Micropolis (power scan, zone growth, RCI valves, taxes),
-// plus cross-border power trading, fire (doFire/fireZone), neighbour and rail-link demand, and
-// abandonment (idle cities decay to ruins and their plots are released).
+// plus cross-border power trading, fire (doFire/fireZone), neighbour and rail-link demand,
+// abandonment (idle cities decay to ruins and their plots are released), traffic (makeTraffic),
+// special buildings (stadium/seaport/airport demand, police vs crime) and ambient animation flags
+// (coal/industrial smoke, stadium games, airport radar, nuclear swirl; the client cycles ANIMBIT tiles).
 
 import {
-  WORLD_W, WORLD_H, CHUNK, TAX_RATE, COAL_POWER, NUCLEAR_POWER, POWER_PRICE_PER_UNIT,
+  WORLD_W, WORLD_H, CHUNK, TAX_RATE, TAX_MULT, COAL_POWER, NUCLEAR_POWER, POWER_PRICE_PER_UNIT,
+  UPKEEP_ROAD, UPKEEP_RAIL, UPKEEP_STATION, UPKEEP_COAL, UPKEEP_NUCLEAR, CITY_FREEZE_MS,
+  POLICESTATION,
   FIRE_SPREAD_P, FIRE_BURNOUT_P, FIRE_BURNOUT_P_COVERED, FIRE_STATION_RANGE, FIRE_OUTBREAK_BASE_P, FIRE_OWNER_ONLINE_MS,
-  ABANDON_DECAY_DAYS, ABANDON_FREE_DAYS, ABANDON_DECAY_P, NEIGHBOUR_DEMAND_MAX, RAIL_LINK_BOOST, RAIL_LINK_MAX,
-  HBRIDGE, VBRIDGE, HPOWER, VPOWER, HRAIL, VRAIL,
+  ABANDON_DECAY_DAYS, ABANDON_FREE_DAYS, ABANDON_DECAY_P, SMALL_CITY_MAX_ITEMS, SMALL_CITY_RELEASE_MS, NEIGHBOUR_DEMAND_MAX, RAIL_LINK_BOOST, RAIL_LINK_MAX,
+  TRAFFIC_MAX_STEPS, TRAFFIC_ADD, TRAFFIC_DECAY, TRAFFIC_LIGHT, TRAFFIC_HEAVY, TRAFFIC_RAIL_SHARE, TRAFFIC_RAIL_REACH,
+  STADIUM_RES_BOOST, SEAPORT_IND_BOOST, AIRPORT_COM_BOOST, POLICE_RANGE, CRIME_PER_POP,
+  HBRIDGE, VBRIDGE, HPOWER, VPOWER, HRAIL, VRAIL, ROADBASE, LTRFBASE, HTRFBASE,
   LOMASK, ZONEBIT, CONDBIT, PWRBIT, ANIMBIT, BULLBIT, BURNBIT, BLBNCNBIT, BNCNBIT,
   DIRT, RUBBLE, FIRE, LASTFIRE, WOODS2, WOODS5, FOUNTAIN,
   FREEZ, RZB, HOUSE, RESBASE, COMCLR, CZB, COMBASE, INDCLR, IZB, INDBASE, POWERPLANT, FIRESTATION, HRAILROAD, VRAILROAD,
+  COALBASE, STADIUM, FULLSTADIUM, STADIUMBASE, FULLSTADIUMBASE, PORT, AIRPORT,
+  COAL_SMOKE, IND_SMOKE, STADIUM_GAME, NUKE_SWIRL, AIRPORT_RADAR, roadPiece, trafficTile,
   resBuildingCenter, comBuildingCenter, indBuildingCenter, resZonePop, comZonePop, indZonePop, displayPopulation,
-  isRoad, isRail, isWire, isTree, isWater, isIndZone, isComZone, isHouse, isZoneTile, parseChunkKey, inWorld, clamp,
+  isRoad, isRail, isWire, isTree, isWater, isIndZone, isComZone, isHouse, parseChunkKey, inWorld, clamp,
+  HOSPITAL, CHURCH, HOSPITALBASE, CHURCHBASE,
   type ClaimInfo, type Demand, type GameTime,
+  isOverWater,
+  CITYHALL, CITYHALL_TAX_BONUS, CITYHALL_CRIME_FACTOR, UPKEEP_CITYHALL,
+  MILESTONE_BUILDINGS, milestoneUnlocksFor,
 } from '@globalcity/shared';
 import { type World, chunkIndex, chunkCoords, type ChunkIndex } from './world.ts';
+import type { AirportInfo } from '@globalcity/shared';
 import type { Players, PlayerRecord } from './players.ts';
-import { zoneKind, isPlantCenter, countHouses, plopZone, findZoneCenter } from './zones.ts';
-import { fixZone } from './tools.ts';
+import { unlockedOf, refreshMilestoneStats } from './players.ts';
+import { zoneKind, isPlantCenter, countHouses, plopZone, findZoneCenter, isBuildingTile } from './zones.ts';
+import { fixZone, waterNear, SEAPORT_WATER_RANGE } from './tools.ts';
 import { chance, randInt, log } from './util.ts';
 
 /** Tax multiplier: tuned so a town of ~20 full R, 8 C, 8 I zones earns ~$2600 per game year. */
-const TAX_MULT = 0.45;
 /** Growth odds per tick: one house step / one density step, scaled by demand (0..1). */
 const HOUSE_GROW_P = 0.6;
 const DENSITY_GROW_P = 0.25;
 const NO_SERVICE_SHRINK_P = 1 / 8;
 const NEG_DEMAND_SHRINK_P = 1 / 32;
 const POWER_FILL_CAP = 200_000;
+/** SMALL_CITY_RELEASE_MS can be overridden by the environment (tests use a few seconds). */
+const SMALL_RELEASE_MS = Number(process.env.SMALL_CITY_RELEASE_MS) || SMALL_CITY_RELEASE_MS;
+/** CITY_FREEZE_MS can be overridden by the environment (tests use a few seconds). */
+const FREEZE_MS = Number(process.env.CITY_FREEZE_MS) || CITY_FREEZE_MS;
+/** Rail networks are recomputed at most this often (in ticks) when only zones next to track changed. */
+const RAIL_RECOMPUTE_TICKS = 5;
 /** Random outbreak probability per city per tick never exceeds this, however big the city. */
 const FIRE_OUTBREAK_MAX_P = 0.05;
 /** Rail network BFS: total rail tiles visited per rebuild. */
@@ -37,6 +56,22 @@ const RAIL_FILL_CAP = 500_000;
 const RAIL_LINK_MIN_SCALE = 0.1;
 /** Displayed population at which a rail-linked city gives the full RAIL_LINK_BOOST. */
 const RAIL_LINK_FULL_POP = 2000;
+/** Stadium cadence (Micropolis doSpecialZone): an empty powered stadium starts a game with p = 1/32 per tick, a full one empties with p = 1/8. */
+const STADIUM_GAME_P = 1 / 32;
+const STADIUM_EMPTY_P = 1 / 8;
+/** Crime level at or above which lots outside police cover lose a land-value point. */
+const CRIME_LAND_VALUE_THRESHOLD = 0.5;
+/**
+ * Road pieces that get traffic variants: the 11 plain shapes plus the two road/wire crossings (pieces 2..14).
+ * Bridges (0, 1) never carry traffic (Micropolis doRoad handles them as drawbridges) and piece 15 (BRWH) is not a road.
+ */
+const TRAFFIC_PIECE_MIN = 2, TRAFFIC_PIECE_MAX = 14;
+/** Density -> traffic level 0/1/2. */
+const trafficLevelFor = (d: number): 0 | 1 | 2 => (d >= TRAFFIC_HEAVY ? 2 : d >= TRAFFIC_LIGHT ? 1 : 0);
+/** Current traffic level of a road tile id. */
+const tileTrafficLevel = (id: number): 0 | 1 | 2 => (id < LTRFBASE ? 0 : id < HTRFBASE ? 1 : 2);
+/** Chebyshev distance between tile index i and (x,y). */
+const chebyshev = (i: number, x: number, y: number): number => { const sx = i % WORLD_W, sy = (i - sx) / WORLD_W; return Math.max(Math.abs(sx - x), Math.abs(sy - y)); };
 
 export interface SimToast { playerId: string; msg: string; kind: 'info' | 'error' | 'success'; at?: { x: number; y: number } }
 
@@ -56,8 +91,8 @@ export interface SimOptions {
 }
 
 interface PowerScan {
-  /** tile index -> connected to some plant's grid */
-  grid: Set<number>;
+  /** tile index -> connected to some plant's grid (has(i) is a stamp lookup, no per-tick allocation) */
+  grid: { has(i: number): boolean };
   /** zone centres browned out this tick */
   brownout: Set<number>;
 }
@@ -74,19 +109,49 @@ interface TradeBook {
   sellTo: Map<string, Set<string>>;
 }
 
-interface CityCounters { R: number; C: number; I: number; zones: number; rci: number; plants: number; supply: number; demand: number; stations: number }
+interface CityCounters {
+  R: number; C: number; I: number; zones: number; rci: number; plants: number; supply: number; demand: number;
+  stations: number; upkeep: number; resZones: number; civic: number;
+  police: number; stadium: number; seaport: number; airport: number; roads: number;
+  /** milestone buildings standing (powered or not), and powered city halls */
+  builtPorts: number; builtAirports: number; builtHalls: number; hall: number;
+}
+
+/**
+ * Deterministic per-lot randomness in [0,1): the same zone always gets the same answer, so its
+ * character (land-value jitter, how tall it may grow, industrial style) is stable across ticks and
+ * restarts, while neighbouring lots differ. Without this every zone converges on the same sprite.
+ */
+function lotHash(x: number, y: number, salt: number): number {
+  let h = (x * 73856093) ^ (y * 19349663) ^ (salt * 83492791);
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+  h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
+  return ((h ^ (h >>> 15)) >>> 0) / 4294967296;
+}
+/** Tallest building this lot will grow (SimCity cities are a mix of low-rise and towers). */
+function maxDensity(kind: 'res' | 'com' | 'ind', x: number, y: number): number {
+  const h = lotHash(x, y, 2);
+  if (kind === 'res') return h < 0.15 ? 1 : h < 0.45 ? 2 : 3;
+  if (kind === 'com') return h < 0.15 ? 1 : h < 0.4 ? 2 : h < 0.7 ? 3 : 4;
+  return h < 0.2 ? 1 : h < 0.5 ? 2 : 3;
+}
+/** Roughly one hospital or church per this many residential zones. */
+const CIVIC_PER_RES_ZONES = 6;
+const CIVIC_P = 0.05;
 
 const roadLike = (v: number): boolean => { const id = v & LOMASK; return isRoad(v) || id === HRAILROAD || id === VRAILROAD; };
+/** Transport access for zone growth, as in Micropolis' RoadTest: any road or rail tile (power lines don't count). */
+const transportLike = (v: number): boolean => isRoad(v) || isRail(v);
 const isFireTile = (v: number): boolean => { const id = v & LOMASK; return id >= FIRE && id <= LASTFIRE; };
 const isParkTile = (v: number): boolean => { const id = v & LOMASK; return (id >= WOODS2 && id <= WOODS5) || id === FOUNTAIN; };
 const rubbleTile = (): number => (RUBBLE + randInt(3)) | BULLBIT;
 /** Tiles a rail network "serves": any multi-tile zone/building tile or a house. */
-const zoneLike = (v: number): boolean => isZoneTile(v) || isHouse(v);
+const zoneLike = (v: number): boolean => isBuildingTile(v) || isHouse(v);
 /** Built tiles that decay in an abandoned city (water-borne infrastructure is left alone). */
 const decays = (v: number): boolean => {
   const id = v & LOMASK;
-  if (id === HBRIDGE || id === VBRIDGE || id === HPOWER || id === VPOWER || id === HRAIL || id === VRAIL) return false;
-  return isZoneTile(v) || isHouse(v) || isRoad(v) || isRail(v) || isWire(v) || isParkTile(v);
+  if (isOverWater(v)) return false; // bridges / underwater lines never decay into rubble on the water
+  return isBuildingTile(v) || isHouse(v) || isRoad(v) || isRail(v) || isWire(v) || isParkTile(v);
 };
 const fireTile = (): number => (FIRE + randInt(LASTFIRE - FIRE)) | ANIMBIT; // no BULLBIT/BURNBIT/CONDBIT: fire can't be dozed and breaks wires
 
@@ -109,6 +174,23 @@ export class Sim {
   private readonly burning = new Set<string>();
   /** powered fire station centres (tile indices) collected during this tick's city steps */
   private stations: number[] = [];
+  /** powered airports found during the current tick, swapped into `airports` at the end of it */
+  private airportsNext: AirportInfo[] = [];
+  /** powered airports as of the last tick (published to clients for inter-city flights) */
+  airports: AirportInfo[] = [];
+  /** powered police station centres: last tick's list (read by landValue) and the one being collected */
+  private police: number[] = [];
+  private nextPolice: number[] = [];
+  /** crime level of the city whose step is running (last tick's stats.crime) */
+  private curCrime = 0;
+  // Traffic (simplified makeTraffic): per-chunk density maps for claimed chunks only, created lazily.
+  private readonly density = new Map<ChunkIndex, Uint8Array>();
+  /** claimed chunks whose road tiles were normalised to their density since boot (persisted traffic variants reset) */
+  private readonly trafficSeen = new Set<ChunkIndex>();
+  /** road tiles per city counted in this tick's city step (denominator of stats.traffic) */
+  private readonly roadCount = new Map<string, number>();
+  /** per city: hospitals+churches and residential zones seen last tick (drives civic building placement) */
+  private civic = new Map<string, { civic: number; resZones: number }>();
   private toasts: SimToast[] = [];
   /** last broadcast idleDays per player, so 'claims' refreshes when it changes */
   private readonly lastIdle = new Map<string, number>();
@@ -121,16 +203,74 @@ export class Sim {
   /** city id -> networks it is on */
   private cityComps = new Map<string, Set<number>>();
   private railVersion = -1;
+  private railComputedAt = -Infinity;
 
   constructor(private readonly world: World, private readonly players: Players, opts: SimOptions = {}) {
     this.randomFires = opts.randomFires ?? true;
     this.seedFireChunks();
+    // Saved chunks may hold traffic tiles from before the restart; density starts at 0, so redraw them plain.
+    for (const ci of world.loaded) { this.applyTrafficLevels(ci, null); this.trafficSeen.add(ci); }
+    // Milestones must not depend on a city being simulated (frozen cities skip ticks): derive peak
+    // population, standing milestone buildings and grandfathering for every city straight from the save.
+    for (const p of players.players.values()) if (p.chunks.length > 0) this.initMilestones(p);
   }
 
   get time(): GameTime { return this.players.time; }
 
+  /** Count standing milestone buildings in p's plots, grandfather any that predate unlocking, refresh stats. */
+  initMilestones(p: PlayerRecord): void {
+    const tiles = this.world.tiles;
+    let ports = 0, airports = 0, halls = 0;
+    for (const key of p.chunks) {
+      const { cx, cy } = parseChunkKey(key);
+      for (let dy = 0; dy < CHUNK; dy++) {
+        const row = (cy * CHUNK + dy) * WORLD_W + cx * CHUNK;
+        for (let dx = 0; dx < CHUNK; dx++) {
+          const v = tiles[row + dx];
+          if (!(v & ZONEBIT)) continue;
+          const id = v & LOMASK;
+          if (id === PORT) ports++; else if (id === AIRPORT) airports++; else if (id === CITYHALL) halls++;
+        }
+      }
+    }
+    p.peakPop = Math.max(p.peakPop ?? 0, p.stats.population ?? 0);
+    p.stats.built = { seaport: ports, airport: airports, cityhall: halls };
+    for (const [b, n] of Object.entries(p.stats.built)) if (n > 0 && !unlockedOf(p).includes(b)) (p.grandfathered ??= []).push(b);
+    refreshMilestoneStats(p);
+  }
+
+  /**
+   * Power grid membership as a reusable stamp per world tile: tile i is on a grid this tick when
+   * gridStamp[i] === gridEpoch. Replaces a Set of hundreds of thousands of indices that was rebuilt
+   * every tick (slow, and a steady source of garbage-collection pauses).
+   */
+  private readonly gridStamp = new Uint8Array(WORLD_W * WORLD_H);
+  /** ids of cities frozen this tick (mayor away >= CITY_FREEZE_MS) */
+  readonly frozen = new Set<string>();
+  isFrozen(id: string): boolean { return this.frozen.has(id); }
+  private gridEpoch = 0;
+
+  /** PROFILE_TICK=1: per-phase tick timings, logged as averages/max every 30 ticks. */
+  private readonly profile = process.env.PROFILE_TICK === '1';
+  private prof = new Map<string, { sum: number; max: number }>();
+  private profMark = 0;
+  private lap(name: string): void {
+    if (!this.profile) return;
+    const now = performance.now(), dt = now - this.profMark;
+    this.profMark = now;
+    const e = this.prof.get(name) ?? { sum: 0, max: 0 };
+    e.sum += dt; e.max = Math.max(e.max, dt); this.prof.set(name, e);
+  }
+  private profReport(): void {
+    if (!this.profile || this.tickCount % 30 !== 0) return;
+    const parts = [...this.prof].map(([k, e]) => `${k} ${(e.sum / 30).toFixed(1)}/${e.max.toFixed(0)}`);
+    log(`tick profile (avg/max ms over 30 ticks): ${parts.join(' | ')}`);
+    this.prof.clear();
+  }
+
   tick(): TickResult {
     this.tickCount++;
+    this.profMark = performance.now();
     const t = this.players.time;
     t.month++;
     if (t.month >= 12) { t.month = 0; t.year++; }
@@ -138,6 +278,8 @@ export class Sim {
     this.players.dirty = true;
     this.toasts = [];
     this.stations = [];
+    this.police = this.nextPolice;
+    this.nextPolice = [];
 
     // 0. Abandonment: idle owners' cities decay, then their plots are released.
     const now = Date.now();
@@ -147,24 +289,43 @@ export class Sim {
     for (const p of this.players.players.values()) {
       if (p.chunks.length === 0) { this.lastIdle.delete(p.id); continue; }
       const idle = this.players.idleDays(p, now);
-      if (idle >= ABANDON_FREE_DAYS) {
+      const small = now - p.lastSeen >= SMALL_RELEASE_MS && this.builtItems(p, SMALL_CITY_MAX_ITEMS) < SMALL_CITY_MAX_ITEMS;
+      if (idle >= ABANDON_FREE_DAYS || small) {
         const released = this.players.release(p);
         unclaimed.push(...released);
+        for (const u of released) { const ci = chunkIndex(u.cx, u.cy); this.density.delete(ci); this.applyTrafficLevels(ci, null); }
+        this.lastDensityChunk = -1; this.lastDensityArr = null;
         this.lastIdle.delete(p.id);
         this.lastPop.delete(p.id);
-        log(`${p.name}'s city ${p.cityName || '(unnamed)'} abandoned for ${idle} days: released ${released.length} chunk(s)`);
+        p.notice = small
+          ? `Your plot was released because fewer than ${SMALL_CITY_MAX_ITEMS} things were built there and you were away for over an hour. Claim a new plot anywhere to start again.`
+          : `Your city was released after ${idle} days without a visit. Claim a new plot anywhere to start again.`;
+        log(small
+          ? `${p.name}'s city ${p.cityName || '(unnamed)'} had under ${SMALL_CITY_MAX_ITEMS} things built and its mayor was away ${Math.round((now - p.lastSeen) / 60_000)} min: released ${released.length} chunk(s)`
+          : `${p.name}'s city ${p.cityName || '(unnamed)'} abandoned for ${idle} days: released ${released.length} chunk(s)`);
         continue;
       }
       if (idle >= ABANDON_DECAY_DAYS) { decaying.add(p.id); this.decayStep(p); }
       if (this.lastIdle.get(p.id) !== idle) { this.lastIdle.set(p.id, idle); idleChanged.add(p.id); }
     }
 
-    // 1. Neighbourhood: rail networks and neighbour/rail demand for every city with land.
+    this.lap('abandon');
+    // Cities whose mayor is away are frozen: they skip growth, traffic and the budget entirely
+    // (cheap, and an unattended city can't decline or go bankrupt). Their plants still feed the grid.
+    this.frozen.clear();
+    for (const p of this.players.players.values()) {
+      if (p.chunks.length > 0 && now - p.lastSeen >= FREEZE_MS) this.frozen.add(p.id);
+    }
+    // 1. Neighbourhood: rail networks and neighbour/rail demand for every running city with land.
     this.updateRailNetworks();
-    for (const p of this.players.players.values()) if (p.chunks.length > 0) this.neighbourhoodStep(p, decaying);
+    this.lap('rail');
+    for (const p of this.players.players.values()) if (p.chunks.length > 0 && !this.frozen.has(p.id)) this.neighbourhoodStep(p, decaying);
+    this.lap('neighbours');
 
-    const cities = [...this.players.players.values()].filter((p) => p.active && p.chunks.length > 0);
-    const power = this.powerScan(cities);
+    const withLand = [...this.players.players.values()].filter((p) => p.active && p.chunks.length > 0);
+    const cities = withLand.filter((p) => !this.frozen.has(p.id));
+    const power = this.powerScan(cities, withLand);
+    this.lap('power');
     const claimsChanged: ClaimInfo[] = [];
     for (const p of cities) {
       this.cityStep(p, power, newYear);
@@ -178,7 +339,14 @@ export class Sim {
       const p = this.players.players.get(id);
       if (p && p.chunks.length > 0) claimsChanged.push(...this.players.claimInfosOf(p));
     }
+    this.lap('cities');
+    this.trafficStep(cities);
+    this.lap('traffic');
     this.fireStep();
+    this.lap('fire');
+    this.profReport();
+    this.airports = this.airportsNext.sort((a, b) => a.y - b.y || a.x - b.x);
+    this.airportsNext = [];
     return { time: { ...t }, claimsChanged, toasts: this.toasts, unclaimed };
   }
 
@@ -199,9 +367,29 @@ export class Sim {
   }
 
   /** Turn tile (x,y) (and the whole building it belongs to) into rubble. */
+  /**
+   * Things the mayor built, counting each zone/building once (its centre) and each road, rail, power
+   * line or park tile once. Stops counting at `cap` (callers only need "fewer than cap?").
+   */
+  private builtItems(p: PlayerRecord, cap: number): number {
+    const tiles = this.world.tiles;
+    let n = 0;
+    for (const key of p.chunks) {
+      const { cx, cy } = parseChunkKey(key);
+      for (let dy = 0; dy < CHUNK; dy++) {
+        const row = (cy * CHUNK + dy) * WORLD_W + cx * CHUNK;
+        for (let dx = 0; dx < CHUNK; dx++) {
+          const v = tiles[row + dx];
+          if ((v & ZONEBIT) || isRoad(v) || isRail(v) || isWire(v) || isParkTile(v)) { if (++n >= cap) return n; }
+        }
+      }
+    }
+    return n;
+  }
+
   private ruin(x: number, y: number, v: number): void {
     const w = this.world;
-    const z = isZoneTile(v) ? findZoneCenter(w, x, y) : null;
+    const z = isBuildingTile(v) ? findZoneCenter(w, x, y) : null;
     if (z) {
       for (let dy = 0; dy < z.size; dy++) for (let dx = 0; dx < z.size; dx++) w.set(z.cx - 1 + dx, z.cy - 1 + dy, rubbleTile());
       return;
@@ -251,6 +439,10 @@ export class Sim {
   private updateRailNetworks(): void {
     const w = this.world;
     if (!w.railDirty && this.railVersion === this.players.claimsVersion) return;
+    // Rail links only feed a demand bonus, so recomputing at most every RAIL_RECOMPUTE_TICKS is plenty
+    // (busy cities change zones next to track nearly every tick).
+    if (this.tickCount - this.railComputedAt < RAIL_RECOMPUTE_TICKS && this.railVersion === this.players.claimsVersion) return;
+    this.railComputedAt = this.tickCount;
     w.railDirty = false;
     this.railVersion = this.players.claimsVersion;
     this.railComp = new Map();
@@ -311,9 +503,12 @@ export class Sim {
   //    with a surplus sell to cities with a deficit at POWER_PRICE_PER_UNIT per zone-unit per
   //    month (importers must be able to pay). Unmet zones are randomly browned out.
   // -------------------------------------------------------------------------
-  private powerScan(cities: PlayerRecord[]): PowerScan {
+  private powerScan(cities: PlayerRecord[], seedCities: PlayerRecord[] = cities): PowerScan {
     const tiles = this.world.tiles;
-    const grid = new Set<number>();
+    // next epoch; on wrap-around clear the stamps (every 255 ticks, a single 32 MB fill)
+    if (++this.gridEpoch > 255) { this.gridStamp.fill(0); this.gridEpoch = 1; }
+    const stamp = this.gridStamp, epoch = this.gridEpoch;
+    const grid = { has: (i: number): boolean => stamp[i] === epoch };
     const brownout = new Set<number>();
     const queue = this.queue;
     const book: TradeBook = { net: new Map(), spent: new Map(), buyFrom: new Map(), sellTo: new Map() };
@@ -324,7 +519,7 @@ export class Sim {
       const zones: number[] = [];
       let head = 0, tail = 0;
       queue[tail++] = start;
-      grid.add(start);
+      stamp[start] = epoch;
       while (head < tail) {
         const i = queue[head++];
         const v = tiles[i];
@@ -333,20 +528,18 @@ export class Sim {
           else zones.push(i);
         }
         if (tail >= POWER_FILL_CAP) continue;
-        const x = i % WORLD_W, y = (i - x) / WORLD_W;
-        const tryPush = (j: number): void => {
-          if (!grid.has(j) && (tiles[j] & CONDBIT)) { grid.add(j); queue[tail++] = j; }
-        };
-        if (y > 0) tryPush(i - WORLD_W);
-        if (x < WORLD_W - 1) tryPush(i + 1);
-        if (y < WORLD_H - 1) tryPush(i + WORLD_W);
-        if (x > 0) tryPush(i - 1);
+        const x = i % WORLD_W;
+        let j: number;
+        if (i >= WORLD_W) { j = i - WORLD_W; if (stamp[j] !== epoch && (tiles[j] & CONDBIT)) { stamp[j] = epoch; queue[tail++] = j; } }
+        if (x < WORLD_W - 1) { j = i + 1; if (stamp[j] !== epoch && (tiles[j] & CONDBIT)) { stamp[j] = epoch; queue[tail++] = j; } }
+        if (i < WORLD_W * (WORLD_H - 1)) { j = i + WORLD_W; if (stamp[j] !== epoch && (tiles[j] & CONDBIT)) { stamp[j] = epoch; queue[tail++] = j; } }
+        if (x > 0) { j = i - 1; if (stamp[j] !== epoch && (tiles[j] & CONDBIT)) { stamp[j] = epoch; queue[tail++] = j; } }
       }
       this.settleGrid(plants, zones, brownout, book);
     };
 
-    // Seed fills from every plant in every active city.
-    for (const p of cities) {
+    // Seed fills from every plant in every active city (frozen ones too: their plants keep feeding neighbours).
+    for (const p of seedCities) {
       this.forEachChunkTile(p, (i) => {
         if (isPlantCenter(tiles[i]) && !grid.has(i)) fill(i);
       });
@@ -403,6 +596,7 @@ export class Sim {
     }
     for (const i of zones) {
       const c = cityOf(i);
+      if (c && this.frozen.has(c.p.id)) continue; // frozen city: its zones neither draw power nor pay
       if (c) c.zones.push(i);
       else brownout.add(i); // zone on unclaimed land: nobody to bill
     }
@@ -430,6 +624,7 @@ export class Sim {
         const sold = apportion(bought, surplus);
         exporters.forEach((c, k) => {
           if (sold[k] <= 0) return;
+          if (this.frozen.has(c.p.id)) return; // a frozen exporter's power is used, but its books stay as they were
           book.net.set(c.p.id, (book.net.get(c.p.id) ?? 0) + sold[k] * POWER_PRICE_PER_UNIT);
           c.p.stats.powerExported += sold[k];
           for (const imp of importers) {
@@ -480,32 +675,54 @@ export class Sim {
   // -------------------------------------------------------------------------
   private cityStep(p: PlayerRecord, power: PowerScan, newYear: boolean): void {
     const tiles = this.world.tiles;
-    const c: CityCounters = { R: 0, C: 0, I: 0, zones: 0, rci: 0, plants: 0, supply: 0, demand: 0, stations: 0 };
+    const c: CityCounters = {
+      R: 0, C: 0, I: 0, zones: 0, rci: 0, plants: 0, supply: 0, demand: 0, stations: 0, upkeep: 0, resZones: 0, civic: 0,
+      police: 0, stadium: 0, seaport: 0, airport: 0, roads: 0, builtPorts: 0, builtAirports: 0, builtHalls: 0, hall: 0,
+    };
     const demand = p.stats.demand;
+    const prev = this.civic.get(p.id) ?? { civic: 0, resZones: 0 };
+    const wantCivic = prev.civic < Math.floor(prev.resZones / CIVIC_PER_RES_ZONES);
     const cityPop = p.stats.population;
+    this.curCrime = p.stats.crime;
 
     this.forEachChunkTile(p, (i, x, y) => {
       const v = tiles[i];
-      if ((v & ZONEBIT) === 0) return;
+      if ((v & ZONEBIT) === 0) {
+        // yearly upkeep for infrastructure (roads, rail); charged monthly below
+        if (isRoad(v)) { c.upkeep += UPKEEP_ROAD; c.roads++; }
+        else if (isRail(v)) c.upkeep += UPKEEP_RAIL;
+        return;
+      }
       const kind = zoneKind(v);
-      if (kind === 'coal') { c.plants++; c.supply += COAL_POWER; return; }
-      if (kind === 'nuclear') { c.plants++; c.supply += NUCLEAR_POWER; return; }
+      const powered = (v & PWRBIT) !== 0;
+      if (kind === 'coal') { c.plants++; c.supply += COAL_POWER; c.upkeep += UPKEEP_COAL; this.animateCoal(x, y, powered); return; }
+      if (kind === 'nuclear') { c.plants++; c.supply += NUCLEAR_POWER; c.upkeep += UPKEEP_NUCLEAR; this.animateNuclear(x, y, powered); return; }
       c.zones++;
       if (power.grid.has(i)) c.demand++;
       if (kind === 'other') {
-        if ((v & LOMASK) === FIRESTATION && (v & PWRBIT)) { c.stations++; this.stations.push(i); }
+        const id = v & LOMASK;
+        if (id === HOSPITAL || id === CHURCH) c.civic++;
+        if (id === FIRESTATION || id === POLICESTATION) c.upkeep += UPKEEP_STATION;
+        if (id === FIRESTATION && powered) { c.stations++; this.stations.push(i); }
+        if (id === POLICESTATION && powered) { c.police++; this.nextPolice.push(i); }
+        if (id === STADIUM || id === FULLSTADIUM) { if (powered) c.stadium++; this.animateStadium(x, y, v); }
+        else if (id === PORT) { c.builtPorts++; if (powered && waterNear(this.world, x - 1, y - 1, 4, SEAPORT_WATER_RANGE)) c.seaport++; }
+        else if (id === AIRPORT) { c.builtAirports++; if (powered) { c.airport++; this.airportsNext.push({ x, y, ownerId: p.id }); } this.animateAirport(x, y, powered); }
+        else if (id === CITYHALL) { c.builtHalls++; c.upkeep += UPKEEP_CITYHALL; if (powered) c.hall++; }
         return;
       }
       c.rci++;
-      const powered = (v & PWRBIT) !== 0;
       const road = this.hasRoadAccess(x, y);
+      if (powered && road && Math.random() < this.tripChance(x, y, v, kind)) this.drive(x, y);
       switch (kind) {
-        case 'res': c.R += this.stepRes(x, y, v, powered && road, demand.r); break;
+        case 'res': c.resZones++; c.R += this.stepRes(x, y, v, powered && road, demand.r, wantCivic); break;
         case 'com': c.C += this.stepCom(x, y, v, powered && road, demand.c); break;
-        case 'ind': c.I += this.stepInd(x, y, v, powered && road, demand.i, cityPop); break;
+        case 'ind': c.I += this.stepInd(x, y, v, powered && road, demand.i, cityPop); this.animateInd(x, y); break;
       }
     });
+    this.roadCount.set(p.id, c.roads);
 
+    this.civic.set(p.id, { civic: c.civic, resZones: c.resZones });
     if (c.zones === 0 && c.plants === 0) p.active = false;
 
     // 3. RCI valves (simplified setValves). Zone-unit pops: R ~16-40 per full res zone, C/I 1-5, so jobs = (C+I)*8.
@@ -517,19 +734,26 @@ export class Sim {
     let id = clamp((c.R / 8 - c.I * 2 + 4) / 16, -1, 1);
     if (c.I < 6) id = Math.max(id, 0.3);
     // Neighbours' jobs and shoppers, and rail links (commercial, half of it residential).
+    // Special buildings (powered; one of each counts): a stadium draws residents, a seaport near water
+    // attracts industry, an airport attracts commerce.
     const nd = p.stats.neighbourDemand, rail = p.stats.railDemand;
-    r = clamp(r + nd.r + rail / 2, -1, 1);
-    cd = clamp(cd + nd.c + rail, -1, 1);
-    id = clamp(id + nd.i, -1, 1);
+    r = clamp(r + nd.r + rail / 2 + (c.stadium > 0 ? STADIUM_RES_BOOST : 0), -1, 1);
+    // An airport only helps once there is somewhere to fly: another mayor's powered airport (last tick's list).
+    const connected = c.airport > 0 && this.airports.some((a) => a.ownerId !== p.id);
+    cd = clamp(cd + nd.c + rail + (connected ? AIRPORT_COM_BOOST : 0), -1, 1);
+    id = clamp(id + nd.i + (c.seaport > 0 ? SEAPORT_IND_BOOST : 0), -1, 1);
     const newDemand: Demand = { r: round2(r), c: round2(cd), i: round2(id) };
 
-    // 4. Taxes: monthly share of yearly tax on the weighted population, fractional accumulator.
-    p.incomeAcc += ((c.R + jobs) * TAX_RATE / 12) * TAX_MULT;
-    const gained = Math.floor(p.incomeAcc);
-    if (gained > 0) {
-      p.incomeAcc -= gained;
-      p.funds += gained;
-      p.yearIncome += gained;
+    // 4. Budget: monthly share of yearly taxes minus yearly upkeep, through a fractional accumulator.
+    //    (Only running cities get here: a city whose mayor is away is frozen, see tick().)
+    const budgetScale = 1;
+    const taxes = ((c.R + jobs) * TAX_RATE / 12) * TAX_MULT * (c.hall > 0 ? 1 + CITYHALL_TAX_BONUS : 1);
+    p.incomeAcc += (taxes - c.upkeep / 12) * budgetScale;
+    const delta = p.incomeAcc >= 0 ? Math.floor(p.incomeAcc) : -Math.floor(-p.incomeAcc);
+    if (delta !== 0) {
+      p.incomeAcc -= delta;
+      p.funds = Math.max(0, p.funds + delta); // no debt: an unaffordable city just stalls at $0
+      p.yearIncome += delta;
     }
     if (newYear) {
       p.stats.lastIncome = p.yearIncome;
@@ -546,6 +770,25 @@ export class Sim {
     s.demand = newDemand;
     s.chunks = p.chunks.length;
     s.fireStations = c.stations;
+    s.policeStations = c.police;
+    s.specials = { stadium: c.stadium, seaport: c.seaport, airport: connected ? c.airport : 0 };
+    s.crime = round4(Math.min(1, s.population * CRIME_PER_POP) * (c.hall > 0 ? CITYHALL_CRIME_FACTOR : 1));
+    // Milestones: peak population, what stands, and grandfathering. Buildings that exist without having
+    // been unlocked can only predate milestones (placement requires an unlock), so they are grandfathered.
+    p.peakPop = Math.max(p.peakPop ?? 0, s.population);
+    s.built = { seaport: c.builtPorts, airport: c.builtAirports, cityhall: c.builtHalls };
+    s.cityHall = c.hall;
+    for (const [b, n] of Object.entries(s.built)) {
+      if (n > 0 && !unlockedOf(p).includes(b)) (p.grandfathered ??= []).push(b);
+    }
+    refreshMilestoneStats(p);
+    for (const b of milestoneUnlocksFor(p.peakPop)) {
+      if ((p.announced ?? []).includes(b)) continue;
+      (p.announced ??= []).push(b);
+      if ((p.grandfathered ?? []).includes(b)) continue; // they already have one
+      const m = MILESTONE_BUILDINGS[b];
+      this.toasts.push({ playerId: p.id, kind: 'success', msg: `Milestone: ${m.pop.toLocaleString('en-US')} people! You can now build a ${m.name.toLowerCase()} (${m.benefits[0].toLowerCase()}). See 🏛 Milestones.` });
+    }
 
     // 6. Random fire outbreak: p = BASE * sqrt(zones/30), capped; bigger cities burn more often.
     // Only while the owner is around (every client message touches lastSeen; pings every 20 s).
@@ -602,7 +845,7 @@ export class Sim {
     const v = w.get(x, y);
     if ((v & BURNBIT) === 0 || isFireTile(v)) return false;
     const i = y * WORLD_W + x;
-    if (isZoneTile(v)) {
+    if (isBuildingTile(v)) {
       const z = findZoneCenter(w, x, y);
       if (z) {
         for (let dy = 0; dy < z.size; dy++) {
@@ -629,7 +872,7 @@ export class Sim {
     this.forEachChunkTile(p, (i) => {
       const v = tiles[i];
       if ((v & BURNBIT) === 0 || isFireTile(v)) return;
-      if (isZoneTile(v) || isHouse(v)) preferred.push(i); else other.push(i);
+      if (isBuildingTile(v) || isHouse(v)) preferred.push(i); else other.push(i);
     });
     const pool = preferred.length > 0 ? preferred : other;
     if (pool.length === 0) return;
@@ -656,7 +899,9 @@ export class Sim {
       if (!inWorld(x, y)) return;
       const v = tiles[y * WORLD_W + x];
       if ((v & BURNBIT) === 0 || isFireTile(v) || !chance(p)) return;
-      if (!this.players.ownerOf(Math.floor(x / CHUNK), Math.floor(y / CHUNK))) return; // no wildfires on unclaimed land
+      const owner = this.players.ownerOf(Math.floor(x / CHUNK), Math.floor(y / CHUNK));
+      if (!owner) return; // no wildfires on unclaimed land
+      if (this.frozen.has(owner.id)) return; // nor into a frozen city (its mayor is away)
       if (this.ignite(x, y)) countFor(x, y, 1);
     };
     const work: { ci: ChunkIndex; fires: number[] }[] = [];
@@ -715,6 +960,7 @@ export class Sim {
   }
 
   /** Micropolis-style road access: a road within 2 tiles of the 3x3 footprint (7x7 box around the centre). */
+  /** Road or rail within the 7x7 box around a zone centre (Micropolis lets rail connect zones too). */
   private hasRoadAccess(x: number, y: number): boolean {
     const w = this.world;
     for (let dy = -3; dy <= 3; dy++) {
@@ -723,7 +969,7 @@ export class Sim {
       for (let dx = -3; dx <= 3; dx++) {
         const xx = x + dx;
         if (xx < 0 || xx >= WORLD_W) continue;
-        if (roadLike(w.get(xx, yy))) return true;
+        if (transportLike(w.get(xx, yy))) return true;
       }
     }
     return false;
@@ -769,11 +1015,267 @@ export class Sim {
     }
     if (!industry) value++;
     if (commerce) value++;
+    // Crime (city-wide, from population) hurts lots outside the reach of a powered police station.
+    if (this.curCrime >= CRIME_LAND_VALUE_THRESHOLD && !this.policeCovers(x, y)) value--;
+    // per-lot jitter so a street of identical conditions still shows different buildings
+    const h = lotHash(x, y, 1);
+    if (h < 0.25) value--; else if (h > 0.75) value++;
     return clamp(value, 0, 3);
   }
 
+  /** Is (x,y) within POLICE_RANGE (Chebyshev) of a police station that was powered last tick? */
+  private policeCovers(x: number, y: number): boolean {
+    for (const s of this.police) if (chebyshev(s, x, y) <= POLICE_RANGE) return true;
+    return false;
+  }
+
+  // -------------------------------------------------------------------------
+  // Traffic (simplified Micropolis makeTraffic). Every serviced R/C/I zone sends one drive per tick: a
+  // random walk of up to TRAFFIC_MAX_STEPS along roads (no U-turns except at dead ends) that adds
+  // TRAFFIC_ADD to each road tile it crosses. Density lives in per-chunk Uint8Arrays for claimed chunks
+  // only; every tick it decays by TRAFFIC_DECAY and road tiles are redrawn as plain/light/heavy pieces
+  // (traffic tiles carry ANIMBIT; the client steps them through ANI_TILE). Destinations are ignored.
+  // -------------------------------------------------------------------------
+
+  /** Add TRAFFIC_ADD (saturating) to the density of road tile (x,y) if its chunk is claimed (maps are created lazily). */
+  /** Dev hook (DEV_HOOKS=1): add `amount` traffic density to road tile (x,y). Returns false off-road / unclaimed. */
+  devTraffic(x: number, y: number, amount: number): boolean {
+    if (!isRoad(this.world.get(x, y))) return false;
+    const n = Math.ceil(amount / TRAFFIC_ADD);
+    for (let i = 0; i < n; i++) this.addDensity(x, y);
+    return this.lastDensityArr !== null;
+  }
+
+  private addDensity(x: number, y: number): void {
+    const cx = Math.floor(x / CHUNK), cy = Math.floor(y / CHUNK);
+    const ci = chunkIndex(cx, cy);
+    let arr: Uint8Array | null | undefined;
+    if (ci === this.lastDensityChunk) arr = this.lastDensityArr; // consecutive steps mostly stay in one chunk
+    else {
+      arr = this.density.get(ci);
+      if (!arr) {
+        if (this.players.ownerOf(cx, cy)) { arr = new Uint8Array(CHUNK * CHUNK); this.density.set(ci, arr); }
+        else arr = null; // unclaimed land: no map
+      }
+      this.lastDensityChunk = ci; this.lastDensityArr = arr;
+    }
+    if (!arr) return;
+    const k = (y - cy * CHUNK) * CHUNK + (x - cx * CHUNK);
+    arr[k] = Math.min(255, arr[k] + TRAFFIC_ADD);
+  }
+  private lastDensityChunk = -1;
+  private lastDensityArr: Uint8Array | null = null;
+
+  /** One drive from a road tile next to the 3x3 zone centred at (x,y). */
+  /**
+   * Odds that a serviced zone makes a road trip this tick: bigger buildings make more trips
+   * (houses ~0.1, full residential 0.2..0.5, commerce/industry 0.1..0.5), and rail within
+   * TRAFFIC_RAIL_REACH tiles carries TRAFFIC_RAIL_SHARE of them instead of the road.
+   */
+  private tripChance(x: number, y: number, v: number, kind: string): number {
+    const id = v & LOMASK;
+    let p: number;
+    if (kind === 'res') p = id === FREEZ ? 0.1 : resZonePop(id) / 80;
+    else if (kind === 'com') p = id === COMCLR ? 0 : comZonePop(id) / 10;
+    else p = id === INDCLR ? 0 : indZonePop(id) / 8;
+    if (p > 0 && this.railNear(x, y)) p *= 1 - TRAFFIC_RAIL_SHARE;
+    return p;
+  }
+
+  private railNear(x: number, y: number): boolean {
+    const w = this.world;
+    const r = TRAFFIC_RAIL_REACH;
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      if (Math.abs(dx) < 2 && Math.abs(dy) < 2) continue; // the zone's own footprint
+      const tx = x + dx, ty = y + dy;
+      if (inWorld(tx, ty) && isRail(w.get(tx, ty))) return true;
+    }
+    return false;
+  }
+
+  private drive(x: number, y: number): void {
+    const w = this.world;
+    // Start on a random road tile touching the footprint (the ring at Chebyshev distance 2 from the centre),
+    // else one a tile further out (distance 3), the limit hasRoadAccess accepts.
+    const starts: number[] = [];
+    for (let r = 2; r <= 3 && starts.length === 0; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+          const tx = x + dx, ty = y + dy;
+          if (inWorld(tx, ty) && roadLike(w.get(tx, ty))) starts.push(ty * WORLD_W + tx);
+        }
+      }
+    }
+    if (starts.length === 0) return;
+    const start = starts[randInt(starts.length - 1)];
+    let cx = start % WORLD_W, cy = (start - cx) / WORLD_W;
+    let dir = -1; // 0 N, 1 E, 2 S, 3 W
+    const DX = [0, 1, 0, -1], DY = [-1, 0, 1, 0];
+    for (let step = 0; step < TRAFFIC_MAX_STEPS; step++) {
+      if (isRoad(w.get(cx, cy))) this.addDensity(cx, cy);
+      const back = dir < 0 ? -1 : (dir + 2) & 3;
+      let n = 0;
+      const opts = [0, 0, 0, 0];
+      for (let d = 0; d < 4; d++) {
+        if (d === back) continue;
+        const nx = cx + DX[d], ny = cy + DY[d];
+        if (inWorld(nx, ny) && roadLike(w.get(nx, ny))) opts[n++] = d;
+      }
+      let d: number;
+      if (n > 0) d = opts[randInt(n - 1)];
+      else if (back >= 0 && inWorld(cx + DX[back], cy + DY[back]) && roadLike(w.get(cx + DX[back], cy + DY[back]))) d = back; // dead end: turn around
+      else return;
+      cx += DX[d]; cy += DY[d]; dir = d;
+    }
+  }
+
+  /**
+   * After the city steps: decay every density map, redraw road tiles whose traffic level changed, drop
+   * maps that reached zero, and publish stats.traffic. Claimed chunks are normalised once after boot so
+   * traffic variants restored from a save fall back to plain roads (their density is 0).
+   */
+  private trafficStep(cities: PlayerRecord[]): void {
+    for (const key of this.players.claims.keys()) {
+      const { cx, cy } = parseChunkKey(key);
+      const ci = chunkIndex(cx, cy);
+      if (this.trafficSeen.has(ci)) continue;
+      this.trafficSeen.add(ci);
+      if (!this.density.has(ci)) this.applyTrafficLevels(ci, null);
+    }
+    this.lastDensityChunk = -1; this.lastDensityArr = null; // maps may be deleted below
+    const sums = new Map<string, number>();
+    for (const [ci, arr] of this.density) {
+      let max = 0, sum = 0;
+      for (let k = 0; k < arr.length; k++) {
+        const d = arr[k];
+        if (d === 0) continue;
+        const nd = Math.floor(d * TRAFFIC_DECAY);
+        arr[k] = nd;
+        sum += nd;
+        if (nd > max) max = nd;
+      }
+      this.applyTrafficLevels(ci, arr);
+      if (max === 0) { this.density.delete(ci); continue; }
+      const { cx, cy } = chunkCoords(ci);
+      const owner = this.players.ownerOf(cx, cy);
+      if (owner) sums.set(owner.id, (sums.get(owner.id) ?? 0) + sum);
+    }
+    for (const p of cities) {
+      const roads = this.roadCount.get(p.id) ?? 0;
+      p.stats.traffic = roads > 0 ? round4((sums.get(p.id) ?? 0) / (roads * 255)) : 0;
+    }
+  }
+
+  /** Redraw every traffic-capable road tile of chunk ci at the level its density (0 if `arr` is null) calls for. */
+  private applyTrafficLevels(ci: ChunkIndex, arr: Uint8Array | null): void {
+    const tiles = this.world.tiles;
+    const { cx, cy } = chunkCoords(ci);
+    const x0 = cx * CHUNK, y0 = cy * CHUNK;
+    for (let dy = 0; dy < CHUNK; dy++) {
+      let i = (y0 + dy) * WORLD_W + x0;
+      for (let dx = 0; dx < CHUNK; dx++, i++) {
+        const v = tiles[i];
+        if (!isRoad(v)) continue;
+        const id = v & LOMASK;
+        const piece = roadPiece(id);
+        if (piece === null || piece < TRAFFIC_PIECE_MIN || piece > TRAFFIC_PIECE_MAX) continue;
+        const want = trafficLevelFor(arr ? arr[dy * CHUNK + dx] : 0);
+        if (tileTrafficLevel(id) === want && (want === 0 || id === trafficTile(piece, want))) continue;
+        let flags = v & ~LOMASK & ~ANIMBIT;
+        if (want > 0) flags |= ANIMBIT;
+        this.world.set(x0 + dx, y0 + dy, trafficTile(piece, want) | flags);
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Ambient animation flags (Micropolis doSpecialZone / coalSmoke / setSmoke). The server only decides
+  // which cells hold an animated tile; the client cycles ANIMBIT tiles through ANI_TILE. Tiles are
+  // written only when they change. PWRBIT is carried over so the power scan does not fight these writes.
+  // -------------------------------------------------------------------------
+
+  /** Coal plant: four smoke stacks (ANIMBIT|CONDBIT|PWRBIT|BURNBIT) while powered, plain footprint tiles otherwise. */
+  private animateCoal(x: number, y: number, powered: boolean): void {
+    const w = this.world;
+    for (const s of COAL_SMOKE) {
+      const tx = x + s.dx, ty = y + s.dy;
+      const want = powered
+        ? s.tile | ANIMBIT | CONDBIT | PWRBIT | BURNBIT
+        : (COALBASE + (s.dy + 1) * 4 + (s.dx + 1)) | BNCNBIT;
+      if (w.get(tx, ty) !== want) w.set(tx, ty, want);
+    }
+  }
+
+  /** Nuclear plant: the swirl cell animates while powered. */
+  private animateNuclear(x: number, y: number, powered: boolean): void {
+    const w = this.world;
+    const tx = x + NUKE_SWIRL.dx, ty = y + NUKE_SWIRL.dy;
+    const old = w.get(tx, ty);
+    const want = (powered ? NUKE_SWIRL.tile | ANIMBIT : NUKE_SWIRL.still) | BNCNBIT | (old & PWRBIT);
+    if (old !== want) w.set(tx, ty, want);
+  }
+
+  /** Airport: the radar dish spins while powered. */
+  private animateAirport(x: number, y: number, powered: boolean): void {
+    const w = this.world;
+    const tx = x + AIRPORT_RADAR.dx, ty = y + AIRPORT_RADAR.dy;
+    const old = w.get(tx, ty);
+    const want = (powered ? AIRPORT_RADAR.on | ANIMBIT : AIRPORT_RADAR.off) | BNCNBIT | (old & PWRBIT);
+    if (old !== want) w.set(tx, ty, want);
+  }
+
+  /**
+   * Industrial building: the variants that have chimneys show smoke while powered (setSmoke). Called after
+   * the zone step, so a building that just grew (plopZone writes the still footprint) gets its smoke back.
+   */
+  private animateInd(x: number, y: number): void {
+    const w = this.world;
+    const v = w.get(x, y);
+    const id = v & LOMASK;
+    if (id < IZB) return; // empty zone
+    const e = IND_SMOKE[((id - IZB) >> 3) & 7];
+    if (!e.animates) return;
+    const powered = (v & PWRBIT) !== 0;
+    for (const s of [e.a, e.b]) {
+      const tx = x + s.dx, ty = y + s.dy;
+      const old = w.get(tx, ty);
+      const want = (powered ? s.on | ANIMBIT : s.off) | BNCNBIT | (old & PWRBIT);
+      if (old !== want) w.set(tx, ty, want);
+    }
+  }
+
+  /** Stadium: a powered empty stadium starts a game (full stadium + two animated cells) with STADIUM_GAME_P; a full one empties with STADIUM_EMPTY_P. */
+  private animateStadium(x: number, y: number, v: number): void {
+    const id = v & LOMASK;
+    if (id === STADIUM) {
+      if ((v & PWRBIT) === 0 || !chance(STADIUM_GAME_P)) return;
+      this.drawStadium(x, y, FULLSTADIUMBASE);
+      for (const g of STADIUM_GAME) {
+        const tx = x + g.dx, ty = y + g.dy;
+        this.world.set(tx, ty, g.tile | ANIMBIT | BNCNBIT | (this.world.get(tx, ty) & PWRBIT));
+      }
+    } else if (id === FULLSTADIUM && chance(STADIUM_EMPTY_P)) {
+      this.drawStadium(x, y, STADIUMBASE);
+    }
+  }
+
+  /** Redraw the 4x4 stadium footprint around centre (x,y) from `base` (Micropolis drawStadium), keeping PWRBIT. */
+  private drawStadium(x: number, y: number, base: number): void {
+    const w = this.world;
+    let t = base;
+    for (let dy = -1; dy <= 2; dy++) {
+      for (let dx = -1; dx <= 2; dx++, t++) {
+        const old = w.get(x + dx, y + dy);
+        let nv = t | BNCNBIT | (old & PWRBIT);
+        if (dx === 0 && dy === 0) nv |= ZONEBIT | BULLBIT;
+        if (old !== nv) w.set(x + dx, y + dy, nv);
+      }
+    }
+  }
+
   // ---- residential ----
-  private stepRes(x: number, y: number, v: number, serviced: boolean, demand: number): number {
+  private stepRes(x: number, y: number, v: number, serviced: boolean, demand: number, wantCivic = false): number {
     const w = this.world;
     const id = v & LOMASK;
     if (id === FREEZ) {
@@ -793,7 +1295,12 @@ export class Sim {
     const density = Math.floor((id - RZB) / 9) % 4;
     const value = Math.floor((id - RZB) / 36);
     const action = this.decide(serviced, demand, DENSITY_GROW_P);
-    if (action === true && density < 3) {
+    if (action === true && wantCivic && density >= 1 && Math.random() < CIVIC_P) {
+      // Micropolis sprinkles hospitals and churches into growing residential areas.
+      plopZone(w, x, y, lotHash(x, y, 3) < 0.5 ? HOSPITALBASE : CHURCHBASE);
+      return 0;
+    }
+    if (action === true && density < maxDensity('res', x, y)) {
       const centre = resBuildingCenter(density + 1, this.landValue(x, y));
       plopZone(w, x, y, centre - 4);
       return resZonePop(centre);
@@ -856,7 +1363,7 @@ export class Sim {
     }
     const density = Math.floor((id - CZB) / 9) % 5;
     const value = Math.floor((id - CZB) / 45);
-    if (action === true && density < 4) {
+    if (action === true && density < maxDensity('com', x, y)) {
       const centre = comBuildingCenter(density + 1, this.landValue(x, y));
       plopZone(w, x, y, centre - 4);
       return comZonePop(centre);
@@ -874,7 +1381,8 @@ export class Sim {
   private stepInd(x: number, y: number, v: number, serviced: boolean, demand: number, cityPop: number): number {
     const w = this.world;
     const id = v & LOMASK;
-    const value = cityPop > 500 ? 1 : 0; // Micropolis: industrial "value" is really city size
+    // Micropolis: industrial "value" is really city size; mix the two sprite sets per lot once the city is big.
+    const value = cityPop > 500 && lotHash(x, y, 4) < 0.5 ? 1 : 0;
     const action = this.decide(serviced, demand, DENSITY_GROW_P);
     if (id === INDCLR) {
       if (action === true) {
@@ -885,7 +1393,7 @@ export class Sim {
       return 0;
     }
     const density = Math.floor((id - IZB) / 9) % 4;
-    if (action === true && density < 3) {
+    if (action === true && density < maxDensity('ind', x, y)) {
       const centre = indBuildingCenter(density + 1, value);
       plopZone(w, x, y, centre - 4);
       return indZonePop(centre);

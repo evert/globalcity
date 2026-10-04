@@ -12,6 +12,8 @@ export interface InputHooks {
   onQueryClick(cssX: number, cssY: number): void;
   /** called on any gesture that should dismiss popovers */
   onInteract(): void;
+  /** touch: a build tool was aimed at a tile (null = cleared); the UI shows a confirm bar */
+  onTouchTarget(tile: { x: number; y: number } | null): void;
 }
 
 interface PointerInfo { x: number; y: number; sx: number; sy: number; button: number; type: string }
@@ -50,7 +52,9 @@ export class Input {
     c.addEventListener('pointermove', this.onPointerMove);
     c.addEventListener('pointerup', this.onPointerUp);
     c.addEventListener('pointercancel', this.onPointerUp);
-    c.addEventListener('pointerleave', () => { if (this.pointers.size === 0) this.renderer.setHover(null); });
+    // Mouse leaving the canvas clears the hover cursor; a finger lifting also fires pointerleave,
+    // but on touch the cursor is the aimed footprint and must stay until confirmed or cancelled.
+    c.addEventListener('pointerleave', (e) => { if (e.pointerType !== 'touch' && this.pointers.size === 0) this.renderer.setHover(null); });
     c.addEventListener('wheel', this.onWheel, { passive: false });
     c.addEventListener('dblclick', this.onDblClick);
     c.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -149,15 +153,36 @@ export class Input {
         if (this.state.tool === 'query' || p.button !== 0) {
           if (this.actions.query(t.x, t.y)) this.hooks.onQueryClick(e.clientX, e.clientY);
         } else if (p.type === 'touch') {
-          this.actions.build(this.state.tool, t.x, t.y);
+          // Two-tap placement: the finger hides the tile, so the first tap only aims the footprint
+          // cursor; tapping the same tile again (or the Build button) commits.
+          const h = this.renderer.hover;
+          if (h && h.x === t.x && h.y === t.y) {
+            this.actions.build(this.state.tool, t.x, t.y);
+            this.renderer.setHover(null);
+            this.hooks.onTouchTarget(null);
+          } else {
+            this.renderer.setHover(t);
+            this.hooks.onTouchTarget(t);
+          }
         }
       }
     }
     if (this.mode === 'paint') this.flushPaint();
+    const wasGesture = this.mode === 'pan'; // (a pinch always ends through 'pan' or returns above)
     this.mode = 'none';
     this.lastPaint = null;
-    if (e.pointerType === 'touch') this.renderer.setHover(null);
+    if (e.pointerType === 'touch' && wasGesture) { this.renderer.setHover(null); this.hooks.onTouchTarget(null); }
   };
+
+  /** Commit the touch-aimed footprint (called by the UI's Build button). */
+  buildAtHover(): void {
+    const h = this.renderer.hover;
+    if (!h || !this.renderer.isTileMode()) return;
+    this.actions.build(this.state.tool, h.x, h.y);
+    this.renderer.setHover(null);
+    this.hooks.onTouchTarget(null);
+  }
+  clearTouchTarget(): void { this.renderer.setHover(null); this.hooks.onTouchTarget(null); }
 
   private onWheel = (e: WheelEvent): void => {
     e.preventDefault();

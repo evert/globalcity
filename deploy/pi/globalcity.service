@@ -1,0 +1,28 @@
+[Unit]
+Description=GlobalCity game server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=globalcity
+Group=globalcity
+WorkingDirectory=/opt/globalcity
+Environment=NODE_ENV=production
+Environment=PORT=8787
+# Loopback only: cloudflared is the only thing that talks to it.
+Environment=HOST=127.0.0.1
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=3
+# SIGTERM makes the server flush dirty chunks and state.json before exiting.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/globalcity/data
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

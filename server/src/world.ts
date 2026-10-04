@@ -25,10 +25,25 @@ export class World {
   readonly pending = new Map<ChunkIndex, number[]>();
   /** A tile gained/lost rail or zone-ness since the sim last rebuilt its rail networks (cleared by the sim). */
   railDirty = true;
+  /** Chunks overlaid from a save at boot (the sim normalises their traffic tiles once). */
+  readonly loaded = new Set<ChunkIndex>();
   private landCache = new Int32Array(CHUNKS_X * CHUNKS_Y).fill(-1);
 
   get(x: number, y: number): number {
     return this.tiles[y * WORLD_W + x];
+  }
+
+  /** Any rail tile within 3 tiles of (x,y)? (A 3x3 zone touching rail has track within 3 of each of its tiles.) */
+  private railAround(x: number, y: number): boolean {
+    for (let dy = -3; dy <= 3; dy++) {
+      const yy = y + dy;
+      if (yy < 0 || yy >= WORLD_H) continue;
+      for (let dx = -3; dx <= 3; dx++) {
+        const xx = x + dx;
+        if (xx >= 0 && xx < WORLD_W && isRail(this.tiles[yy * WORLD_W + xx])) return true;
+      }
+    }
+    return false;
   }
 
   /** Set a tile; marks the chunk dirty and queues the change for broadcast. No-op if unchanged. */
@@ -37,7 +52,9 @@ export class World {
     const old = this.tiles[i];
     if (old === v) return;
     this.tiles[i] = v;
-    if (isRail(old) !== isRail(v) || zoneLike(old) !== zoneLike(v)) this.railDirty = true;
+    // Rail networks only care about rail tiles and the zones that touch them: a zone/house change only
+    // dirties them when there is track next to it (zone growth elsewhere happens every tick).
+    if (isRail(old) !== isRail(v) || (zoneLike(old) !== zoneLike(v) && this.railAround(x, y))) this.railDirty = true;
     const ci = chunkIndex(Math.floor(x / CHUNK), Math.floor(y / CHUNK));
     this.dirty.add(ci);
     let arr = this.pending.get(ci);
@@ -63,6 +80,7 @@ export class World {
       this.tiles.set(data.subarray(dy * CHUNK, dy * CHUNK + CHUNK), base + dy * WORLD_W);
     }
     this.landCache[chunkIndex(cx, cy)] = -1;
+    this.loaded.add(chunkIndex(cx, cy));
   }
 
   /** Number of non-water tiles in a chunk (lazily cached). */

@@ -2,15 +2,24 @@
 
 import crypto from 'node:crypto';
 import {
-  STARTING_FUNDS, EXTRA_CLAIM_COST, CHUNKS_X, CHUNKS_Y, CHUNK, MAX_CHUNKS_PER_PLAYER,
+  STARTING_FUNDS, claimCost, CHUNKS_X, CHUNKS_Y, CHUNK, MAX_CHUNKS_PER_PLAYER,
   chunkKey, parseChunkKey, colorForId,
   type PlayerStats, type PlayerPublic, type ClaimInfo, type GameTime, START_YEAR,
+  MILESTONE_BUILDINGS, milestoneUnlocksFor, nextMilestone,
 } from '@globalcity/shared';
 import { World, validChunk } from './world.ts';
 import type { Places } from './places.ts';
 
 export interface PlayerRecord {
   id: string;
+  /** highest displayed population reached; milestones are earned from it */
+  peakPop?: number;
+  /** milestone buildings the city already had before milestones existed (unlocked without reaching the milestone) */
+  grandfathered?: string[];
+  /** milestone unlocks the mayor has been told about */
+  announced?: string[];
+  /** message shown to the player on their next visit (e.g. why their plot was released), then cleared */
+  notice?: string;
   token: string; // secret, never sent except in 'welcome' to its owner
   name: string;
   /** city name: '' until the first claim, then defaulted from the nearest populated place; kept when claims are released */
@@ -67,7 +76,23 @@ export function emptyStats(funds: number): PlayerStats {
     powerImported: 0, powerExported: 0, powerTradeNet: 0,
     fires: 0, fireStations: 0,
     neighbours: 0, neighbourDemand: { r: 0, c: 0, i: 0 }, railLinks: 0, railDemand: 0,
+    crime: 0, policeStations: 0, specials: { stadium: 0, seaport: 0, airport: 0 }, traffic: 0,
+    peakPop: 0, nextMilestone: MILESTONE_BUILDINGS.cityhall.pop, unlocked: [], built: {}, cityHall: 0,
   };
+}
+
+/** Milestone buildings this player may build: reached by peak population, plus grandfathered. */
+export function unlockedOf(p: PlayerRecord): string[] {
+  return [...new Set([...milestoneUnlocksFor(p.peakPop ?? 0), ...(p.grandfathered ?? [])])];
+}
+
+/** Recompute the milestone part of a player's stats from their record. */
+export function refreshMilestoneStats(p: PlayerRecord): void {
+  const peak = p.peakPop ?? 0;
+  const s = p.stats;
+  s.peakPop = peak;
+  s.nextMilestone = nextMilestone(peak)?.pop ?? null;
+  s.unlocked = unlockedOf(p);
 }
 
 export class Players {
@@ -188,7 +213,7 @@ export class Players {
   }
 
   /**
-   * Claim a chunk. The first claim is free; later ones cost EXTRA_CLAIM_COST and must be
+   * Claim a chunk. The first claim is free; later ones cost claimCost(owned) (escalating) and must be
    * 4-adjacent to a chunk the player already owns.
    */
   claim(p: PlayerRecord, cx: number, cy: number): ClaimResult {
@@ -206,8 +231,8 @@ export class Players {
         return Math.abs(c.cx - cx) + Math.abs(c.cy - cy) === 1;
       });
       if (!adjacent) return { ok: false, msg: 'New chunks must be adjacent to your city' };
-      cost = EXTRA_CLAIM_COST;
-      if (p.funds < cost) return { ok: false, msg: `Not enough funds (claiming costs $${cost})` };
+      cost = claimCost(p.chunks.length);
+      if (p.funds < cost) return { ok: false, msg: `Not enough funds (plot #${p.chunks.length + 1} costs $${cost.toLocaleString('en-US')})` };
     }
     p.funds -= cost;
     if (p.chunks.length === 0 && !p.cityName) p.cityName = this.defaultCityName(cx, cy, p);
@@ -316,6 +341,9 @@ export class Players {
       const legacy = raw as Partial<PlayerRecord>;
       const stats = { ...emptyStats(raw.funds), ...raw.stats };
       stats.neighbourDemand = { ...emptyStats(0).neighbourDemand, ...(raw.stats?.neighbourDemand ?? {}) };
+      stats.specials = { ...emptyStats(0).specials, ...(raw.stats?.specials ?? {}) };
+      stats.unlocked = Array.isArray(raw.stats?.unlocked) ? raw.stats.unlocked : [];
+      stats.built = { ...(raw.stats?.built ?? {}) };
       const p: PlayerRecord = {
         ...raw,
         cityName: typeof legacy.cityName === 'string' ? legacy.cityName : '',

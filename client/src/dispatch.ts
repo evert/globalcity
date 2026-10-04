@@ -6,9 +6,9 @@ import type { Renderer } from './renderer.ts';
 import type { AppState } from './state.ts';
 import type { UI } from './ui.ts';
 
-export interface DispatchTargets { state: AppState; map: TileMap; renderer: Renderer; ui: UI }
+export interface DispatchTargets { state: AppState; map: TileMap; renderer: Renderer; ui: UI; updater?: { onVersion(v: string): void } }
 
-export function handleServerMsg(msg: ServerMsg, { state, map, renderer, ui }: DispatchTargets): void {
+export function handleServerMsg(msg: ServerMsg, { state, map, renderer, ui, updater }: DispatchTargets): void {
   switch (msg.t) {
     case 'welcome': {
       const { token: _token, ...me } = msg.player;
@@ -37,11 +37,15 @@ export function handleServerMsg(msg: ServerMsg, { state, map, renderer, ui }: Di
     case 'toast': ui.toast(msg.msg, msg.kind, undefined, msg.at); break;
     case 'leaderboard': state.setLeaderboard(msg.entries, msg.me); break;
     case 'presence': state.setPresence(Array.isArray(msg.players) ? msg.players : []); break;
+    case 'airports': renderer.flightLayer.set(msg.airports, msg.now); renderer.invalidate(); break;
     case 'unclaim': {
       const prev = state.removeClaim(msg.cx, msg.cy);
       if (prev) { renderer.rebuildChunk(msg.cx, msg.cy); ui.onUnclaim(prev); }
       break;
     }
+    case 'version': updater?.onVersion(msg.version); break;
+    case 'announce': ui.showAnnouncement(msg.id, msg.msg, msg.level, msg.until); break;
+    case 'announceClear': ui.clearAnnouncement(); break;
     case 'pong': break;
     default: console.warn('[main] unknown message', msg);
   }

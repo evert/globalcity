@@ -67,7 +67,8 @@ sudo systemctl restart caddy
 
 echo "==> Daily backup of data/save to /var/backups/globalcity (keeps 14)"
 sudo install -m 755 deploy/oracle/backup.sh /usr/local/bin/globalcity-backup
-( sudo crontab -l 2>/dev/null | grep -v globalcity-backup; echo "17 3 * * * /usr/local/bin/globalcity-backup" ) | sudo crontab -
+# A cron.d file (not root's crontab): idempotent, and no pipeline that can fail under `set -e`.
+echo "17 3 * * * root /usr/local/bin/globalcity-backup" | sudo tee /etc/cron.d/globalcity-backup >/dev/null
 
 sleep 3
 echo "==> Status"

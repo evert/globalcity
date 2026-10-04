@@ -7,6 +7,7 @@
 // silently dropped like any unknown message.
 
 import http from 'node:http';
+import zlib from 'node:zlib';
 import fs from 'node:fs';
 import path from 'node:path';
 import { WebSocketServer, WebSocket, type RawData } from 'ws';
@@ -15,15 +16,19 @@ import {
   PRESENCE_INTERVAL_MS, PRESENCE_MAX,
   encodeChunk, inWorld, clamp,
   type ClientMsg, type ServerMsg, type ToolId, type Presence,
+  overviewClass, OVERVIEW_CHUNK_BYTES, parseChunkKey,
 } from '@globalcity/shared';
 import { World, chunkIndex, chunkCoords, type ChunkIndex } from './world.ts';
-import { Players, sanitizeName, sanitizeCityName, type PlayerRecord } from './players.ts';
+import { Players, sanitizeName, sanitizeCityName, refreshMilestoneStats, type PlayerRecord } from './players.ts';
 import { Sim, type TickResult } from './sim.ts';
 import { applyBuild, queryTile } from './tools.ts';
 import { Leaderboard } from './leaderboard.ts';
 import { log } from './util.ts';
+import { Admin, type Announcement } from './admin.ts';
 
-const BUILD_RATE_PER_SEC = 40;
+// Clients paint at most one build per 25 ms (40/s); allow headroom above that so painting is never throttled.
+const BUILD_RATE_PER_SEC = 60;
+const BUILD_BURST = 90;
 const VIEW_RATE_PER_SEC = 10;
 /** a 'view' older than this no longer appears in presence frames */
 const PRESENCE_STALE_MS = 10_000;
@@ -37,9 +42,13 @@ interface Client {
   subs: Set<ChunkIndex>;
   buildTokens: number;
   lastRefill: number;
+  /** last time a "building too fast" toast was sent (ms) */
+  droppedAt: number;
   viewTokens: number;
   viewRefill: number;
   lastStatsJson: string;
+  /** client build version from hello ('' = an old client without version support) */
+  clientVersion: string;
   /** last camera/cursor report from this socket */
   view: View | null;
   /** last presence frame sent was empty (so an empty one is not repeated) */
@@ -69,12 +78,15 @@ const ROOT_FILES: Record<string, { file: string; type: string }> = {
 export interface NetOptions {
   /** accept dev-only messages such as devIgnite (never in production) */
   devHooks?: boolean;
+  /** save directory (admin token lives there) */
+  dataDir?: string;
 }
 
 export class Net {
   private readonly clients = new Set<Client>();
   private httpServer: http.Server | null = null;
   private presenceTimer: NodeJS.Timeout | null = null;
+  readonly admin: Admin;
   private readonly leaderboard: Leaderboard;
   private readonly devHooks: boolean;
 
@@ -87,8 +99,11 @@ export class Net {
     opts: NetOptions = {},
   ) {
     this.devHooks = opts.devHooks ?? false;
+    this.admin = new Admin(clientDist, opts.dataDir ?? path.join(repoRoot, 'data/save'),
+      (v) => this.broadcast({ t: 'version', version: v }),
+      (a) => { for (const c of this.clients) if (c.player) this.sendAnnouncement(c, a); });
     this.leaderboard = new Leaderboard(players);
-    if (this.devHooks) log('DEV_HOOKS enabled: devIgnite/devFunds accepted');
+    if (this.devHooks) log('DEV_HOOKS enabled: devIgnite/devFunds/devTraffic/devPeak/devPlace accepted');
   }
 
   private get buildCtx(): { world: World; players: Players; railCitiesAt: (x: number, y: number) => number } {
@@ -122,8 +137,39 @@ export class Net {
   // ---------------------------------------------------------------------------
   // HTTP: /health, static client build with index.html fallback
   // ---------------------------------------------------------------------------
+  // Zoomed-out map view: every claimed chunk as one class byte per tile, gzipped, cached for 10 s.
+  private overviewCache: { at: number; gz: Buffer; raw: Buffer } | null = null;
+  private serveOverview(req: http.IncomingMessage, res: http.ServerResponse): void {
+    const now = Date.now();
+    if (!this.overviewCache || now - this.overviewCache.at > 10_000) {
+      const keys = [...this.players.claims.keys()];
+      const raw = Buffer.alloc(2 + keys.length * OVERVIEW_CHUNK_BYTES);
+      raw.writeUInt16LE(keys.length, 0);
+      let o = 2;
+      for (const key of keys) {
+        const { cx, cy } = parseChunkKey(key);
+        raw.writeUInt16LE(cx, o); raw.writeUInt16LE(cy, o + 2);
+        const view = this.world.chunkView(cx, cy);
+        for (let i = 0; i < view.length; i++) raw[o + 4 + i] = overviewClass(view[i]);
+        o += OVERVIEW_CHUNK_BYTES;
+      }
+      this.overviewCache = { at: now, raw, gz: zlib.gzipSync(raw, { level: 6 }) };
+    }
+    const gzip = /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''));
+    const body = gzip ? this.overviewCache.gz : this.overviewCache.raw;
+    res.writeHead(200, {
+      'content-type': 'application/octet-stream',
+      'content-length': body.length,
+      'cache-control': 'no-cache',
+      ...(gzip ? { 'content-encoding': 'gzip' } : {}),
+    });
+    res.end(req.method === 'HEAD' ? undefined : body);
+  }
+
   private handleHttp(req: http.IncomingMessage, res: http.ServerResponse): void {
     const url = new URL(req.url ?? '/', 'http://localhost');
+    if (this.admin.handle(req, res, url.pathname)) return;
+    if (url.pathname === '/overview.bin') { this.serveOverview(req, res); return; }
     if (url.pathname === '/health') {
       const body = JSON.stringify({
         online: this.onlineCount(),
@@ -172,7 +218,7 @@ export class Net {
   // ---------------------------------------------------------------------------
   private onConnection(ws: WebSocket): void {
     const client: Client = {
-      ws, player: null, subs: new Set(), buildTokens: BUILD_RATE_PER_SEC, lastRefill: Date.now(),
+      ws, player: null, subs: new Set(), buildTokens: BUILD_BURST, lastRefill: Date.now(), droppedAt: 0, clientVersion: '',
       viewTokens: VIEW_RATE_PER_SEC, viewRefill: Date.now(), lastStatsJson: '', view: null, presenceEmpty: true,
     };
     this.clients.add(client);
@@ -214,6 +260,28 @@ export class Net {
         this.toast(client, lit ? `devIgnite: fire started at ${m.x},${m.y}` : `devIgnite: ${m.x},${m.y} is not burnable`, 'info', { x: m.x, y: m.y });
         log(`devIgnite ${m.x},${m.y} by ${client.player?.name}: ${lit ? 'ignited' : 'not burnable'}`);
       }
+      return true;
+    }
+    if (m.t === 'devPeak') {
+      // {t:'devPeak', pop}: raise this player's peak population (milestone tests)
+      const p = client.player;
+      if (p && isInt(m.pop) && m.pop >= 0) { p.peakPop = Math.max(p.peakPop ?? 0, m.pop); refreshMilestoneStats(p); this.players.dirty = true; this.sendStatsIfChanged(client); }
+      return true;
+    }
+    if (m.t === 'devPlace') {
+      // {t:'devPlace', tool, x, y}: place a building ignoring milestone rules (simulates pre-milestone cities)
+      const p = client.player;
+      if (p && typeof m.tool === 'string' && m.tool in TOOLS && isInt(m.x) && isInt(m.y)) {
+        const r = applyBuild(this.buildCtx, p, m.tool as ToolId, m.x, m.y, { ignoreMilestones: true });
+        this.toast(client, r.ok ? `devPlace ${m.tool} ok` : `devPlace failed: ${r.msg}`, r.ok ? 'info' : 'error');
+        this.scheduleFlush();
+      }
+      return true;
+    }
+    if (m.t === 'devTraffic') {
+      // {t:'devTraffic', x, y, amount} adds traffic density to a road tile (tests the traffic pipeline
+      // without building a city big enough to jam its roads)
+      if (isInt(m.x) && isInt(m.y) && inWorld(m.x, m.y) && isInt(m.amount) && m.amount > 0 && m.amount <= 255) this.sim.devTraffic(m.x, m.y, m.amount);
       return true;
     }
     if (m.t === 'devFunds') {
@@ -331,6 +399,8 @@ export class Net {
     let p = this.players.resume(msg.id, msg.token);
     if (!p) p = this.players.create(sanitizeName(msg.name));
     client.player = p;
+    client.clientVersion = msg.v ?? '';
+    if (p.chunks.length > 0) this.sim.initMilestones(p); // a returning mayor of a frozen city sees correct unlocks at once
     client.lastStatsJson = JSON.stringify(p.stats);
     this.send(client, {
       t: 'welcome',
@@ -342,6 +412,11 @@ export class Net {
       time: { ...this.players.time },
     });
     this.send(client, this.leaderboard.messageFor(p));
+    this.send(client, this.airportsMsg());
+    if (this.admin.version) this.send(client, { t: 'version', version: this.admin.version });
+    if (p.notice) { this.toast(client, p.notice, 'info'); delete p.notice; this.players.dirty = true; }
+    const ann = this.admin.active();
+    if (ann) this.sendAnnouncement(client, ann);
     log(`${p.name} (${p.id.slice(0, 8)}) connected; online=${this.onlineCount()}`);
   }
 
@@ -371,19 +446,36 @@ export class Net {
   private onBuild(client: Client, p: PlayerRecord, tool: ToolId, x: number, y: number): void {
     // Token-bucket rate limit per socket.
     const now = Date.now();
-    client.buildTokens = Math.min(BUILD_RATE_PER_SEC, client.buildTokens + ((now - client.lastRefill) / 1000) * BUILD_RATE_PER_SEC);
+    client.buildTokens = Math.min(BUILD_BURST, client.buildTokens + ((now - client.lastRefill) / 1000) * BUILD_RATE_PER_SEC);
     client.lastRefill = now;
-    if (client.buildTokens < 1) return;
+    if (client.buildTokens < 1) {
+      // Say so (at most every 2 s) instead of silently dropping the build.
+      if (now - client.droppedAt > 2000) { client.droppedAt = now; this.toast(client, 'Building too fast; some tiles were skipped', 'info'); }
+      return;
+    }
     client.buildTokens -= 1;
 
     const r = applyBuild(this.buildCtx, p, tool, x, y);
     if (!r.ok) { this.toast(client, r.msg, r.kind); return; }
+    if (r.msg) this.toast(client, r.msg, 'info', { x, y });
     this.sendStatsIfChanged(client);
+    this.scheduleFlush();
   }
 
   // ---------------------------------------------------------------------------
   // Periodic work driven by index.ts
   // ---------------------------------------------------------------------------
+
+  /**
+   * Flush tile changes as soon as the current batch of incoming messages has been handled, so a build
+   * shows up within one round-trip instead of waiting for the next periodic flush (TILE_FLUSH_MS).
+   */
+  private flushScheduled = false;
+  private scheduleFlush(): void {
+    if (this.flushScheduled) return;
+    this.flushScheduled = true;
+    setImmediate(() => { this.flushScheduled = false; this.flushTiles(); });
+  }
 
   /** Send pending tile updates to each socket, filtered to its subscribed chunks. */
   flushTiles(): void {
@@ -401,8 +493,20 @@ export class Net {
     pending.clear();
   }
 
+  /** New clients get a banner; old clients (no version in hello) only understand toasts. */
+  private sendAnnouncement(c: Client, a: Announcement | null): void {
+    if (c.clientVersion) { this.send(c, a ? { t: 'announce', ...a } : { t: 'announceClear' }); return; }
+    if (a) this.toast(c, `📣 ${a.msg}`, a.level === 'warn' ? 'error' : 'info');
+  }
+
+  /** last airports list sent to clients (JSON), so we only broadcast when it changes */
+  private airportsJson = '[]';
+  private airportsMsg(): ServerMsg { return { t: 'airports', airports: this.sim.airports, now: Date.now() }; }
+
   afterTick(result: TickResult): void {
     this.broadcast({ t: 'time', time: result.time, online: this.onlineCount() });
+    const aj = JSON.stringify(this.sim.airports);
+    if (aj !== this.airportsJson) { this.airportsJson = aj; this.broadcast(this.airportsMsg()); }
     for (const u of result.unclaimed) this.broadcast({ t: 'unclaim', cx: u.cx, cy: u.cy });
     if (result.claimsChanged.length > 0) this.broadcast({ t: 'claims', claims: result.claimsChanged });
     for (const c of this.clients) this.sendStatsIfChanged(c);
@@ -436,6 +540,7 @@ function parseClientMsg(raw: unknown): ClientMsg | null {
       if (typeof m.id === 'string') out.id = m.id;
       if (typeof m.token === 'string') out.token = m.token;
       if (typeof m.name === 'string') out.name = m.name;
+      if (typeof m.v === 'string') out.v = m.v.slice(0, 64);
       return out;
     }
     case 'sub': {

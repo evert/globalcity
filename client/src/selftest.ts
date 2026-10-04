@@ -6,8 +6,11 @@
 import type { ClaimInfo, LeaderboardEntry, PlayerStats, Presence, ServerMsg } from '@globalcity/shared';
 import {
   ABANDON_DECAY_DAYS, ABANDON_FREE_DAYS, CHUNK, LOMASK, PWRBIT, ZONEBIT, RESBASE, FREEZ, ROADS, RIVER, WOODS, DIRT, CONDBIT, BULLBIT, FIRE, BURNBIT, TILE_PX,
-  MAX_CHUNKS_PER_PLAYER,
+  MAX_CHUNKS_PER_PLAYER, ANIMBIT, LASTFIRE, COALSMOKE1, LTRFBASE, FOUNTAIN, LHRAIL, LVRAIL, LVRAIL2, LVRAIL3, LVRAIL4, LVRAIL5, LVRAIL8, LVRAIL10,
+  COALBASE, PORTBASE, AIRPORTBASE, POWERPLANT, PORT, AIRPORT, RADAR0, COAL_SMOKE, STADIUM_GAME,
+  HTRFBASE, NUCLEARBASE, NUKE_SWIRL, HROADPOWER, LHPOWER, FULLSTADIUMBASE, FULLSTADIUM, NUCLEAR,
 } from '@globalcity/shared';
+import { ANI_TILE } from './anim.ts';
 import { Actions } from './actions.ts';
 import { proceduralMinimap, proceduralSheet } from './assets.ts';
 import { handleServerMsg, type DispatchTargets } from './dispatch.ts';
@@ -16,7 +19,8 @@ import { Net } from './net.ts';
 import { ViewReporter, VIEW_INTERVAL_MS } from './presence.ts';
 import { Renderer } from './renderer.ts';
 import { AppState, claimLabel } from './state.ts';
-import { NEIGHBOUR_HELP, UI } from './ui.ts';
+import { NEIGHBOUR_HELP, POLICE_HELP, UI } from './ui.ts';
+import { SpriteEngine, type SpriteView } from './sprites.ts';
 
 function assert(cond: unknown, msg: string): void { if (!cond) throw new Error(`selftest: ${msg}`); }
 
@@ -26,6 +30,8 @@ export function baseStats(over: Partial<PlayerStats> = {}): PlayerStats {
     demand: { r: 0.5, c: -0.2, i: 0.1 }, chunks: 1, lastIncome: 0,
     powerImported: 0, powerExported: 0, powerTradeNet: 0, fires: 0, fireStations: 0,
     neighbours: 0, neighbourDemand: { r: 0, c: 0, i: 0 }, railLinks: 0, railDemand: 0,
+    crime: 0, policeStations: 0, specials: { stadium: 0, seaport: 0, airport: 0 }, traffic: 0,
+    peakPop: 0, nextMilestone: 2000, unlocked: [], built: {}, cityHall: 0,
     ...over,
   };
 }
@@ -126,6 +132,68 @@ export function demoSocial(t: DispatchTargets, overview = false): void {
   setInterval(() => feed({ t: 'presence', players: DEMO_PRESENCE }), 500);
 }
 
+
+/** /#demo-ambient: one synthetic plot with every animated tile kind and all sprite sources (coal plant + smoke,
+ *  traffic road, rail loop, seaport on water, airport, stadium game, nuclear swirl, fountain, fire). */
+export function demoAmbient(t: DispatchTargets): void {
+  const feed = (m: ServerMsg) => handleServerMsg(m, t);
+  const CX = 30, CY = 22;
+  for (let cy = CY - 1; cy <= CY + 1; cy++) for (let cx = CX - 1; cx <= CX + 1; cx++) t.map.setChunk(cx, cy, syntheticChunk(cx, cy));
+  const c = new Uint16Array(CHUNK * CHUNK);
+  const set = (x: number, y: number, v: number) => { c[y * CHUNK + x] = v; };
+  for (let y = 0; y < CHUNK; y++) for (let x = 0; x < CHUNK; x++) set(x, y, (x * 7 + y * 3) % 11 === 0 ? WOODS | BULLBIT : DIRT);
+  // harbour water: top-right corner
+  for (let y = 0; y < 14; y++) for (let x = 40; x < CHUNK; x++) set(x, y, RIVER);
+  for (let y = 14; y < CHUNK; y++) for (let x = 58; x < CHUNK; x++) set(x, y, RIVER);
+  const building = (base: number, size: number, x0: number, y0: number, centreId: number) => {
+    for (let dy = 0; dy < size; dy++) for (let dx = 0; dx < size; dx++) {
+      const id = base + dy * size + dx;
+      set(x0 + dx, y0 + dy, id | BULLBIT | (id === centreId ? ZONEBIT : 0) | PWRBIT | CONDBIT);
+    }
+  };
+  // coal plant (centre at +1,+1) with its four smoke tiles
+  building(COALBASE, 4, 10, 8, POWERPLANT);
+  for (const sm of COAL_SMOKE) set(11 + sm.dx, 9 + sm.dy, sm.tile | ANIMBIT | PWRBIT | CONDBIT | BULLBIT);
+  // seaport on the shore + airport with its radar
+  building(PORTBASE, 4, 36, 10, PORT);
+  building(AIRPORTBASE, 6, 4, 44, AIRPORT);
+  set(5 + 1, 45 - 1, RADAR0 | ANIMBIT | PWRBIT | CONDBIT | BULLBIT);
+  // stadium with a game on, nuclear plant with its swirl
+  building(FULLSTADIUMBASE, 4, 44, 44, FULLSTADIUM);
+  for (const g of STADIUM_GAME) set(45 + g.dx, 45 + g.dy, g.tile | ANIMBIT | PWRBIT | CONDBIT | BULLBIT);
+  building(NUCLEARBASE, 4, 50, 30, NUCLEAR);
+  set(51 + NUKE_SWIRL.dx, 31 + NUKE_SWIRL.dy, NUKE_SWIRL.tile | ANIMBIT | PWRBIT | CONDBIT | BULLBIT);
+  // a road with light traffic, a heavy stretch, an intersection, a wire crossing
+  for (let x = 2; x < 56; x++) set(x, 20, (x < 20 ? LTRFBASE + 2 : x < 40 ? HTRFBASE + 2 : ROADS) | ANIMBIT | BULLBIT | CONDBIT);
+  for (let y = 14; y < 42; y++) set(30, y, (y === 20 ? LTRFBASE + 12 : LTRFBASE + 3) | ANIMBIT | BULLBIT | CONDBIT);
+  set(24, 20, HROADPOWER | BULLBIT | CONDBIT);
+  for (let y = 15; y < 20; y++) set(24, y, LHPOWER | BULLBIT | CONDBIT);
+  // rail loop + a branch, fountains, a small fire
+  for (let x = 6; x <= 26; x++) { set(x, 26, (x === 6 ? LVRAIL3 : x === 26 ? LVRAIL4 : LHRAIL) | BULLBIT); set(x, 38, (x === 6 ? LVRAIL2 : x === 26 ? LVRAIL5 : LHRAIL) | BULLBIT); }
+  for (let y = 27; y <= 37; y++) { set(6, y, LVRAIL | BULLBIT); set(26, y, (y === 32 ? LVRAIL8 : LVRAIL) | BULLBIT); }
+  for (let x = 27; x <= 40; x++) set(x, 32, LHRAIL | BULLBIT);
+  set(30, 32, LVRAIL10 | BULLBIT);
+  for (let i = 0; i < 4; i++) set(34 + i, 24, (FOUNTAIN + i) | ANIMBIT | BULLBIT);
+  for (let i = 0; i < 3; i++) set(40 + i, 28, (FIRE + i * 3) | ANIMBIT | BURNBIT);
+  // some houses so it looks lived in
+  for (let dy = 0; dy < 3; dy++) for (let dx = 0; dx < 3; dx++) { const id = RESBASE + dy * 3 + dx; set(36 + dx, 15 + dy, id | BULLBIT | PWRBIT | (id === FREEZ ? ZONEBIT : 0)); }
+  t.map.setChunk(CX, CY, c);
+  feed({
+    t: 'welcome',
+    player: { id: 'me', name: 'Tester', cityName: 'Port Ambient', color: '#58c4ff', token: 'x' },
+    stats: baseStats({ funds: 48_200, population: 12_400, resPop: 8_000, comPop: 2_400, indPop: 2_000, powerSupply: 120, powerDemand: 40,
+      demand: { r: 0.6, c: 0.5, i: 0.3 }, chunks: 1, traffic: 0.3, crime: 0.6, policeStations: 0, specials: { stadium: 1, seaport: 1, airport: 1 } }),
+    world: { w: 8192, h: 4096, chunk: 64 },
+    claims: [claim(CX, CY, 'me', 'Tester', '#58c4ff', 12_400, { cityName: 'Port Ambient' })],
+    online: 3,
+    time: { year: 1952, month: 7 },
+  });
+  t.renderer.setCamera(CX * CHUNK + 32, CY * CHUNK + 30, 1);
+  // headless screenshots (virtual time) do not pump requestAnimationFrame: tick the renderer on a timer so the
+  // sprites and tile animations advance in the demo (a real browser renders through rAF as usual)
+  setInterval(() => t.renderer.render(), 50);
+}
+
 export async function runSelfTest(): Promise<void> {
   const sheet = proceduralSheet();
   const minimap = proceduralMinimap();
@@ -167,30 +235,112 @@ export async function runSelfTest(): Promise<void> {
   r.render();
   assert(map.dirty.size === 0, 'dirty consumed');
 
-  // ---- fire animation: nothing burning -> no work; burning tiles -> frames advance ----
-  assert(!r.fireVisible, 'no fire visible initially');
-  const step0 = r.fireStep;
-  r.stepFire();
-  assert(r.fireStep === step0, 'stepFire is a no-op without visible fire');
-  map.applyTiles([10, 10, FIRE | BURNBIT, 11, 10, (FIRE + 3) | BURNBIT, 12, 10, (FIRE + 7) | BURNBIT]);
+  // ---- tile animation: nothing animated -> no work; fire tiles -> frames advance through ANI_TILE ----
+  assert(!r.animVisible && !r.animTimerPending, 'no animation visible / no timer initially');
+  const step0 = r.animStep;
+  r.stepAnim();
+  assert(r.animStep === step0, 'stepAnim is a no-op without visible animation');
+  map.applyTiles([10, 10, FIRE | BURNBIT, 11, 10, (FIRE + 3) | BURNBIT, 12, 10, (FIRE + 7) | BURNBIT]); // old server: no ANIMBIT
   r.render();
-  assert(r.fireVisible, 'fire visible after placing fire tiles');
+  assert(r.animVisible, 'fire visible after placing fire tiles (animated id without ANIMBIT still animates)');
+  assert(r.animCount(0, 0) === 3, `3 animated tiles tracked, got ${r.animCount(0, 0)}`);
   const cc = r.chunkCanvasFor(0, 0);
   assert(cc, 'chunk canvas 0,0 exists');
   const cg = cc!.getContext('2d')!;
   const firePx = (x: number, y: number) => [...cg.getImageData(x * TILE_PX + 5, y * TILE_PX + 5, 1, 1).data].join(',');
   const before = [firePx(10, 10), firePx(11, 10), firePx(12, 10)];
-  const frameBefore = r.frameFor(map.get(12, 10)!);
-  assert(frameBefore === FIRE + 7, `frame for FIRE+7 at step 0 is LASTFIRE, got ${frameBefore}`);
-  r.stepFire();
-  assert(r.fireStep === (step0 + 1) % 8, 'fireStep advanced');
-  assert(r.frameFor(map.get(12, 10)!) === FIRE, 'frame wraps from LASTFIRE to FIRE');
+  assert(r.frameAt(12, 10) === LASTFIRE, `frame for FIRE+7 before stepping is LASTFIRE, got ${r.frameAt(12, 10)}`);
+  r.stepAnim();
+  assert(r.animStep === step0 + 1, 'animStep advanced');
+  assert(r.frameAt(12, 10) === FIRE && r.frameAt(10, 10) === FIRE + 1 && r.frameAt(11, 10) === FIRE + 4, 'fire frames advance 56->57, 59->60 and wrap 63->56');
   const after = [firePx(10, 10), firePx(11, 10), firePx(12, 10)];
   assert(before.every((p, i) => p !== after[i]), `fire tiles redrawn with a new frame (${before.join(' | ')} -> ${after.join(' | ')})`);
-  // extinguish: tile leaves the fire set
+  // the whole fire cycle is 56->57->...->63->56
+  for (let i = 0, id = FIRE; i < 8; i++, id = ANI_TILE[id]) assert(ANI_TILE[id] === (id === LASTFIRE ? FIRE : id + 1), `fire cycle at ${id}`);
+  // extinguish: tile leaves the animated set
   map.applyTiles([10, 10, DIRT, 11, 10, DIRT, 12, 10, DIRT]);
   r.render();
-  assert(!r.fireVisible, 'fire gone after tiles change back');
+  assert(!r.animVisible && r.animCount(0, 0) === 0, 'animation gone after tiles change back');
+
+  // ---- general animation: coal smoke, light traffic and a fountain flagged with ANIMBIT ----
+  const smoke = COALSMOKE1 | ANIMBIT | PWRBIT, road = LTRFBASE | ANIMBIT | BULLBIT, fountain = FOUNTAIN | ANIMBIT;
+  map.applyTiles([5, 20, smoke, 6, 20, road, 7, 20, fountain, 8, 20, ROADS | BULLBIT]);
+  r.render();
+  assert(r.animCount(0, 0) === 3, `3 ANIMBIT tiles tracked, got ${r.animCount(0, 0)}`);
+  const stillBefore = firePx(8, 20);
+  const expect2 = (id: number) => ANI_TILE[ANI_TILE[id]];
+  r.stepAnim(); r.stepAnim();
+  assert(r.frameAt(5, 20) === expect2(COALSMOKE1) && r.frameAt(5, 20) === COALSMOKE1 + 2, `coal smoke after 2 steps = ANI_TILE[ANI_TILE[916]] (${r.frameAt(5, 20)})`);
+  assert(r.frameAt(6, 20) === expect2(LTRFBASE) && r.frameAt(6, 20) === 112, `light traffic after 2 steps = ANI_TILE[ANI_TILE[80]] = 112 (80->128->112), got ${r.frameAt(6, 20)}`);
+  assert(r.frameAt(7, 20) === expect2(FOUNTAIN) && r.frameAt(7, 20) === FOUNTAIN + 2, `fountain after 2 steps (${r.frameAt(7, 20)})`);
+  assert(r.frameAt(8, 20) === ROADS && firePx(8, 20) === stillBefore, 'non-animated road untouched');
+  // tiles update: the stored value changes -> frame resets to the new id and membership is re-evaluated
+  map.applyTiles([5, 20, DIRT, 6, 20, (HTRFBASE + 1) | ANIMBIT | BULLBIT]);
+  r.render();
+  assert(r.animCount(0, 0) === 2 && r.frameAt(6, 20) === HTRFBASE + 1 && r.frameAt(5, 20) === DIRT, 'changed tiles reset their frame / leave the set');
+  r.stepAnim();
+  assert(r.frameAt(6, 20) === ANI_TILE[HTRFBASE + 1] && r.frameAt(6, 20) === 193, `heavy traffic steps 145->193, got ${r.frameAt(6, 20)}`);
+  map.applyTiles([6, 20, DIRT, 7, 20, DIRT]);
+  r.render();
+  assert(!r.animVisible && !r.animTimerPending, 'no animation / no timer once nothing animated is visible');
+  // an animated chunk that scrolls off screen stops animating (no timer scheduled by the next render)
+  map.applyTiles([7, 20, fountain]);
+  r.setCamera(CHUNK * 20, CHUNK * 20, 1); // far away, nothing loaded there
+  r.render();
+  assert(!r.animVisible, 'off-screen animated tiles are not stepped');
+  r.setCamera(CHUNK, CHUNK, 1);
+  r.render();
+  assert(r.animVisible, 'back on screen: animated again');
+  map.applyTiles([7, 20, DIRT]);
+  r.render();
+
+  // ---- sprite engine: a train on a synthetic rail loop moves between two frames ----
+  {
+    const eng = new SpriteEngine(map, { image: null, defs: {} }, () => 0.5);
+    // rail loop in chunk 0,0 inside the viewport (tiles 39..89 x 45..83): rectangle x 50..57, y 50..55 (corner pieces + straights)
+    const LX0 = 50, LX1 = 57, LY0 = 50, LY1 = 55;
+    const loop: number[] = [];
+    for (let x = LX0; x <= LX1; x++) { loop.push(x, LY0, (x === LX0 ? LVRAIL3 : x === LX1 ? LVRAIL4 : LHRAIL) | BULLBIT, x, LY1, (x === LX0 ? LVRAIL2 : x === LX1 ? LVRAIL5 : LHRAIL) | BULLBIT); }
+    for (let y = LY0 + 1; y < LY1; y++) loop.push(LX0, y, LVRAIL | BULLBIT, LX1, y, LVRAIL | BULLBIT);
+    map.applyTiles(loop);
+    r.render();
+    const view = (): SpriteView => ({ ...r.viewRect(), ...r.visibleChunkRect(0) });
+    eng.rescan(view(), 0);
+    assert(eng.scan.rails.length === 24 * 2, `rail scan found the loop (${eng.scan.rails.length / 2} tiles)`);
+    const trains = eng.sprites.filter((p) => p.kind === 'train');
+    assert(trains.length === 1, `one train on a small loop, got ${trains.length}`);
+    assert(eng.sprites.every((p) => p.kind === 'train'), 'no ship / plane without seaport / airport');
+    const t = trains[0];
+    const x0 = t.x, y0 = t.y;
+    eng.frame(1000, view()); // first frame: dt 0
+    eng.frame(1100, view()); // 100 ms at 4 tiles/s -> 0.4 tiles
+    const moved = Math.hypot(t.x - x0, t.y - y0); // 0.4 tiles of track, a bit less when it rounded a corner
+    assert(moved > 0.28 && moved < 0.401, `train moved 0.4 tiles between two frames 100 ms apart (${x0},${y0} -> ${t.x},${t.y})`);
+    eng.frame(2100, view()); // a long gap (tab was hidden) is clamped so nothing teleports
+    assert(Math.hypot(t.x - x0, t.y - y0) < 0.81, 'frame delta clamped after a pause');
+    assert(t.frame === (t.dx === 0 ? 0 : 1), 'train uses the vertical frame for N/S and horizontal for E/W');
+    // it keeps circling the loop and never leaves the rail
+    for (let i = 0; i < 200; i++) {
+      eng.step(0.05, view());
+      const tx = Math.floor(t.x), ty = Math.floor(t.y);
+      assert(tx >= LX0 && tx <= LX1 && ty >= LY0 && ty <= LY1 && (tx === LX0 || tx === LX1 || ty === LY0 || ty === LY1), `train stays on the loop (${t.x},${t.y})`);
+    }
+    assert(eng.sprites.includes(t), 'train still alive after circling');
+    // remove the rail: the train despawns on the next scan
+    const clear: number[] = [];
+    for (let i = 0; i < loop.length; i += 3) clear.push(loop[i], loop[i + 1], DIRT);
+    map.applyTiles(clear);
+    eng.rescan(view(), 5000);
+    assert(eng.sprites.length === 0 && !eng.active, 'train despawned when the rail is gone; engine inactive');
+    // draws without throwing in fallback mode and through the renderer hook
+    r.sprites = eng;
+    map.applyTiles(loop);
+    r.render();
+    assert(eng.sprites.length === 1, 'renderer hook scans + spawns');
+    map.applyTiles(clear);
+    r.render();
+    r.sprites = null;
+  }
 
   // ---- flash marker ----
   r.flashTile(10, 10, 1000);
@@ -356,6 +506,25 @@ export async function runSelfTest(): Promise<void> {
   net.emit('msg', { t: 'stats', stats: { ...baseStats(), neighbours: undefined, neighbourDemand: undefined, railLinks: undefined, railDemand: undefined } as unknown as PlayerStats });
   assert(nb.classList.contains('hidden'), 'old server stats without neighbour fields tolerated');
 
+  // ---- traffic / police / crime / special-building stats ----
+  net.emit('msg', { t: 'stats', stats: baseStats({ traffic: 0.3, crime: 0.6, policeStations: 0, fireStations: 1 }) });
+  const trafficEl = q<HTMLElement>('#traffic')!, policeEl = q<HTMLElement>('#police')!, crimeEl = q<HTMLElement>('#crime')!, specialsEl = q<HTMLElement>('#specials')!;
+  assert(!trafficEl.classList.contains('hidden') && trafficEl.textContent === '🚗 moderate traffic', `traffic line, got "${trafficEl.textContent}"`);
+  assert(q<HTMLElement>('#traffic .fill')!.style.width === '30%', 'traffic meter width');
+  assert(policeEl.textContent === '👮 0 police' && policeEl.title === POLICE_HELP, `police count + tooltip, got "${policeEl.textContent}"`);
+  assert(!crimeEl.classList.contains('hidden') && crimeEl.textContent === '⚠ crime' && crimeEl.classList.contains('bad'), 'crime warning shown in red');
+  assert(policeEl.parentElement === crimeEl.parentElement, 'crime warning on the police line');
+  assert(specialsEl.classList.contains('hidden'), 'no special chips without specials');
+  net.emit('msg', { t: 'stats', stats: baseStats({ traffic: 0.1, crime: 0.6, policeStations: 2, specials: { stadium: 1, seaport: 0, airport: 1 } }) });
+  assert(trafficEl.textContent === '🚗 light traffic' && policeEl.textContent === '👮 2 police' && crimeEl.classList.contains('hidden'), 'light traffic, police present hides the crime warning');
+  assert(!specialsEl.classList.contains('hidden') && qa('#specials .chip').map((c) => c.textContent).join('|') === '🏟 stadium|✈ airport', `special chips, got "${specialsEl.textContent}"`);
+  net.emit('msg', { t: 'stats', stats: baseStats({ traffic: 0.7 }) });
+  assert(trafficEl.textContent === '🚗 heavy traffic', 'heavy traffic');
+  net.emit('msg', { t: 'stats', stats: baseStats() });
+  assert(trafficEl.classList.contains('hidden') && specialsEl.classList.contains('hidden') && policeEl.textContent === '👮 0 police', 'traffic + chips hidden at zero');
+  net.emit('msg', { t: 'stats', stats: { ...baseStats(), crime: undefined, policeStations: undefined, specials: undefined, traffic: undefined } as unknown as PlayerStats });
+  assert(trafficEl.classList.contains('hidden') && crimeEl.classList.contains('hidden') && policeEl.textContent === '👮 0 police', 'old server stats without the new fields tolerated');
+
   // ---- presence markers ----
   r.setCamera(CHUNK, CHUNK, 1); // view covers roughly tiles 39..89 x 45..83
   const t0 = performance.now();
@@ -389,7 +558,7 @@ export async function runSelfTest(): Promise<void> {
   // overview: viewport rectangles with chips
   r.showWorld();
   frame([{ id: 'a', name: 'Lena', cityName: 'Eindhoven', color: '#4dd0e1', x: 2000, y: 1500, zoom: 1, cx: 2000, cy: 1500 }], t0 + 5000);
-  assert(r.drawnPresence.length === 1 && r.drawnPresence[0].kind === 'rect' && r.drawnPresence[0].label === 'Lena · Eindhoven', 'overview draws a viewport rect with chip');
+  assert(r.drawnPresence.length === 1 && r.drawnPresence[0].kind === 'dot' && r.drawnPresence[0].label === 'Lena · Eindhoven', 'overview draws a dot with chip');
 
   // ---- 'view' throttle: rapid camera moves send at most 4/s ----
   let clock = 0;

@@ -44,7 +44,7 @@ const chunksLoaded = timed('Overlay saved chunks', () => persist.loadChunks());
 log(`State: ${hadState ? `${players.players.size} players, ${players.claims.size} claims` : 'fresh'}; ${chunksLoaded} saved chunk(s); clock ${players.time.year}-${String(players.time.month + 1).padStart(2, '0')}`);
 
 const sim = new Sim(world, players, { randomFires: !devHooks });
-const net = new Net(world, players, sim, clientDist, root, { devHooks });
+const net = new Net(world, players, sim, clientDist, root, { devHooks, dataDir: saveDir });
 try {
   await net.listen(port, host);
 } catch (e) {

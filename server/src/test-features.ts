@@ -197,7 +197,8 @@ async function main(): Promise<void> {
   await sleep(ticks(3));
   const as1 = A.stats!;
   console.log(`A funds ${fundsBefore} -> ${as1.funds} after 3 ticks (trade ${as1.powerTradeNet}/tick)`);
-  if (as1.funds <= fundsBefore) fail('A funds did not rise from trade');
+  // Upkeep (plant + roads) can outweigh a tiny trade, so only the trade itself is asserted:
+  if (as1.powerTradeNet <= 0) fail('A trade income stopped');
   await waitFor(() => B.hasToast(/^info: Buying \d+ units of power from Exporter-A/), 'B buying toast', ticks(2));
   await waitFor(() => A.hasToast(/^info: Selling \d+ units of power to Importer-B/), 'A selling toast', ticks(2));
   const buyToasts = B.toasts.filter((t) => t.msg.startsWith('Buying')).length;

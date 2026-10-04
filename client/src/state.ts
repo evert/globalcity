@@ -102,6 +102,18 @@ export class AppState extends Emitter<StateEvents> {
     this.syncCityFromClaims();
     this.emit('claims', undefined);
   }
+  /**
+   * World population: the sum of every city's population. Each claim carries its whole city's
+   * population, so count one value per owner. Returns the total and the number of inhabited cities.
+   */
+  worldPopulation(): { total: number; cities: number } {
+    const perCity = new Map<string, number>();
+    for (const c of this.claims.values()) perCity.set(c.ownerId, c.pop ?? 0);
+    let total = 0, cities = 0;
+    for (const pop of perCity.values()) if (pop > 0) { total += pop; cities++; }
+    return { total, cities };
+  }
+
   /** Periodic 'claims' message: update pops/names of listed claims (and add unknown ones). */
   mergeClaims(list: ClaimInfo[]): void {
     for (const c of list) this.claims.set(chunkKey(c.cx, c.cy), c);

@@ -1,0 +1,56 @@
+{
+  "amusement_park": {
+    "name": "Amusement Park",
+    "tiles": 4,
+    "zone": "park",
+    "idea": "Tourism: +commercial demand and land value within 12 tiles; draws visitors from neighbouring cities, but noisy (-residential desirability adjacent)."
+  },
+  "zoo": {
+    "name": "Zoo",
+    "tiles": 4,
+    "zone": "park",
+    "idea": "Attraction: +residential land value within 10 tiles and +tourism; needs road access and draws traffic on weekends."
+  },
+  "botanical_garden": {
+    "name": "Botanical Garden",
+    "tiles": 3,
+    "zone": "park",
+    "idea": "Education + calm: +residential land value within 8 tiles and a small pollution sink (-pollution in radius 4)."
+  },
+  "golf_course": {
+    "name": "Golf Course",
+    "tiles": 4,
+    "zone": "park",
+    "idea": "Prestige: large +land value for residential within 10 tiles (attracts high-wealth), but costs big upkeep and lots of land."
+  },
+  "marina": {
+    "name": "Marina",
+    "tiles": 3,
+    "zone": "com",
+    "idea": "Waterfront tourism: +commercial demand and +land value for nearby waterfront tiles; must be placed on a coastline."
+  },
+  "lighthouse": {
+    "name": "Lighthouse",
+    "tiles": 3,
+    "zone": "civic",
+    "idea": "Coastal landmark: reduces shipwreck disasters and boosts seaport/marina trade within 20 tiles; small tourism bonus."
+  },
+  "train_station": {
+    "name": "Train Station",
+    "tiles": 3,
+    "zone": "civic",
+    "idea": "Transit hub: connects rail lines, -traffic on roads within 12 tiles and +commercial demand; passenger count scales with connected population."
+  },
+  "bus_depot": {
+    "name": "Bus Depot",
+    "tiles": 3,
+    "zone": "civic",
+    "idea": "Public transit: buses serve zones within 15 tiles, -car traffic and -pollution; requires road connection, upkeep scales with fleet."
+  },
+  "farm": {
+    "name": "Farm",
+    "tiles": 3,
+    "zone": "res",
+    "idea": "Agriculture: produces food (+industrial demand for food processing) and must sit away from pollution; lowers land value of adjacent residential slightly but grows with nearby population."
+  }
+}

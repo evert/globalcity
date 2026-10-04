@@ -1,0 +1,56 @@
+{
+  "city_hall": {
+    "name": "City Hall",
+    "tiles": 4,
+    "zone": "civic",
+    "idea": "Seat of government: +10% tax collection and lowers crime/unrest citywide, boosts nearby commercial land value."
+  },
+  "university": {
+    "name": "University",
+    "tiles": 4,
+    "zone": "civic",
+    "idea": "Raises education level of residents within 15 tiles and attracts high-tech industry; needs a minimum city population of 20k."
+  },
+  "library": {
+    "name": "Public Library",
+    "tiles": 3,
+    "zone": "civic",
+    "idea": "Small education boost (+literacy) and land-value bonus for residential within 8 tiles; cheap upkeep."
+  },
+  "museum": {
+    "name": "Art Museum",
+    "tiles": 3,
+    "zone": "civic",
+    "idea": "Tourism magnet: boosts commercial demand and land value within 12 tiles; +culture."
+  },
+  "school": {
+    "name": "Elementary School",
+    "tiles": 3,
+    "zone": "civic",
+    "idea": "Raises education of children within 8 tiles (feeds the education quotient); residents nearby pay more rent."
+  },
+  "cathedral": {
+    "name": "Cathedral",
+    "tiles": 3,
+    "zone": "civic",
+    "idea": "Large landmark: reduces crime and raises residential desirability within 12 tiles; draws tourists (+commercial demand)."
+  },
+  "observatory": {
+    "name": "Observatory",
+    "tiles": 3,
+    "zone": "civic",
+    "idea": "Science landmark: +education and +tech-industry demand; must be placed away from heavy pollution and bright high-density zones."
+  },
+  "tv_tower": {
+    "name": "TV Tower",
+    "tiles": 3,
+    "zone": "civic",
+    "idea": "Broadcast mast: raises commercial demand and city happiness (news/entertainment); slight land-value penalty right next to it."
+  },
+  "prison": {
+    "name": "Prison",
+    "tiles": 3,
+    "zone": "civic",
+    "idea": "Holds criminals: cuts citywide crime and boosts police effectiveness, but lowers land value and residential demand within 6 tiles."
+  }
+}

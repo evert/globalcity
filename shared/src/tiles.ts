@@ -175,7 +175,11 @@ export const VBRDG0 = 948;
 export const VBRDG3 = 951;
 export const NUKESWIRL1 = 952;
 export const NUKESWIRL4 = 955;
-export const TILE_COUNT = 960;
+// GlobalCity additions after the original 960 Micropolis tiles (one 16-tile row each in tiles.png).
+export const CITYHALLBASE = 960; // 4x4 city hall (art: art/prototype/civic/city_hall.py)
+export const CITYHALL = 965; // centre (hot-spot at 1,1)
+export const LASTCITYHALL = 975;
+export const TILE_COUNT = 976;
 
 // ---- connection tables (index = N:1 | E:2 | S:4 | W:8 of same-kind neighbours) ----
 export const ROAD_TABLE: readonly number[] = [
@@ -222,9 +226,16 @@ export const isZoneCenter = (v: number): boolean => (v & ZONEBIT) !== 0;
 export const isPowered = (v: number): boolean => (v & PWRBIT) !== 0;
 export const isConductive = (v: number): boolean => (v & CONDBIT) !== 0;
 export const isBulldozable = (v: number): boolean => (v & BULLBIT) !== 0;
+/** Infrastructure built over water: road bridges (incl. drawbridge pieces), underwater power lines and rail.
+ *  Removing one must leave water behind, never land. */
+export const isOverWater = (v: number): boolean => {
+  const t = v & LOMASK;
+  return t === HBRIDGE || t === VBRIDGE || t === BRWH || t === BRWV || t === HPOWER || t === VPOWER
+    || t === HRAIL || t === VRAIL || (t >= HBRDG0 && t <= HBRDG3) || (t >= VBRDG0 && t <= VBRDG3);
+};
 export const isHouse = (v: number): boolean => { const t = v & LOMASK; return t >= HOUSE && t <= HHTHR; };
 /** True for any tile that is part of a multi-tile zone/building (240..826, excluding single-tile houses). */
-export const isZoneTile = (v: number): boolean => { const t = v & LOMASK; return t >= RESBASE && t <= LASTZONE && !(t >= HOUSE && t <= HHTHR); };
+export const isZoneTile = (v: number): boolean => { const t = v & LOMASK; return (t >= RESBASE && t <= LASTZONE && !(t >= HOUSE && t <= HHTHR)) || (t >= CITYHALLBASE && t <= LASTCITYHALL); };
 export const isResZone = (v: number): boolean => { const t = v & LOMASK; return t >= RESBASE && t <= HOSPITALBASE - 1; };
 export const isComZone = (v: number): boolean => { const t = v & LOMASK; return t >= COMBASE && t <= COMLAST; };
 export const isIndZone = (v: number): boolean => { const t = v & LOMASK; return t >= INDBASE && t <= INDLAST; };
@@ -233,6 +244,7 @@ export const isIndZone = (v: number): boolean => { const t = v & LOMASK; return 
 export function zoneSizeForCenter(t: number): number {
   t &= LOMASK;
   if (t >= PORTBASE && t <= LASTPORT) return 4;
+  if (t >= CITYHALLBASE && t <= LASTCITYHALL) return 4;
   if (t >= AIRPORTBASE && t <= LASTAIRPORT) return 6;
   if (t >= COALBASE && t <= LASTPOWERPLANT) return 4;
   if (t >= STADIUMBASE && t <= FULLSTADIUMBASE + 15) return 4;

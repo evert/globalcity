@@ -1,0 +1,56 @@
+{
+  "water_treatment": {
+    "name": "Water Treatment Plant",
+    "tiles": 3,
+    "zone": "civic",
+    "idea": "Supplies clean water to 15,000 residents per plant; without it, dense zones cap out and health drops."
+  },
+  "water_tower": {
+    "name": "Water Tower",
+    "tiles": 3,
+    "zone": "civic",
+    "idea": "Stores pumped water and keeps pressure up for 6,000 residents nearby; cheap, but needs a water plant upstream."
+  },
+  "wind_farm": {
+    "name": "Wind Farm",
+    "tiles": 4,
+    "zone": "power",
+    "idea": "Clean power, 300 units, zero pollution; output varies with wind, coastal/plains bonus, turbines annoy adjacent homes (noise)."
+  },
+  "solar_farm": {
+    "name": "Solar Farm",
+    "tiles": 4,
+    "zone": "power",
+    "idea": "Clean power, 250 units by day and none at night; zero pollution, cheap upkeep, desert/low-cloud regions give a bonus."
+  },
+  "hydro_dam": {
+    "name": "Hydroelectric Dam",
+    "tiles": 4,
+    "zone": "power",
+    "idea": "Clean power, 800 units, must be placed across a river; floods the upstream tiles into a reservoir that boosts nearby land value."
+  },
+  "landfill": {
+    "name": "Landfill",
+    "tiles": 3,
+    "zone": "ind",
+    "idea": "Absorbs 20 tons/month of city garbage; cheap but polluting and smelly (land value drop nearby), fills up and becomes a park when capped."
+  },
+  "recycling_center": {
+    "name": "Recycling Center",
+    "tiles": 3,
+    "zone": "ind",
+    "idea": "Diverts 40% of garbage from landfills and earns a little income from sold materials; needs road access and creates light traffic."
+  },
+  "data_center": {
+    "name": "Data Center",
+    "tiles": 3,
+    "zone": "com",
+    "idea": "High-tech jobs and +tax income, attracts commercial growth; draws heavy power and water, very low pollution, needs fiber/education."
+  },
+  "space_center": {
+    "name": "Space Center",
+    "tiles": 4,
+    "zone": "civic",
+    "idea": "Prestige landmark: big tourism and high-tech industry boost, rare launch events; needs a large budget, power and an airport nearby."
+  }
+}

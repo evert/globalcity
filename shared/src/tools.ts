@@ -3,7 +3,7 @@ import * as T from './tiles.ts';
 export type ToolId =
   | 'query' | 'bulldozer' | 'road' | 'rail' | 'wire' | 'park'
   | 'residential' | 'commercial' | 'industrial'
-  | 'fire' | 'police' | 'coal' | 'nuclear' | 'stadium' | 'seaport' | 'airport';
+  | 'fire' | 'police' | 'coal' | 'nuclear' | 'stadium' | 'seaport' | 'airport' | 'cityhall';
 
 export interface ToolDef {
   id: ToolId;
@@ -36,12 +36,13 @@ export const TOOLS: Record<ToolId, ToolDef> = {
   stadium:     { id: 'stadium',     name: 'Stadium',           cost: 5000,  size: 4, base: T.STADIUMBASE,  hotkey: 's', icon: T.STADIUM },
   seaport:     { id: 'seaport',     name: 'Seaport',           cost: 3000,  size: 4, base: T.PORTBASE,     hotkey: 'o', icon: T.PORT },
   airport:     { id: 'airport',     name: 'Airport',           cost: 10000, size: 6, base: T.AIRPORTBASE,  hotkey: 'a', icon: T.AIRPORT },
+  cityhall:    { id: 'cityhall',    name: 'City hall',         cost: 6000,  size: 4, base: T.CITYHALLBASE, hotkey: 'h', icon: T.CITYHALL },
 };
 
 export const TOOL_ORDER: ToolId[] = [
   'query', 'bulldozer', 'road', 'rail', 'wire', 'park',
   'residential', 'commercial', 'industrial',
-  'fire', 'police', 'coal', 'nuclear', 'stadium', 'seaport', 'airport',
+  'fire', 'police', 'coal', 'nuclear', 'stadium', 'seaport', 'airport', 'cityhall',
 ];
 
 /** Extra costs for special placements. */
@@ -63,3 +64,23 @@ export function footprintOrigin(tool: ToolDef, x: number, y: number): { x0: numb
 /** Power produced per plant, in zone-units (Micropolis values). */
 export const COAL_POWER = 700;
 export const NUCLEAR_POWER = 2000;
+
+// ---- Milestones ----
+// Each milestone building unlocks when the city's peak population reaches its own threshold. Unlocks are
+// permanent: one of each per city, rebuildable if destroyed. Cities that already had seaports/airports
+// before milestones keep them (they count as unlocked) but cannot build more.
+export type MilestoneBuilding = 'cityhall' | 'seaport' | 'airport';
+export const MILESTONE_BUILDINGS: Record<MilestoneBuilding, { name: string; tool: ToolId; pop: number; benefits: string[] }> = {
+  cityhall: { name: 'City hall', tool: 'cityhall', pop: 2_000, benefits: ['+10% tax income', 'Crime 40% lower across the city', 'Needs power'] },
+  seaport: { name: 'Seaport', tool: 'seaport', pop: 10_000, benefits: ['Industrial demand boost', 'Must be within 6 tiles of water', 'Needs power'] },
+  airport: { name: 'Airport', tool: 'airport', pop: 50_000, benefits: ['Commercial demand boost once another mayor has an airport', 'Planes fly between your city and theirs', 'Needs power'] },
+};
+export const MILESTONE_ORDER: readonly MilestoneBuilding[] = ['cityhall', 'seaport', 'airport'];
+export const isMilestoneTool = (t: ToolId): t is MilestoneBuilding => t === 'seaport' || t === 'airport' || t === 'cityhall';
+/** Milestone buildings unlocked by a peak population (not counting grandfathered ones). */
+export const milestoneUnlocksFor = (peakPop: number): MilestoneBuilding[] => MILESTONE_ORDER.filter((b) => peakPop >= MILESTONE_BUILDINGS[b].pop);
+/** The next milestone above a peak population, or null when all are reached. */
+export function nextMilestone(peakPop: number): { building: MilestoneBuilding; pop: number } | null {
+  const b = MILESTONE_ORDER.find((k) => peakPop < MILESTONE_BUILDINGS[k].pop);
+  return b ? { building: b, pop: MILESTONE_BUILDINGS[b].pop } : null;
+}

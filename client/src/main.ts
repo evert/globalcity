@@ -4,6 +4,8 @@ import { chunkKey } from '@globalcity/shared';
 import { Actions } from './actions.ts';
 import { handleServerMsg } from './dispatch.ts';
 import { loadMinimap, loadSpriteSheet } from './assets.ts';
+import { recolourMinimap } from './overviewmap.ts';
+import { Updater } from './updater.ts';
 import { Input } from './input.ts';
 import { TileMap } from './map.ts';
 import { Net } from './net.ts';
@@ -11,6 +13,7 @@ import { ViewReporter } from './presence.ts';
 import { Renderer } from './renderer.ts';
 import { AppState } from './state.ts';
 import { UI } from './ui.ts';
+import { loadSprites, SpriteEngine } from './sprites.ts';
 
 /** Shareable view links: #x=4207&y=855&z=1 (tile coords of the view centre + zoom). */
 function applyHashCamera(renderer: Renderer): boolean {
@@ -35,26 +38,38 @@ async function boot(): Promise<void> {
     await runSelfTest();
     return;
   }
-  const demo = location.hash === '#demo-leaderboard' || location.hash.startsWith('#demo-social');
+  const demo = location.hash === '#demo-leaderboard' || location.hash.startsWith('#demo-social') || location.hash === '#demo-ambient';
   const canvas = document.getElementById('map') as HTMLCanvasElement | null;
   if (!canvas) throw new Error('#map canvas missing');
 
-  const [sheet, minimap] = await Promise.all([loadSpriteSheet(), loadMinimap()]);
+  const [sheet, minimap, spriteAssets] = await Promise.all([loadSpriteSheet(), loadMinimap(), loadSprites()]);
+  // Recolour the terrain once to the Micropolis tile palette; the world view and the corner minimap share it.
+  if (!minimap.procedural) {
+    try { minimap.image = recolourMinimap(minimap.image, minimap.width, minimap.height); } catch { /* keep the original colours */ }
+  }
 
   const state = new AppState();
   const map = new TileMap();
   const net = new Net();
   const renderer = new Renderer(canvas, sheet, minimap, map, state);
+  renderer.sprites = new SpriteEngine(map, spriteAssets);
+  document.addEventListener('visibilitychange', () => renderer.invalidate()); // sprites pause while hidden, resume on return
   renderer.resizeToWindow();
   if (!applyHashCamera(renderer)) renderer.showWorld();
   const actions = new Actions(state, net, renderer);
   const ui = new UI(state, net, renderer, actions, sheet, minimap);
-  new Input(renderer, state, actions, {
+  const input = new Input(renderer, state, actions, {
     onQueryClick: (x, y) => ui.queryPendingAt(x, y),
     onInteract: () => ui.hideQuery(),
+    onTouchTarget: (t) => ui.setTouchTarget(t),
   });
 
   window.addEventListener('resize', () => renderer.resizeToWindow());
+  renderer.overviewMap.onUpdate = () => renderer.invalidate();
+  window.visualViewport?.addEventListener('resize', () => renderer.resizeToWindow());
+  ui.onTouchBuild = () => input.buildAtHover();
+  ui.onTouchCancel = () => input.clearTouchTarget();
+  state.on('tool', () => input.clearTouchTarget());
 
   // ---- subscriptions follow the camera ----
   let lastSubKey = '';
@@ -81,12 +96,15 @@ async function boot(): Promise<void> {
   net.on('open', () => { state.setConnected(true); updateSubscription(); });
   net.on('close', () => state.setConnected(false));
   net.on('chunk', ({ cx, cy, tiles }) => map.setChunk(cx, cy, tiles));
-  const targets = { state, map, renderer, ui };
+  const updater = new Updater(__BUILD_VERSION__, (reload) => ui.showUpdateBanner(reload));
+  const targets = { state, map, renderer, ui, updater };
   net.on('msg', (msg: ServerMsg) => handleServerMsg(msg, targets));
   if (demo) {
     // offline demo with synthetic data (for screenshots / eyeballing the leaderboard / social UI)
-    const { demoLeaderboard, demoSocial } = await import('./selftest.ts');
-    if (location.hash.startsWith('#demo-social')) demoSocial(targets, location.hash.endsWith('-overview')); else demoLeaderboard(targets);
+    const { demoLeaderboard, demoSocial, demoAmbient } = await import('./selftest.ts');
+    if (location.hash === '#demo-ambient') demoAmbient(targets);
+    else if (location.hash.startsWith('#demo-social')) demoSocial(targets, location.hash.endsWith('-overview'));
+    else demoLeaderboard(targets);
   } else {
     net.connect();
   }

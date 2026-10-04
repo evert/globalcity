@@ -2,16 +2,21 @@
 // overview mode (minimap + claim rectangles). Redraws only when invalidated.
 import {
   CHUNK, CHUNKS_X, CHUNKS_Y, WORLD_W, WORLD_H, TILE_PX, MAX_SUBSCRIBED_CHUNKS,
-  LOMASK, ZONEBIT, PWRBIT, LIGHTNINGBOLT, FIRE, LASTFIRE, TOOLS, footprintOrigin, chunkKey, parseChunkKey, clamp, inWorld,
+  LOMASK, ZONEBIT, PWRBIT, ANIMBIT, LIGHTNINGBOLT, FIRE, LASTFIRE, TOOLS, footprintOrigin, chunkKey, parseChunkKey, clamp, inWorld,
 } from '@globalcity/shared';
 import type { ClaimInfo } from '@globalcity/shared';
 import type { SpriteSheet, Minimap } from './assets.ts';
 import { drawTile } from './assets.ts';
+import { ANI_TILE, isAnimatedId } from './anim.ts';
 import { TileMap, DIRTY_ALL } from './map.ts';
 import type { AppState, ClaimIdle } from './state.ts';
 import { claimIdleState, claimLabel, claimShortLabel } from './state.ts';
 import { Emitter } from './emitter.ts';
 import { PresenceTracker, presenceLabel, PRESENCE_STALE_MS } from './presence.ts';
+import type { SpriteEngine } from './sprites.ts';
+import { FlightLayer } from './flights.ts';
+import { OverviewMap, speckleTile } from './overviewmap.ts';
+import { WORLD_W as FLIGHT_WORLD_W } from '@globalcity/shared';
 
 export interface Camera { x: number; y: number; zoom: number }
 export interface TilePos { x: number; y: number }
@@ -23,16 +28,34 @@ const CHUNK_PX = CHUNK * TILE_PX; // 1024
 const MAX_CHUNK_CANVASES = 120;
 const CHUNK_BUILD_BUDGET = 8; // chunk canvases built per frame
 const SETTLE_MS = 150;
-export const FIRE_FRAME_MS = 250;
-export const FIRE_FRAMES = LASTFIRE - FIRE + 1; // 8
+/** Tile animation cadence (Micropolis animates at ~5 fps). */
+export const ANIM_MS = 200;
 const FLASH_MS = 2000;
 
 type RendererEvents = { camera: Camera; settle: Camera; hover: TilePos | null };
 
-/** `fire`: tile indices in this chunk currently drawn as a fire frame (animated every FIRE_FRAME_MS while on screen). */
-interface ChunkCanvas { key: string; canvas: HTMLCanvasElement; g: CanvasRenderingContext2D; lastUse: number; fire: Set<number> }
+/** `anim`: tile indices in this chunk that animate (ANIMBIT set, or an animated id for old servers);
+ *  `frame`: the tile id currently drawn for each of them (advanced through ANI_TILE every ANIM_MS while on screen). */
+interface ChunkCanvas { key: string; canvas: HTMLCanvasElement; g: CanvasRenderingContext2D; lastUse: number; anim: Set<number>; frame: Map<number, number> }
 
 export function isFireTile(v: number): boolean { const id = v & LOMASK; return id >= FIRE && id <= LASTFIRE; }
+/** True when the tile value animates: the server flags animated tiles with ANIMBIT; old servers do not, so animated ids count too. */
+/**
+ * Ids that sit in a closed animation loop (fire, smoke, traffic, radar, ...). ANI_TILE also holds
+ * one-way "still -> animated" switches (e.g. coal plant 747 -> smoke 916, nuclear 820 -> swirl 952)
+ * that the server applies only while a building is powered, so those must NOT animate on their own.
+ */
+const LOOPING = (() => {
+  const set = new Set<number>();
+  for (let id = 0; id < ANI_TILE.length; id++) {
+    if (!isAnimatedId(id)) continue;
+    let cur = id;
+    for (let k = 0; k < 32; k++) { cur = ANI_TILE[cur]; if (cur === id) { set.add(id); break; } }
+  }
+  return set;
+})();
+/** Animate when the server flagged it (ANIMBIT), or, for old servers, when the id is in a closed loop. */
+export function isAnimatedTile(v: number): boolean { return (v & ANIMBIT) !== 0 || LOOPING.has(v & LOMASK); }
 
 function parseHex(hex: string): [number, number, number] | null {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
@@ -63,7 +86,7 @@ export function claimStyle(c: ClaimInfo, own: boolean): ClaimStyle {
 }
 
 /** Test hook record of a presence marker drawn in the last frame. */
-export interface DrawnPresence { id: string; kind: 'cursor' | 'dot' | 'rect'; x: number; y: number; label: string }
+export interface DrawnPresence { id: string; kind: 'cursor' | 'dot'; x: number; y: number; label: string }
 
 export class Renderer extends Emitter<RendererEvents> {
   readonly ctx: CanvasRenderingContext2D;
@@ -82,10 +105,18 @@ export class Renderer extends Emitter<RendererEvents> {
   private fly: { from: Camera; to: Camera; t0: number; ms: number } | null = null;
   private pendingBuilds = 0;
   readonly animated: boolean;
-  /** fire animation: current frame offset, chunk canvases with burning tiles blitted in the last frame, pending timer */
-  fireStep = 0;
-  private visibleFire: ChunkCanvas[] = [];
-  private fireTimer: ReturnType<typeof setTimeout> | null = null;
+  /** tile animation: steps taken so far, chunk canvases with animated tiles blitted in the last frame, pending timer */
+  animStep = 0;
+  private visibleAnim: ChunkCanvas[] = [];
+  private animTimer: ReturnType<typeof setTimeout> | null = null;
+  /** cosmetic sprites (trains, ship, plane, helicopter) drawn over the tiles in tile mode; null = none */
+  sprites: SpriteEngine | null = null;
+  /** inter-city air traffic (airports published by the server) */
+  readonly flightLayer = new FlightLayer();
+  /** zoomed-out map view: per-plot pixel images + tile-coloured terrain with specks */
+  readonly overviewMap = new OverviewMap();
+  private speckle: CanvasPattern | null = null;
+  private flightTimer: ReturnType<typeof setTimeout> | null = null;
   /** transient marker (pulsing red ring) around a tile, e.g. after clicking a fire toast */
   private flash: { x: number; y: number; t0: number } | null = null;
   /** other players' markers, interpolated between presence frames */
@@ -138,7 +169,11 @@ export class Renderer extends Emitter<RendererEvents> {
   }
 
   resizeToWindow(): void {
-    this.setSize(window.innerWidth, window.innerHeight, Math.min(2, window.devicePixelRatio || 1));
+    // Measure the canvas itself: on phones window.innerHeight and the CSS height differ while the
+    // address bar is visible, and a mismatch stretches the bitmap so taps land on the wrong tile.
+    const r = this.canvas.getBoundingClientRect();
+    const w = r.width > 0 ? r.width : window.innerWidth, h = r.height > 0 ? r.height : window.innerHeight;
+    this.setSize(w, h, Math.min(2, window.devicePixelRatio || 1));
   }
 
   // ---------- camera ----------
@@ -289,38 +324,115 @@ export class Renderer extends Emitter<RendererEvents> {
     g.fillStyle = '#05080f';
     g.fillRect(0, 0, this.canvas.width, this.canvas.height);
     this.processDirty();
-    this.visibleFire.length = 0;
+    this.visibleAnim.length = 0;
     this.drawnClaims.clear();
-    if (this.isTileMode()) this.renderTiles(g); else this.renderOverview(g);
+    if (this.isTileMode()) this.renderTiles(g, now); else this.renderOverview(g);
+    this.renderFlights(g);
     this.renderPresence(g, now);
     this.renderFlash(g, now);
     this.evictCanvases();
     if (this.pendingBuilds > 0) this.invalidate();
-    if (this.visibleFire.length && this.animated) this.scheduleFire();
+    if (this.visibleAnim.length && this.animated) this.scheduleAnim();
   }
 
-  // ---------- fire animation ----------
-  /** True when at least one burning tile was blitted in the last frame. */
-  get fireVisible(): boolean { return this.visibleFire.length > 0; }
+  // ---------- tile animation ----------
+  /** True when at least one animated tile (fire, smoke, traffic, ...) was blitted in the last frame. */
+  get animVisible(): boolean { return this.visibleAnim.length > 0; }
+  /** True when a tile animation timer is pending (test hook: must be false while nothing animated is on screen). */
+  get animTimerPending(): boolean { return this.animTimer !== null; }
 
-  private scheduleFire(): void {
-    if (this.fireTimer) return;
-    this.fireTimer = setTimeout(() => { this.fireTimer = null; this.stepFire(); }, FIRE_FRAME_MS);
+  private scheduleAnim(): void {
+    if (this.animTimer) return;
+    this.animTimer = setTimeout(() => { this.animTimer = null; this.stepAnim(); }, ANIM_MS);
   }
 
-  /** Advance the fire animation one frame: redraw only the burning tiles of on-screen chunks, then invalidate. */
-  stepFire(): void {
-    if (!this.visibleFire.length) return; // nothing burning on screen: costs nothing
-    this.fireStep = (this.fireStep + 1) % FIRE_FRAMES;
-    for (const cc of this.visibleFire) {
+  /** Advance every animated tile of the on-screen chunks one frame through ANI_TILE, redraw just those tiles, invalidate. */
+  stepAnim(): void {
+    if (!this.visibleAnim.length) return; // nothing animated on screen: costs nothing
+    this.animStep++;
+    for (const cc of this.visibleAnim) {
       if (this.chunkCanvases.get(cc.key) !== cc) continue; // evicted or rebuilt since the last frame
       const { cx, cy } = parseChunkKey(cc.key);
       const tiles = this.map.getChunk(cx, cy);
       if (!tiles) continue;
       const own = this.state.ownsChunk(cx, cy);
-      for (const idx of cc.fire) this.drawTileAt(cc, tiles, idx, own);
+      for (const idx of cc.anim) {
+        const cur = cc.frame.get(idx) ?? (tiles[idx] & LOMASK);
+        const next = ANI_TILE[cur];
+        if (next === undefined || next === cur) continue;
+        cc.frame.set(idx, next);
+        this.drawFrame(cc, tiles[idx], idx, next, own);
+      }
     }
     this.invalidate();
+  }
+
+  /** Test hook: the tile id currently drawn for world tile (x,y), or undefined if its chunk canvas is not built. */
+  frameAt(x: number, y: number): number | undefined {
+    const cx = Math.floor(x / CHUNK), cy = Math.floor(y / CHUNK);
+    const cc = this.chunkCanvases.get(chunkKey(cx, cy));
+    if (!cc) return undefined;
+    const idx = (y - cy * CHUNK) * CHUNK + (x - cx * CHUNK);
+    return cc.frame.get(idx) ?? ((this.map.getChunk(cx, cy)?.[idx] ?? 0) & LOMASK);
+  }
+
+  /** Test hook: number of animated tiles tracked in a chunk's canvas. */
+  animCount(cx: number, cy: number): number { return this.chunkCanvases.get(chunkKey(cx, cy))?.anim.size ?? 0; }
+
+  // ---------- sprites ----------
+  private renderSprites(g: CanvasRenderingContext2D, now: number): void {
+    const s = this.sprites;
+    if (!s) return;
+    const v = this.viewRect(), r = this.visibleChunkRect(0);
+    const more = s.frame(now, { ...v, ...r });
+    s.draw(g, (tx, ty) => ({ x: this.dx(tx), y: this.dy(ty) }), this.tilePx() * this.dpr);
+    if (more && this.animated) this.invalidate();
+  }
+
+  private renderFlights(g: CanvasRenderingContext2D): void {
+    const layer = this.flightLayer;
+    if (!layer.interCity) return;
+    const flights = layer.flights();
+    if (!flights.length) { this.scheduleFlights(2000); return; }
+    const W = this.canvas.width, H = this.canvas.height, d = this.dpr;
+    const tile = this.isTileMode();
+    // the world wraps at the date line: try the position and its copies one world-width either side
+    const toPx = (tx: number, ty: number) => {
+      for (const off of [0, -FLIGHT_WORLD_W, FLIGHT_WORLD_W]) {
+        const x = this.dx(tx + off), y = this.dy(ty);
+        if (x > -64 * d && x < W + 64 * d && y > -64 * d && y < H + 64 * d) return { x, y };
+      }
+      return null;
+    };
+    let visible = 0;
+    if (!tile) {
+      // overview: faint trail from the origin to the plane
+      g.save();
+      g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = Math.max(1, Math.round(d));
+      g.setLineDash([Math.round(3 * d), Math.round(4 * d)]);
+      for (const f of flights) {
+        const dxT = f.toX - f.fromX, curX = f.fromX + dxT * f.progress;
+        for (const off of [0, -FLIGHT_WORLD_W, FLIGHT_WORLD_W]) {
+          g.beginPath(); g.moveTo(this.dx(f.fromX + off), this.dy(f.fromY)); g.lineTo(this.dx(curX + off), this.dy(f.y)); g.stroke();
+        }
+      }
+      g.restore();
+    }
+    for (const f of flights) if (toPx(f.x, f.y)) visible++;
+    if (this.sprites) {
+      // zoomed in: true scale (48px sprite = 3 tiles); overview: a fixed, readable icon size
+      const px = tile ? this.tilePx() * d * 3 : Math.round(26 * d);
+      this.sprites.drawFlights(g, flights, toPx, px);
+    }
+    if (visible > 0) {
+      if (tile) { if (this.animated) this.invalidate(); } else this.scheduleFlights(100);
+    } else this.scheduleFlights(1000);
+  }
+
+  /** Redraw later for flights (overview needs ~10 fps; off-screen flights only a slow check). */
+  private scheduleFlights(ms: number): void {
+    if (!this.animated || this.flightTimer) return;
+    this.flightTimer = setTimeout(() => { this.flightTimer = null; this.invalidate(); }, ms);
   }
 
   private renderFlash(g: CanvasRenderingContext2D, now: number): void {
@@ -356,7 +468,7 @@ export class Renderer extends Emitter<RendererEvents> {
     return this.checker;
   }
 
-  private renderTiles(g: CanvasRenderingContext2D): void {
+  private renderTiles(g: CanvasRenderingContext2D, now: number): void {
     const r = this.visibleChunkRect(0);
     const W = this.canvas.width, H = this.canvas.height;
     this.pendingBuilds = 0;
@@ -376,7 +488,7 @@ export class Renderer extends Emitter<RendererEvents> {
         }
         if (cc) {
           cc.lastUse = this.frame;
-          if (cc.fire.size) this.visibleFire.push(cc);
+          if (cc.anim.size) this.visibleAnim.push(cc);
           g.drawImage(cc.canvas, 0, 0, CHUNK_PX, CHUNK_PX, x0, y0, x1 - x0, y1 - y0);
         } else {
           g.fillStyle = this.getChecker(g) ?? '#0c1018';
@@ -390,10 +502,13 @@ export class Renderer extends Emitter<RendererEvents> {
         }
       }
     }
+    // 1b. sprites above the tiles, below outlines / labels / cursor
+    this.renderSprites(g, now);
     // 2. chunk borders + claims
     g.lineWidth = Math.max(1, Math.round(this.dpr));
     const me = this.state.me;
     const labelFont = `${Math.round(12 * this.dpr)}px ui-monospace, Menlo, Consolas, monospace`;
+    const labelled = new Set<string>();
     for (let cy = r.cy0; cy <= r.cy1; cy++) {
       for (let cx = r.cx0; cx <= r.cx1; cx++) {
         const x0 = this.dx(cx * CHUNK), x1 = this.dx((cx + 1) * CHUNK);
@@ -403,23 +518,33 @@ export class Renderer extends Emitter<RendererEvents> {
           const own = !!me && claim.ownerId === me.id;
           const st = claimStyle(claim, own);
           this.drawnClaims.set(chunkKey(cx, cy), st);
-          g.fillStyle = st.abandoned ? 'rgba(120,120,120,0.38)' : withAlpha(st.color, own ? 0.28 : 0.18);
-          g.fillRect(x0, y0, x1 - x0, y1 - y0);
-          if (st.abandoned) {
-            // grey dashed border: decaying, soon claimable again
-            g.strokeStyle = 'rgba(210,210,210,0.85)';
-            g.lineWidth = Math.max(2, Math.round(2 * this.dpr));
-            g.setLineDash([Math.round(10 * this.dpr), Math.round(7 * this.dpr)]);
-            g.strokeRect(x0 + 1, y0 + 1, x1 - x0 - 2, y1 - y0 - 2);
+          // No tint over the artwork: ownership is shown by an outline around the whole city (only the
+          // edges that face land this city does not own are drawn, so multi-plot cities merge into one
+          // shape) plus one name chip per city. Fills are only used in the overview.
+          const bw = Math.max(2, Math.round((own ? 3 : 2) * this.dpr));
+          const inset = bw / 2 + 1;
+          const edges: [number, number, number, number][] = [];
+          if (!this.sameOwner(cx, cy - 1, claim.ownerId)) edges.push([x0, y0 + inset, x1, y0 + inset]);
+          if (!this.sameOwner(cx, cy + 1, claim.ownerId)) edges.push([x0, y1 - inset, x1, y1 - inset]);
+          if (!this.sameOwner(cx - 1, cy, claim.ownerId)) edges.push([x0 + inset, y0, x0 + inset, y1]);
+          if (!this.sameOwner(cx + 1, cy, claim.ownerId)) edges.push([x1 - inset, y0, x1 - inset, y1]);
+          if (edges.length) {
+            g.setLineDash(st.abandoned ? [Math.round(10 * this.dpr), Math.round(7 * this.dpr)] : []);
+            for (const [pass, style, lw] of [
+              [0, 'rgba(0,0,0,0.45)', bw + Math.max(2, Math.round(2 * this.dpr))],
+              [1, st.abandoned ? 'rgba(200,200,200,0.9)' : withAlpha(st.color, own ? 1 : 0.85), bw],
+            ] as [number, string, number][]) {
+              void pass;
+              g.strokeStyle = style; g.lineWidth = lw; g.beginPath();
+              for (const [ax, ay, bx, by] of edges) { g.moveTo(ax, ay); g.lineTo(bx, by); }
+              g.stroke();
+            }
             g.setLineDash([]);
-          } else {
-            g.strokeStyle = withAlpha(st.color, own ? 0.95 : 0.7);
-            g.lineWidth = own ? Math.max(2, Math.round(2 * this.dpr)) : Math.max(1, Math.round(this.dpr));
-            g.strokeRect(x0 + 0.5, y0 + 0.5, x1 - x0 - 1, y1 - y0 - 1);
           }
-          if (x1 - x0 >= 90 * this.dpr) {
-            // label in the top-left of the *visible* part of the chunk (and out from under the toolbar / top bar),
-            // so partially scrolled plots stay identifiable
+          if (!labelled.has(claim.ownerId) && x1 - x0 >= 90 * this.dpr) {
+            // one label per city: on the first (top-left-most) visible plot, in the visible part of it
+            // and out from under the toolbar / top bar, so partially scrolled plots stay identifiable
+            labelled.add(claim.ownerId);
             g.font = labelFont; g.textBaseline = 'top'; g.textAlign = 'left';
             const tw = g.measureText(st.label).width;
             const px = Math.round(6 * this.dpr), py = Math.round(4 * this.dpr);
@@ -470,6 +595,31 @@ export class Renderer extends Emitter<RendererEvents> {
     const left = this.dx(0), top = this.dy(0), right = this.dx(WORLD_W), bottom = this.dy(WORLD_H);
     g.imageSmoothingEnabled = false;
     g.drawImage(this.minimap.image, 0, 0, this.minimap.width, this.minimap.height, left, top, right - left, bottom - top);
+    // static speckle, anchored to the world one pattern pixel per tile (from one screen pixel per tile up)
+    const tpx = this.tilePx() * this.dpr;
+    if (tpx >= 1) {
+      if (!this.speckle) this.speckle = g.createPattern(speckleTile(), 'repeat');
+      if (this.speckle) {
+        this.speckle.setTransform(new DOMMatrix().translateSelf(left, top).scaleSelf(tpx, tpx));
+        g.fillStyle = this.speckle;
+        g.fillRect(Math.max(0, left), Math.max(0, top), Math.min(W, right) - Math.max(0, left), Math.min(H, bottom) - Math.max(0, top));
+      }
+    }
+    // plots as one-pixel-per-tile images of what is built there (snapshot refreshed every 30 s)
+    this.overviewMap.maybeRefresh();
+    {
+      const vr = this.visibleChunkRect(0);
+      g.imageSmoothingEnabled = tpx < 1; // average when shrinking below a pixel per tile, crisp otherwise
+      for (const claim of this.state.claims.values()) {
+        if (claim.cx < vr.cx0 || claim.cx > vr.cx1 || claim.cy < vr.cy0 || claim.cy > vr.cy1) continue;
+        const img = this.overviewMap.canvasFor(claim.cx, claim.cy);
+        if (!img) continue;
+        const x0 = this.dx(claim.cx * CHUNK), x1 = this.dx((claim.cx + 1) * CHUNK);
+        const y0 = this.dy(claim.cy * CHUNK), y1 = this.dy((claim.cy + 1) * CHUNK);
+        g.drawImage(img, x0, y0, x1 - x0, y1 - y0);
+      }
+      g.imageSmoothingEnabled = false;
+    }
     // chunk grid at the higher overview zooms
     if (this.cam.zoom >= 0.125) {
       const r = this.visibleChunkRect(0);
@@ -485,37 +635,82 @@ export class Renderer extends Emitter<RendererEvents> {
     const showNames = this.cam.zoom >= 0.25;
     const v = this.visibleChunkRect(0);
     g.textBaseline = 'middle'; g.textAlign = 'center';
+    // Group visible plots by city so multi-plot cities render as one shape with one name.
+    const cities = new Map<string, ClaimInfo[]>();
     for (const claim of this.state.claims.values()) {
       if (claim.cx < v.cx0 || claim.cx > v.cx1 || claim.cy < v.cy0 || claim.cy > v.cy1) continue;
-      const x0 = this.dx(claim.cx * CHUNK), x1 = this.dx((claim.cx + 1) * CHUNK);
-      const y0 = this.dy(claim.cy * CHUNK), y1 = this.dy((claim.cy + 1) * CHUNK);
-      const w = Math.max(1, x1 - x0), h = Math.max(1, y1 - y0);
-      const own = !!me && claim.ownerId === me.id;
-      const st = claimStyle(claim, own);
-      this.drawnClaims.set(chunkKey(claim.cx, claim.cy), st);
-      g.fillStyle = withAlpha(st.color, st.abandoned ? 0.45 : own ? 0.7 : 0.5);
-      g.fillRect(x0, y0, w, h);
-      if (own) { g.strokeStyle = '#ffffff'; g.lineWidth = Math.max(1, Math.round(this.dpr)); g.strokeRect(x0 + 0.5, y0 + 0.5, w - 1, h - 1); }
-      else if (st.abandoned && w >= 6) {
-        g.strokeStyle = 'rgba(255,255,255,0.5)'; g.lineWidth = 1;
-        g.setLineDash([3, 3]); g.strokeRect(x0 + 0.5, y0 + 0.5, w - 1, h - 1); g.setLineDash([]);
+      const list = cities.get(claim.ownerId);
+      if (list) list.push(claim); else cities.set(claim.ownerId, [claim]);
+    }
+    for (const plots of cities.values()) {
+      const first = plots[0];
+      const own = !!me && first.ownerId === me.id;
+      const st = claimStyle(first, own);
+      let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity, w = 1, h = 1;
+      // With a pixel image of the plot, tint only when fully zoomed out (a plot is then a few pixels wide and
+      // the owner colour is what makes cities findable); without one (snapshot not loaded yet) fill as before.
+      const tpxNow = this.tilePx() * this.dpr;
+      for (const claim of plots) {
+        this.drawnClaims.set(chunkKey(claim.cx, claim.cy), st);
+        const x0 = this.dx(claim.cx * CHUNK), x1 = this.dx((claim.cx + 1) * CHUNK);
+        const y0 = this.dy(claim.cy * CHUNK), y1 = this.dy((claim.cy + 1) * CHUNK);
+        w = Math.max(1, x1 - x0); h = Math.max(1, y1 - y0);
+        const hasImg = !!this.overviewMap.canvasFor(claim.cx, claim.cy);
+        const alpha = !hasImg ? (st.abandoned ? 0.45 : own ? 0.7 : 0.5) : tpxNow < 0.5 ? 0.55 : tpxNow < 1 ? 0.3 : 0;
+        if (alpha <= 0) continue;
+        g.fillStyle = withAlpha(st.color, alpha);
+        g.fillRect(x0, y0, w, h);
+        bx0 = Math.min(bx0, x0); by0 = Math.min(by0, y0); bx1 = Math.max(bx1, x1); by1 = Math.max(by1, y1);
+      }
+      if (w >= 6) {
+        // outline only the outer edges of the city: white for yours, the owner's colour for everyone else
+        g.strokeStyle = own ? '#ffffff' : st.abandoned ? 'rgba(255,255,255,0.5)' : withAlpha(st.color, 0.9);
+        g.lineWidth = Math.max(1, Math.round((own ? 1.5 : 1) * this.dpr));
+        g.setLineDash(st.abandoned ? [3, 3] : []);
+        g.beginPath();
+        for (const claim of plots) {
+          const x0 = this.dx(claim.cx * CHUNK) + 0.5, x1 = this.dx((claim.cx + 1) * CHUNK) - 0.5;
+          const y0 = this.dy(claim.cy * CHUNK) + 0.5, y1 = this.dy((claim.cy + 1) * CHUNK) - 0.5;
+          if (!this.sameOwner(claim.cx, claim.cy - 1, claim.ownerId)) { g.moveTo(x0, y0); g.lineTo(x1, y0); }
+          if (!this.sameOwner(claim.cx, claim.cy + 1, claim.ownerId)) { g.moveTo(x0, y1); g.lineTo(x1, y1); }
+          if (!this.sameOwner(claim.cx - 1, claim.cy, claim.ownerId)) { g.moveTo(x0, y0); g.lineTo(x0, y1); }
+          if (!this.sameOwner(claim.cx + 1, claim.cy, claim.ownerId)) { g.moveTo(x1, y0); g.lineTo(x1, y1); }
+        }
+        g.stroke(); g.setLineDash([]);
       }
       if (showNames && w >= 48 * this.dpr) {
-        const name = claimShortLabel(claim);
-        const fs = clamp(Math.floor(w / 9), 9 * this.dpr, 14 * this.dpr);
+        // one name per city, on the plot nearest the centre of the city's visible bounding box
+        const mx = (bx0 + bx1) / 2, my = (by0 + by1) / 2;
+        let best = first, bd = Infinity;
+        for (const claim of plots) {
+          const cxp = this.dx(claim.cx * CHUNK + CHUNK / 2), cyp = this.dy(claim.cy * CHUNK + CHUNK / 2);
+          const d = Math.hypot(cxp - mx, cyp - my);
+          if (d < bd) { bd = d; best = claim; }
+        }
+        const name = claimShortLabel(best);
+        const span = Math.min(bx1 - bx0, 3 * w); // allow wider text across a multi-plot city
+        const fs = clamp(Math.floor(span / 9), 9 * this.dpr, 14 * this.dpr);
         g.font = `${fs}px ui-monospace, Menlo, Consolas, monospace`;
         const tw = g.measureText(name).width;
-        if (tw <= w - 6 * this.dpr) {
+        const cxp = this.dx(best.cx * CHUNK + CHUNK / 2), cyp = this.dy(best.cy * CHUNK + CHUNK / 2);
+        // fits inside the plot, or inside the city's horizontal extent when the row is contiguous
+        const rowW = plots.filter((c) => c.cy === best.cy).length * w;
+        if (tw <= Math.max(w, rowW) - 6 * this.dpr) {
           g.fillStyle = 'rgba(0,0,0,0.7)';
-          g.fillText(name, (x0 + x1) / 2 + 1, (y0 + y1) / 2 + 1);
+          g.fillText(name, cxp + 1, cyp + 1);
           g.fillStyle = st.abandoned ? '#c0c0c0' : '#ffffff';
-          g.fillText(name, (x0 + x1) / 2, (y0 + y1) / 2);
+          g.fillText(name, cxp, cyp);
         }
       }
     }
     g.strokeStyle = 'rgba(255,255,255,0.3)';
     g.lineWidth = 1;
     g.strokeRect(left + 0.5, top + 0.5, right - left - 1, bottom - top - 1);
+  }
+
+  /** True if chunk (cx,cy) is claimed by `ownerId` (used to merge adjacent plots of one city). */
+  private sameOwner(cx: number, cy: number, ownerId: string): boolean {
+    return this.state.claimAt(cx, cy)?.ownerId === ownerId;
   }
 
   // ---------- presence (other players) ----------
@@ -570,32 +765,27 @@ export class Renderer extends Emitter<RendererEvents> {
         const px = Math.round(((m.x - this.cam.x) * this.tilePx() + this.cssW / 2) * d);
         const py = Math.round(((m.y - this.cam.y) * this.tilePx() + this.cssH / 2) * d);
         if (!onScreen(px, py)) continue;
-        const r = Math.round(7 * d);
-        g.fillStyle = withAlpha(color, 0.18); g.beginPath(); g.arc(px, py, r * 2, 0, Math.PI * 2); g.fill();
-        g.fillStyle = withAlpha(color, 0.75); g.beginPath(); g.arc(px, py, r, 0, Math.PI * 2); g.fill();
+        const r = Math.round(4 * d);
+        g.fillStyle = 'rgba(0,0,0,0.6)'; g.beginPath(); g.arc(px, py, r + Math.round(1.5 * d), 0, Math.PI * 2); g.fill();
+        g.fillStyle = withAlpha(color, 0.9); g.beginPath(); g.arc(px, py, r, 0, Math.PI * 2); g.fill();
         this.drawChip(g, px + r + Math.round(4 * d), py - Math.round(8 * d), label, color);
         this.drawnPresence.push({ id: m.p.id, kind: 'dot', x: px, y: py, label });
       }
     } else {
+      // Overview: just a small dot at each player's camera centre with a name chip. (No viewport
+      // rectangles: they cover large areas of the map and are distracting.)
       for (const m of markers) {
         const label = presenceLabel(m.p);
         const color = m.p.color || '#ffffff';
-        const { w, h } = PresenceTracker.viewSize(m.p.zoom);
-        const x0 = this.dx(m.x - w / 2), x1 = this.dx(m.x + w / 2), y0 = this.dy(m.y - h / 2), y1 = this.dy(m.y + h / 2);
-        if (x1 < 0 || y1 < 0 || x0 >= W || y0 >= H) continue;
         const cxp = this.dx(m.x), cyp = this.dy(m.y);
-        const huge = x1 - x0 > W * 0.9 && y1 - y0 > H * 0.9; // zoomed all the way out: a rectangle would be the whole screen
-        if (!huge) {
-          g.strokeStyle = withAlpha(color, 0.9); g.lineWidth = Math.max(1, Math.round(d));
-          g.strokeRect(x0 + 0.5, y0 + 0.5, Math.max(2, x1 - x0 - 1), Math.max(2, y1 - y0 - 1));
-          g.fillStyle = withAlpha(color, 0.08); g.fillRect(x0, y0, x1 - x0, y1 - y0);
-        }
-        g.fillStyle = withAlpha(color, 0.9); g.beginPath(); g.arc(cxp, cyp, Math.round(3 * d), 0, Math.PI * 2); g.fill();
-        // chip above the rectangle, kept inside the canvas
-        const chipY = clamp((huge ? cyp : y0) - Math.round(19 * d), Math.round(2 * d), H - Math.round(18 * d));
-        const chipX = clamp(huge ? cxp + Math.round(8 * d) : x0, Math.round(2 * d), W - Math.round(60 * d));
+        if (!onScreen(cxp, cyp)) continue;
+        const r = Math.round(3.5 * d);
+        g.fillStyle = 'rgba(0,0,0,0.6)'; g.beginPath(); g.arc(cxp, cyp, r + Math.round(1.5 * d), 0, Math.PI * 2); g.fill();
+        g.fillStyle = withAlpha(color, 0.95); g.beginPath(); g.arc(cxp, cyp, r, 0, Math.PI * 2); g.fill();
+        const chipY = clamp(cyp - Math.round(19 * d), Math.round(2 * d), H - Math.round(18 * d));
+        const chipX = clamp(cxp + Math.round(8 * d), Math.round(2 * d), W - Math.round(60 * d));
         this.drawChip(g, chipX, chipY, label, color);
-        this.drawnPresence.push({ id: m.p.id, kind: 'rect', x: cxp, y: cyp, label });
+        this.drawnPresence.push({ id: m.p.id, kind: 'dot', x: cxp, y: cyp, label });
       }
     }
     if (this.animated && this.presence.animating(now)) this.invalidate();
@@ -606,18 +796,19 @@ export class Renderer extends Emitter<RendererEvents> {
     return own && (v & ZONEBIT) !== 0 && (v & PWRBIT) === 0;
   }
 
-  /** Sprite id actually drawn for a tile value (fire tiles cycle through FIRE..LASTFIRE with fireStep). */
-  frameFor(v: number): number {
-    const id = v & LOMASK;
-    return isFireTile(v) ? FIRE + ((id - FIRE + this.fireStep) % FIRE_FRAMES) : id;
+  /** Blit sprite `frameId` (plus the power-bolt overlay for tile value `v`) at chunk index `idx`. */
+  private drawFrame(cc: ChunkCanvas, v: number, idx: number, frameId: number, own: boolean): void {
+    const tx = (idx % CHUNK) * TILE_PX, ty = Math.floor(idx / CHUNK) * TILE_PX;
+    drawTile(cc.g, this.sheet, frameId, tx, ty);
+    if (this.shouldBolt(v, own)) drawTile(cc.g, this.sheet, LIGHTNINGBOLT, tx, ty);
   }
 
+  /** Draw the stored tile at `idx` (first frame) and re-evaluate its animation membership. */
   private drawTileAt(cc: ChunkCanvas, tiles: Uint16Array, idx: number, own: boolean): void {
     const v = tiles[idx];
-    const tx = (idx % CHUNK) * TILE_PX, ty = Math.floor(idx / CHUNK) * TILE_PX;
-    drawTile(cc.g, this.sheet, this.frameFor(v), tx, ty);
-    if (this.shouldBolt(v, own)) drawTile(cc.g, this.sheet, LIGHTNINGBOLT, tx, ty);
-    if (isFireTile(v)) cc.fire.add(idx); else if (cc.fire.size) cc.fire.delete(idx);
+    this.drawFrame(cc, v, idx, v & LOMASK, own);
+    if (isAnimatedTile(v)) { cc.anim.add(idx); cc.frame.set(idx, v & LOMASK); }
+    else if (cc.anim.size) { cc.anim.delete(idx); cc.frame.delete(idx); }
   }
 
   private buildChunkCanvas(key: string, cx: number, cy: number, tiles: Uint16Array): ChunkCanvas {
@@ -625,7 +816,7 @@ export class Renderer extends Emitter<RendererEvents> {
     canvas.width = canvas.height = CHUNK_PX;
     const g = canvas.getContext('2d', { alpha: false })!;
     g.imageSmoothingEnabled = false;
-    const cc: ChunkCanvas = { key, canvas, g, lastUse: this.frame, fire: new Set() };
+    const cc: ChunkCanvas = { key, canvas, g, lastUse: this.frame, anim: new Set(), frame: new Map() };
     const own = this.state.ownsChunk(cx, cy);
     for (let i = 0; i < CHUNK * CHUNK; i++) this.drawTileAt(cc, tiles, i, own);
     this.chunkCanvases.set(key, cc);

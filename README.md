@@ -5,8 +5,9 @@ played on a single tile map of the whole Earth. Everyone shares one world. You f
 your spot (optionally from your browser's geolocation), claim a 64x64-tile plot, and
 start zoning, wiring and paving. Neighbours see each other's cities grow in real time.
 
-The artwork and tile semantics come from **Micropolis**, the GPLv3 release of the
-original SimCity source code by Electronic Arts. See [ATTRIBUTION.md](ATTRIBUTION.md).
+The artwork and tile semantics come from **Micropolis**, the GPLv3 release of the original
+SimCity Classic, designed by Will Wright and published by Maxis in 1989, open-sourced by
+Electronic Arts in 2008 through the work of Don Hopkins. See [ATTRIBUTION.md](ATTRIBUTION.md).
 SimCity is a trademark of Electronic Arts; this project is not affiliated with EA or Maxis.
 
 ## How it works
@@ -15,8 +16,8 @@ SimCity is a trademark of Electronic Arts; this project is not affiliated with E
   tile at the equator). Coastlines, lakes and major rivers come from Natural Earth,
   forests from deterministic noise.
 - The grid is split into 64 x 64 tile chunks. A chunk is the unit players claim and the
-  unit the client streams. Your first claim is free; further claims cost money and must
-  touch a chunk you already own.
+  unit the client streams. Your first claim is free; each further plot costs more than the last
+  ($25,000 for the second, rising 1.75x per plot, 10 plots max) and must touch a chunk you already own.
 - A Node server holds the world in memory (one `Uint16Array`, Micropolis tile encoding),
   runs a simplified Micropolis simulation for every active city once per game month
   (2 seconds), and pushes tile deltas over WebSockets to clients subscribed to those chunks.
@@ -51,8 +52,8 @@ cd server
 PORT=8791 DATA_DIR=data/save-test DEV_HOOKS=1 TICK_MS=500 npx tsx src/index.ts   # one terminal
 PORT=8791 npm run smoke; PORT=8791 TICK_MS=500 npm run smoke:features             # another
 ```
-A ready-made recipe for an Oracle Cloud Always Free VM (systemd + Caddy TLS) is in
-[deploy/oracle/README.md](deploy/oracle/README.md).
+Ready-made recipes: a Raspberry Pi behind a Cloudflare Tunnel in [deploy/pi/README.md](deploy/pi/README.md),
+or an Oracle Cloud Always Free VM with Caddy TLS in [deploy/oracle/README.md](deploy/oracle/README.md).
 
 ## Layout
 

@@ -9,7 +9,14 @@
     "smoke": "tsx src/test-client.ts",
     "typecheck": "tsc -p tsconfig.json",
     "smoke:features": "tsx src/test-features.ts",
-    "smoke:social": "tsx src/test-social.ts"
+    "smoke:social": "tsx src/test-social.ts",
+    "smoke:ambient": "tsx src/test-ambient.ts",
+    "smoke:flights": "tsx src/test-flights.mjs",
+    "smoke:water": "tsx src/test-water.mjs",
+    "smoke:zonewire": "tsx src/test-zonewire.mjs",
+    "smoke:freeze": "tsx src/test-freeze.mjs",
+    "smoke:smallrelease": "tsx src/test-smallrelease.mjs",
+    "smoke:milestones": "tsx src/test-milestones.mjs"
   },
   "dependencies": {
     "@globalcity/shared": "*",

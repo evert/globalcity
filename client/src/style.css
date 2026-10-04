@@ -12,7 +12,7 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 13px; overflow: hidden; }
-canvas#map { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; cursor: crosshair; image-rendering: pixelated; touch-action: none; }
+canvas#map { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; display: block; cursor: crosshair; image-rendering: pixelated; touch-action: none; }
 #ui { position: fixed; inset: 0; pointer-events: none; }
 #ui > * { pointer-events: auto; }
 .hidden { display: none !important; }
@@ -97,10 +97,21 @@ a { color: var(--accent); }
 .rci-col .lbl { font-size: 10px; color: var(--muted); }
 #rci .power-line { display: flex; gap: 8px; font-size: 11px; white-space: nowrap; }
 #rci .stations { color: var(--muted); }
+#rci .police { color: var(--muted); }
+#rci .crime { font-weight: 600; animation: pulse 1.2s infinite; }
+#rci .traffic { display: flex; align-items: center; gap: 5px; font-size: 11px; white-space: nowrap; cursor: help; color: var(--muted); }
+#rci .traffic .meter { display: inline-block; width: 36px; height: 5px; background: rgba(255,255,255,0.08); border: 1px solid var(--panel-border); border-radius: 3px; overflow: hidden; }
+#rci .traffic .fill { display: block; height: 100%; width: 0; background: var(--good); transition: width 0.4s; }
+#rci .traffic .fill.moderate { background: var(--warn); }
+#rci .traffic .fill.heavy { background: var(--bad); }
+#rci .specials { display: flex; gap: 4px; font-size: 10px; white-space: nowrap; cursor: help; }
+#rci .specials .chip { padding: 1px 5px; border: 1px solid var(--panel-border); border-radius: 8px; background: rgba(255,255,255,0.06); }
 #rci .trade { font-size: 11px; line-height: 1.5; text-align: center; white-space: nowrap; cursor: help; }
 #rci .trade .income { color: var(--good); }
 #rci .trade .paying { color: var(--warn); }
 #rci .neighbours { font-size: 11px; white-space: nowrap; cursor: help; color: var(--fg); }
+#rci .budget { font-size: 11px; white-space: nowrap; cursor: help; color: var(--good); text-align: center; }
+#rci .budget.bad { color: var(--bad); }
 
 /* leaderboard */
 #leaderboard { width: min(600px, calc(100vw - 32px)); max-height: calc(100vh - 80px); display: flex; flex-direction: column; }
@@ -127,6 +138,9 @@ a { color: var(--accent); }
 .lb-empty { padding: 14px 0; text-align: center; }
 
 /* toasts */
+#touchbar { position: fixed; left: 50%; bottom: 72px; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; background: var(--panel); border: 1px solid var(--panel-border); padding: 8px 12px; border-radius: 6px; max-width: 92vw; }
+#touchbar .what { color: var(--fg); }
+#touchbar button.primary { background: var(--good); color: #0b1a0b; font-weight: bold; }
 #toasts { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; }
 .toast.clickable { pointer-events: auto; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
 .toast.clickable:hover { background: #1a2233; filter: brightness(1.15); }
@@ -155,6 +169,7 @@ a { color: var(--accent); }
   #topbar { height: auto; flex-wrap: wrap; padding: 4px 8px; gap: 6px 10px; font-size: 12px; }
   #topbar .brand { display: none; }
   #toolbar { top: auto; bottom: 8px; left: 8px; right: 8px; flex-direction: row; overflow-x: auto; max-height: none; }
+  #touchbar { bottom: auto; top: var(--overlay-top, 120px); flex-wrap: wrap; justify-content: center; }
   .tool { grid-template-columns: 28px; grid-template-rows: auto; padding: 3px; }
   .tool .label, .tool .cost { display: none; }
   #rci { bottom: 70px; right: auto; left: 8px; }
@@ -163,3 +178,37 @@ a { color: var(--accent); }
   #miniwrap { bottom: 70px; }
   #minimap { width: 160px; height: 80px; }
 }
+
+.lb-world { margin-top: 4px; font-size: 12px; }
+
+.discord-btn { text-decoration: none; color: #b9c2ff; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
+.discord-icon { width: 18px; height: 18px; flex: none; }
+.discord-btn:hover { color: #fff; background: #5865f2; border-color: #5865f2; }
+#welcome .community { margin-top: 10px; font-size: 12px; }
+@media (max-width: 760px) { .discord-label { display: none; } .discord-btn { padding: 4px 8px; } }
+
+#banners { position: fixed; top: var(--overlay-top, 48px); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; align-items: center; width: min(640px, 92vw); pointer-events: none; z-index: 30; }
+.banner { pointer-events: auto; display: flex; align-items: center; gap: 10px; width: 100%; box-sizing: border-box; padding: 8px 10px 8px 14px; border-radius: 6px; background: #17233a; border: 1px solid #3b5b99; color: var(--fg); box-shadow: 0 4px 16px rgba(0,0,0,0.35); }
+.banner .banner-text { flex: 1; line-height: 1.4; }
+.banner.warn { background: #3a2417; border-color: #c27a3a; }
+.banner.update { background: #18301e; border-color: #3f9a55; }
+
+#milestones { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 80px); display: flex; flex-direction: column; }
+#milestones .ms-rows { overflow-y: auto; display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+.ms-row { display: flex; gap: 12px; align-items: flex-start; padding: 10px; border: 1px solid var(--panel-border); border-radius: 6px; }
+.ms-row.locked .ms-icon { filter: grayscale(1) brightness(0.6); }
+.ms-icon { width: 72px; height: 72px; flex: none; image-rendering: pixelated; border-radius: 3px; }
+.ms-body { display: grid; gap: 4px; min-width: 0; flex: 1; }
+.ms-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ms-head .chip { font-size: 11px; padding: 1px 6px; border: 1px solid var(--panel-border); border-radius: 4px; color: var(--muted, #aab); }
+.ms-benefits { margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.45; }
+.ms-meta { font-size: 11px; }
+.ms-status { font-size: 12px; }
+.ms-status.ready { color: var(--good); font-weight: bold; }
+.ms-status.done { color: var(--muted, #aab); }
+.ms-progress { display: flex; gap: 8px; align-items: center; }
+.ms-bar { flex: 1; height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; }
+.ms-fill { height: 100%; background: var(--accent, #5f8bff); }
+.tool.locked { opacity: 0.45; }
+.tool.locked .cost, .tool.built .cost { color: var(--muted, #aab); }
+.tool.built { opacity: 0.6; }

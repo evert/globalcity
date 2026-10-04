@@ -65,7 +65,7 @@ export class Net extends Emitter<NetEvents> {
       if (this.ws !== ws) return;
       this.attempt = 0;
       this.connected = true;
-      this.sendRaw({ t: 'hello', id: this.identity.id, token: this.identity.token, name: this.identity.name });
+      this.sendRaw({ t: 'hello', id: this.identity.id, token: this.identity.token, name: this.identity.name, v: __BUILD_VERSION__ });
       if (this.subscription.length) this.sendRaw({ t: 'sub', chunks: this.subscription });
       this.startPing();
       this.emit('status', 'Connected');
