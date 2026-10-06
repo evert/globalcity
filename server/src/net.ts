@@ -17,9 +17,10 @@ import {
   encodeChunk, inWorld, clamp,
   type ClientMsg, type ServerMsg, type ToolId, type Presence,
   overviewClass, OVERVIEW_CHUNK_BYTES, parseChunkKey,
+  LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT,
 } from '@globalcity/shared';
 import { World, chunkIndex, chunkCoords, type ChunkIndex } from './world.ts';
-import { Players, sanitizeName, sanitizeCityName, refreshMilestoneStats, type PlayerRecord } from './players.ts';
+import { Players, NAMES_LOCKED_MSG, sanitizeName, sanitizeCityName, refreshMilestoneStats, refreshLifeline, type PlayerRecord } from './players.ts';
 import { Sim, type TickResult } from './sim.ts';
 import { applyBuild, queryTile } from './tools.ts';
 import { Leaderboard } from './leaderboard.ts';
@@ -99,11 +100,12 @@ export class Net {
     opts: NetOptions = {},
   ) {
     this.devHooks = opts.devHooks ?? false;
+    world.buildings.onChange = (op, b) => this.broadcast({ t: 'building', op, b });
     this.admin = new Admin(clientDist, opts.dataDir ?? path.join(repoRoot, 'data/save'),
       (v) => this.broadcast({ t: 'version', version: v }),
       (a) => { for (const c of this.clients) if (c.player) this.sendAnnouncement(c, a); });
     this.leaderboard = new Leaderboard(players);
-    if (this.devHooks) log('DEV_HOOKS enabled: devIgnite/devFunds/devTraffic/devPeak/devPlace accepted');
+    if (this.devHooks) log('DEV_HOOKS enabled: devIgnite/devFunds/devTraffic/devPeak/devRailLink/devPlace accepted');
   }
 
   private get buildCtx(): { world: World; players: Players; railCitiesAt: (x: number, y: number) => number } {
@@ -262,10 +264,22 @@ export class Net {
       }
       return true;
     }
+    if (m.t === 'devSetFunds') {
+      // {t:'devSetFunds', amount}: set this player's funds (lifeline tests)
+      const p = client.player;
+      if (p && isInt(m.amount) && m.amount >= 0) { p.funds = m.amount; p.stats.funds = m.amount; refreshLifeline(p); this.players.dirty = true; this.sendStatsIfChanged(client); }
+      return true;
+    }
     if (m.t === 'devPeak') {
       // {t:'devPeak', pop}: raise this player's peak population (milestone tests)
       const p = client.player;
       if (p && isInt(m.pop) && m.pop >= 0) { p.peakPop = Math.max(p.peakPop ?? 0, m.pop); refreshMilestoneStats(p); this.players.dirty = true; this.sendStatsIfChanged(client); }
+      return true;
+    }
+    if (m.t === 'devRailLink') {
+      // {t:'devRailLink'}: mark this player's rail as having reached a neighbour (Grand Central tests)
+      const p = client.player;
+      if (p) { p.railLinked = true; refreshMilestoneStats(p); this.players.dirty = true; this.sendStatsIfChanged(client); }
       return true;
     }
     if (m.t === 'devPlace') {
@@ -330,9 +344,25 @@ export class Net {
       case 'rename': {
         const name = sanitizeName(msg.name);
         if (!name) { this.toast(client, 'Invalid name', 'error'); break; }
-        this.players.rename(p, name);
+        if (!this.players.rename(p, name)) { this.toast(client, NAMES_LOCKED_MSG, 'error'); break; }
         this.broadcast({ t: 'claims', claims: this.players.claimInfosOf(p) });
         this.toast(client, `You are now ${name}`, 'success');
+        break;
+      }
+      case 'lifeline': {
+        refreshLifeline(p);
+        if (!p.stats.lifelineAvailable) {
+          const owed = p.debt ?? 0;
+          this.toast(client, owed > 0 && (p.peakPop ?? 0) >= LIFELINE_EARLY_PEAK_POP ? 'Repay your current lifeline first'
+            : owed > 0 && owed + LIFELINE_AMOUNT > LIFELINE_MAX_DEBT ? `You already owe $${owed.toLocaleString('en-US')}: the limit is $${LIFELINE_MAX_DEBT.toLocaleString('en-US')}`
+            : p.chunks.length === 0 ? 'Claim a plot first' : `A lifeline is only for cities with less than $${LIFELINE_MAX_FUNDS.toLocaleString('en-US')}`, 'error');
+          break;
+        }
+        p.funds += LIFELINE_AMOUNT; p.stats.funds = p.funds; p.debt = (p.debt ?? 0) + LIFELINE_AMOUNT;
+        refreshLifeline(p); this.players.dirty = true;
+        log(`${p.name} (${p.cityName}) took a $${LIFELINE_AMOUNT} lifeline`);
+        this.toast(client, `🛟 Lifeline: $${LIFELINE_AMOUNT.toLocaleString('en-US')} added. It is repaid from a quarter of each month's surplus.`, 'success');
+        this.sendStatsIfChanged(client);
         break;
       }
       case 'renameCity': {
@@ -413,6 +443,8 @@ export class Net {
     });
     this.send(client, this.leaderboard.messageFor(p));
     this.send(client, this.airportsMsg());
+    this.send(client, this.shippingMsg());
+    this.send(client, { t: 'buildings', list: this.world.buildings.list() });
     if (this.admin.version) this.send(client, { t: 'version', version: this.admin.version });
     if (p.notice) { this.toast(client, p.notice, 'info'); delete p.notice; this.players.dirty = true; }
     const ann = this.admin.active();
@@ -502,11 +534,14 @@ export class Net {
   /** last airports list sent to clients (JSON), so we only broadcast when it changes */
   private airportsJson = '[]';
   private airportsMsg(): ServerMsg { return { t: 'airports', airports: this.sim.airports, now: Date.now() }; }
+  private shippingVersion = -1;
+  private shippingMsg(): ServerMsg { return { t: 'shipping', ports: this.sim.shipping.ports, routes: this.sim.shipping.routes, now: Date.now() }; }
 
   afterTick(result: TickResult): void {
     this.broadcast({ t: 'time', time: result.time, online: this.onlineCount() });
     const aj = JSON.stringify(this.sim.airports);
     if (aj !== this.airportsJson) { this.airportsJson = aj; this.broadcast(this.airportsMsg()); }
+    if (this.sim.shipping.version !== this.shippingVersion) { this.shippingVersion = this.sim.shipping.version; this.broadcast(this.shippingMsg()); }
     for (const u of result.unclaimed) this.broadcast({ t: 'unclaim', cx: u.cx, cy: u.cy });
     if (result.claimsChanged.length > 0) this.broadcast({ t: 'claims', claims: result.claimsChanged });
     for (const c of this.clients) this.sendStatsIfChanged(c);
@@ -567,6 +602,7 @@ function parseClientMsg(raw: unknown): ClientMsg | null {
       return out;
     }
     case 'leaderboard': return { t: 'leaderboard' };
+    case 'lifeline': return { t: 'lifeline' };
     case 'ping': return { t: 'ping' };
     default: return null;
   }

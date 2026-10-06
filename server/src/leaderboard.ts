@@ -1,7 +1,8 @@
 // Leaderboard: top cities by population, recomputed every LEADERBOARD_PUSH_TICKS ticks and cached.
 // Rank is among all players with population > 0 (1-based); players with 0 population are not listed.
 
-import { LEADERBOARD_SIZE, parseChunkKey, type LeaderboardEntry, type ServerMsg } from '@globalcity/shared';
+import { unlockedOf } from './players.ts';
+import { LEADERBOARD_SIZE, milestonePercent, parseChunkKey, type LeaderboardEntry, type ServerMsg } from '@globalcity/shared';
 import type { Players, PlayerRecord } from './players.ts';
 
 export class Leaderboard {
@@ -22,7 +23,7 @@ export class Leaderboard {
     this.ranks = new Map(ranked.map((p, k) => [p.id, k + 1]));
     const entries = ranked.slice(0, LEADERBOARD_SIZE).map((p): LeaderboardEntry => {
       const c = centroid(p);
-      return { id: p.id, name: p.name, cityName: p.cityName, color: p.color, population: p.stats.population, chunks: p.chunks.length, cx: c.cx, cy: c.cy, fires: p.stats.fires };
+      return { id: p.id, name: p.name, cityName: p.cityName, color: p.color, population: p.stats.population, chunks: p.chunks.length, cx: c.cx, cy: c.cy, fires: p.stats.fires, milestones: milestonePercent(unlockedOf(p)) };
     });
     const json = JSON.stringify(entries);
     if (json === this.json) return false;

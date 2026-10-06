@@ -16,7 +16,11 @@
     "smoke:zonewire": "tsx src/test-zonewire.mjs",
     "smoke:freeze": "tsx src/test-freeze.mjs",
     "smoke:smallrelease": "tsx src/test-smallrelease.mjs",
-    "smoke:milestones": "tsx src/test-milestones.mjs"
+    "smoke:milestones": "tsx src/test-milestones.mjs",
+    "smoke:lifeline": "tsx src/test-lifeline.mjs",
+    "smoke:custom": "tsx src/test-custom.mjs",
+    "smoke:uwcorner": "tsx src/test-uwcorner.mjs",
+    "smoke:grandcentral": "tsx src/test-grandcentral.mjs"
   },
   "dependencies": {
     "@globalcity/shared": "*",

@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.evertpot.globalcity",
+      "sha256_cert_fingerprints": [
+        "F8:F3:E8:0B:D2:02:61:72:A8:84:10:47:FC:31:A5:C0:14:BF:7C:6C:09:17:9A:BF:9E:1E:91:8D:9E:17:79:D6"
+      ]
+    }
+  }
+]

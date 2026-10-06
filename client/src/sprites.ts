@@ -73,7 +73,7 @@ export interface SpriteView { x0: number; y0: number; x1: number; y1: number; cx
 /** What the engine found on screen in its last scan. */
 export interface SceneScan { rails: number[]; ports: number[]; airports: number[]; water: number[] }
 
-import type { Flight } from '@globalcity/shared';
+import type { Flight, Voyage } from '@globalcity/shared';
 import { flightAlpha, flightFrame } from './flights.ts';
 
 export class SpriteEngine {
@@ -147,17 +147,7 @@ export class SpriteEngine {
       const [dx, dy] = dirs.length ? dirs[Math.floor(this.rand() * dirs.length)] : [1, 0];
       this.sprites.push({ kind: 'train', x: x + 0.5, y: y + 0.5, frame: trainFrame(dx, dy), alpha: 1, dx, dy, t: 0, age: 0, hx: x, hy: y, tx: x + dx, ty: y + dy });
     }
-    // ship: one, wandering the water near a seaport
-    if (s.ports.length && count('ship') === 0) {
-      const [px, py] = this.centroid(s.ports);
-      const near: number[] = [];
-      for (let i = 0; i < s.water.length; i += 2) if (Math.abs(s.water[i] - px) <= 10 && Math.abs(s.water[i + 1] - py) <= 10) near.push(s.water[i], s.water[i + 1]);
-      if (near.length) {
-        const [x, y] = this.pick(near);
-        const d = SHIP_DIRS[Math.floor(this.rand() * 8)];
-        this.sprites.push({ kind: 'ship', x: x + 0.5, y: y + 0.5, frame: 0, alpha: 1, dx: d[0], dy: d[1], t: 0, age: 0, hx: px, hy: py, tx: x, ty: y });
-      }
-    }
+    // (Ships sail between mayors' seaports, see flights.ts ShipLayer; no local harbour ship.)
     // airport: one helicopter hovering around the viewport centre. (Planes only fly between two
     // mayors' airports, see flights.ts; a lone airport has none.)
     if (s.airports.length) {
@@ -310,6 +300,26 @@ export class SpriteEngine {
         g.drawImage(img, fr.x, fr.y, def.w, def.h, Math.round(at.x - w / 2), Math.round(at.y - h / 2), Math.round(w), Math.round(h));
       } else {
         this.drawFallback(g, { kind: 'airplane', x: f.x, y: f.y, frame, alpha: 1, dx: 0, dy: 0, t: 0, age: 0, hx: 0, hy: 0, tx: 0, ty: 0 }, at.x, at.y, px / 3);
+      }
+    }
+    g.globalAlpha = 1;
+  }
+
+  /** Draw ships sailing between ports (zoomed in): the Micropolis ship sprite facing its heading. */
+  drawShips(g: CanvasRenderingContext2D, ships: Voyage[], toPx: (tx: number, ty: number) => { x: number; y: number } | null, px: number): void {
+    const def = this.assets.defs.ship, img = this.assets.image;
+    g.imageSmoothingEnabled = false;
+    for (const v of ships) {
+      const at = toPx(v.x, v.y);
+      if (!at) continue;
+      const frame = dirFrame(v.vx, v.vy);
+      g.globalAlpha = Math.min(1, Math.min(v.progress, 1 - v.progress) * v.duration / 1500);
+      if (img && def && def.frames[frame]) {
+        const f = def.frames[frame];
+        const w = px, h = px * def.h / def.w;
+        g.drawImage(img, f.x, f.y, def.w, def.h, Math.round(at.x - w / 2), Math.round(at.y - h / 2), Math.round(w), Math.round(h));
+      } else {
+        this.drawFallback(g, { kind: 'ship', x: v.x, y: v.y, frame, alpha: 1, dx: 0, dy: 0, t: 0, age: 0, hx: 0, hy: 0, tx: 0, ty: 0 }, at.x, at.y, px / 3);
       }
     }
     g.globalAlpha = 1;

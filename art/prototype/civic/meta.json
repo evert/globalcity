@@ -52,5 +52,35 @@
     "tiles": 3,
     "zone": "civic",
     "idea": "Holds criminals: cuts citywide crime and boosts police effectiveness, but lowers land value and residential demand within 6 tiles."
+  },
+  "university_5x4": {
+    "name": "University",
+    "tiles": "5x4",
+    "zone": "civic",
+    "idea": "Raises education level of residents within 15 tiles and attracts high-tech industry; needs a minimum city population of 20k."
+  },
+  "city_hall_v2": {
+    "name": "City Hall (oblique)",
+    "tiles": 4,
+    "zone": "civic",
+    "idea": "Seat of government: +10% tax collection and lowers crime/unrest citywide, boosts nearby commercial land value."
+  },
+  "university_5x4_v2": {
+    "name": "University",
+    "tiles": "5x4",
+    "zone": "civic",
+    "idea": "Raises education level of residents within 15 tiles and attracts high-tech industry; needs a minimum city population of 20k."
+  },
+  "city_hall_v3": {
+    "name": "City Hall (oblique, redrawn)",
+    "tiles": 4,
+    "zone": "civic",
+    "idea": "Seat of government: +10% tax collection and lowers crime/unrest citywide, boosts nearby commercial land value."
+  },
+  "university_v3": {
+    "name": "University",
+    "tiles": "5x4",
+    "zone": "civic",
+    "idea": "Raises education level of residents within 15 tiles and attracts high-tech industry."
   }
 }

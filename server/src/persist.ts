@@ -13,11 +13,13 @@ const FLUSH_INTERVAL_MS = 10_000;
 export class Persist {
   private readonly chunksDir: string;
   private readonly stateFile: string;
+  private readonly buildingsFile: string;
   private timer: NodeJS.Timeout | null = null;
 
   constructor(private readonly world: World, private readonly players: Players, saveDir: string) {
     this.chunksDir = path.join(saveDir, 'chunks');
     this.stateFile = path.join(saveDir, 'state.json');
+    this.buildingsFile = path.join(saveDir, 'buildings.json');
     fs.mkdirSync(this.chunksDir, { recursive: true });
   }
 
@@ -41,6 +43,10 @@ export class Persist {
   }
 
   loadState(): boolean {
+    if (fs.existsSync(this.buildingsFile)) {
+      try { this.world.buildings.load(JSON.parse(fs.readFileSync(this.buildingsFile, 'utf8'))); }
+      catch (e) { warn(`Could not load ${this.buildingsFile}: ${(e as Error).message}`); }
+    }
     if (!fs.existsSync(this.stateFile)) return false;
     try {
       const state = JSON.parse(fs.readFileSync(this.stateFile, 'utf8')) as StateFile;
@@ -65,6 +71,10 @@ export class Persist {
       chunks++;
     }
     this.world.dirty.clear();
+    if (this.world.buildings.dirty) {
+      atomicWrite(this.buildingsFile, JSON.stringify(this.world.buildings.list()));
+      this.world.buildings.dirty = false;
+    }
     let state = false;
     if (this.players.dirty) {
       atomicWrite(this.stateFile, JSON.stringify(this.players.serialize()));

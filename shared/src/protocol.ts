@@ -1,5 +1,7 @@
 import type { ToolId } from './tools.ts';
 import type { AirportInfo } from './flights.ts';
+import type { PortInfo, SeaRoute } from './ships.ts';
+import type { CustomBuilding } from './tools.ts';
 import { CHUNK } from './constants.ts';
 
 export interface PlayerPublic {
@@ -61,6 +63,9 @@ export interface PlayerStats {
   unlocked: string[]; // milestone buildings this city may build (reached or grandfathered)
   built: Record<string, number>; // milestone buildings currently standing, by id (seaport/airport/cityhall)
   cityHall: number; // powered city halls (benefits apply)
+  // Lifeline
+  debt: number; // lifeline still owed
+  lifelineAvailable: boolean; // the city may take a lifeline now
 }
 
 export interface LeaderboardEntry {
@@ -73,6 +78,8 @@ export interface LeaderboardEntry {
   cx: number; // centroid chunk of the city, for "visit"
   cy: number;
   fires: number;
+  /** share of milestones unlocked, 0..100 (the population ladder plus Grand Central); absent from old servers */
+  milestones?: number;
 }
 
 /** Where an online player is looking / pointing. */
@@ -110,6 +117,7 @@ export type ClientMsg =
   | { t: 'renameCity'; name: string }
   | { t: 'view'; x: number; y: number; zoom: number; cx?: number; cy?: number } // throttled by the client (~4/s)
   | { t: 'leaderboard' } // ask for the current top list
+  | { t: 'lifeline' } // take the emergency lifeline loan
   | { t: 'ping' };
 
 // ---------- server -> client (JSON) ----------
@@ -138,6 +146,9 @@ export type ServerMsg =
   | { t: 'version'; version: string } // current client build on the server (on welcome and whenever a new build lands)
   | { t: 'announce'; id: string; msg: string; level: 'info' | 'warn'; until: number } // admin announcement banner; until = ms epoch
   | { t: 'announceClear' }
+  | { t: 'shipping'; ports: PortInfo[]; routes: SeaRoute[]; now: number } // powered seaports + sea routes (on welcome and when they change)
+  | { t: 'buildings'; list: CustomBuilding[] } // every custom-layer building (sent on welcome)
+  | { t: 'building'; op: 'add' | 'remove'; b: CustomBuilding } // a custom-layer building appeared / went
   | { t: 'pong' };
 
 // ---------- binary frames (server -> client) ----------

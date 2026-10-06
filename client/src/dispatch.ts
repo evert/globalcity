@@ -38,6 +38,9 @@ export function handleServerMsg(msg: ServerMsg, { state, map, renderer, ui, upda
     case 'leaderboard': state.setLeaderboard(msg.entries, msg.me); break;
     case 'presence': state.setPresence(Array.isArray(msg.players) ? msg.players : []); break;
     case 'airports': renderer.flightLayer.set(msg.airports, msg.now); renderer.invalidate(); break;
+    case 'shipping': renderer.shipLayer.set(msg.ports, msg.routes, msg.now); renderer.invalidate(); break;
+    case 'buildings': renderer.customs.set(msg.list); break;
+    case 'building': renderer.customs.apply(msg.op, msg.b); break;
     case 'unclaim': {
       const prev = state.removeClaim(msg.cx, msg.cy);
       if (prev) { renderer.rebuildChunk(msg.cx, msg.cy); ui.onUnclaim(prev); }

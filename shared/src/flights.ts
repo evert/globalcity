@@ -13,6 +13,7 @@ export interface Flight {
   key: string; // stable id: `${from}>${to}#${k}`
   fromX: number; fromY: number;
   toX: number; toY: number; // destination, already unwrapped so the route is the shortest way round
+  fromOwner: string; toOwner: string; // airport owners (player ids)
   depart: number; // ms (server clock)
   duration: number; // ms
   progress: number; // 0..1
@@ -90,7 +91,7 @@ export function activeFlights(airports: readonly AirportInfo[], now: number): Fl
       const len = Math.hypot(dx, dy) || 1;
       out.push({
         key: `${keyOf(a)}>${keyOf(b)}#${k}`,
-        fromX: a.x, fromY: a.y, toX: a.x + dx, toY: b.y,
+        fromX: a.x, fromY: a.y, toX: a.x + dx, toY: b.y, fromOwner: a.ownerId, toOwner: b.ownerId,
         depart, duration, progress: t,
         x, y: a.y + dy * t, vx: dx / len, vy: dy / len,
       });

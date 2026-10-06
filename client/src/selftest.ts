@@ -19,7 +19,7 @@ import { Net } from './net.ts';
 import { ViewReporter, VIEW_INTERVAL_MS } from './presence.ts';
 import { Renderer } from './renderer.ts';
 import { AppState, claimLabel } from './state.ts';
-import { NEIGHBOUR_HELP, POLICE_HELP, UI } from './ui.ts';
+import { NEIGHBOUR_HELP, UI } from './ui.ts';
 import { SpriteEngine, type SpriteView } from './sprites.ts';
 
 function assert(cond: unknown, msg: string): void { if (!cond) throw new Error(`selftest: ${msg}`); }
@@ -31,7 +31,7 @@ export function baseStats(over: Partial<PlayerStats> = {}): PlayerStats {
     powerImported: 0, powerExported: 0, powerTradeNet: 0, fires: 0, fireStations: 0,
     neighbours: 0, neighbourDemand: { r: 0, c: 0, i: 0 }, railLinks: 0, railDemand: 0,
     crime: 0, policeStations: 0, specials: { stadium: 0, seaport: 0, airport: 0 }, traffic: 0,
-    peakPop: 0, nextMilestone: 2000, unlocked: [], built: {}, cityHall: 0,
+    peakPop: 0, nextMilestone: 2000, unlocked: [], built: {}, cityHall: 0, debt: 0, lifelineAvailable: false,
     ...over,
   };
 }
@@ -59,14 +59,14 @@ function syntheticChunk(cx: number, cy: number): Uint16Array {
 }
 
 export const DEMO_LEADERBOARD: LeaderboardEntry[] = [
-  { id: 'p1', name: 'Hanzo', cityName: 'Kyoto', color: '#ff5f5f', population: 184_320, chunks: 9, cx: 92, cy: 20, fires: 0 },
-  { id: 'p2', name: 'Lena', cityName: 'Eindhoven', color: '#4dd0e1', population: 121_900, chunks: 6, cx: 66, cy: 15, fires: 3 },
-  { id: 'me', name: 'Tester', cityName: 'Tilburg', color: '#58c4ff', population: 64_210, chunks: 4, cx: 30, cy: 22, fires: 2 },
-  { id: 'p4', name: 'Oluwaseun', cityName: 'Lagos', color: '#7ddc5c', population: 40_010, chunks: 3, cx: 70, cy: 36, fires: 0 },
-  { id: 'p5', name: 'Marta', cityName: 'Porto', color: '#ffb347', population: 22_400, chunks: 2, cx: 69, cy: 14, fires: 1 },
-  { id: 'p6', name: 'Yusuf', cityName: 'Izmir', color: '#b47aff', population: 9_870, chunks: 2, cx: 80, cy: 18, fires: 0 },
-  { id: 'p7', name: 'Ada', cityName: '', color: '#ff7ad9', population: 3_120, chunks: 1, cx: 60, cy: 17, fires: 0 },
-  { id: 'p8', name: 'Kenji', cityName: 'Sendai', color: '#9be564', population: 980, chunks: 1, cx: 110, cy: 20, fires: 0 },
+  { id: 'p1', name: 'Hanzo', cityName: 'Kyoto', color: '#ff5f5f', population: 184_320, chunks: 9, cx: 92, cy: 20, fires: 0 , milestones: 100 },
+  { id: 'p2', name: 'Lena', cityName: 'Eindhoven', color: '#4dd0e1', population: 121_900, chunks: 6, cx: 66, cy: 15, fires: 3 , milestones: 82 },
+  { id: 'me', name: 'Tester', cityName: 'Tilburg', color: '#58c4ff', population: 64_210, chunks: 4, cx: 30, cy: 22, fires: 2 , milestones: 64 },
+  { id: 'p4', name: 'Oluwaseun', cityName: 'Lagos', color: '#7ddc5c', population: 40_010, chunks: 3, cx: 70, cy: 36, fires: 0 , milestones: 45 },
+  { id: 'p5', name: 'Marta', cityName: 'Porto', color: '#ffb347', population: 22_400, chunks: 2, cx: 69, cy: 14, fires: 1 , milestones: 36 },
+  { id: 'p6', name: 'Yusuf', cityName: 'Izmir', color: '#b47aff', population: 9_870, chunks: 2, cx: 80, cy: 18, fires: 0 , milestones: 27 },
+  { id: 'p7', name: 'Ada', cityName: '', color: '#ff7ad9', population: 3_120, chunks: 1, cx: 60, cy: 17, fires: 0 , milestones: 9 },
+  { id: 'p8', name: 'Kenji', cityName: 'Sendai', color: '#9be564', population: 980, chunks: 1, cx: 110, cy: 20, fires: 0 , milestones: 0 },
 ];
 
 /** Claims for the social demo: my two-plot city, a neighbour, an abandoned plot and an idle one, all around chunk (31,23). */
@@ -389,7 +389,7 @@ export async function runSelfTest(): Promise<void> {
   assert(trade.textContent === '⬇ buying 5 units (−$5/mo)', `trade text, got "${trade.textContent}"`);
   assert(trade.querySelector('.paying') && !trade.querySelector('.income'), 'paying styled amber');
   assert(trade.title.includes('Power flows over wires'), 'trade tooltip');
-  assert(q('#rci .stations')!.textContent === '🚒 1 station', 'stations count');
+  assert(!q('#rci .stations') && !q('#police') && !q('#specials'), 'no station, police or special-building badges in the status panel');
   const fireBtn = q<HTMLButtonElement>('#fireBtn')!;
   assert(!fireBtn.classList.contains('hidden') && fireBtn.textContent === '🔥 2 fires', `fire badge, got "${fireBtn.textContent}"`);
   net.emit('msg', { t: 'stats', stats: baseStats({ powerExported: 7, powerTradeNet: 7, powerImported: 2 }) });
@@ -506,24 +506,21 @@ export async function runSelfTest(): Promise<void> {
   net.emit('msg', { t: 'stats', stats: { ...baseStats(), neighbours: undefined, neighbourDemand: undefined, railLinks: undefined, railDemand: undefined } as unknown as PlayerStats });
   assert(nb.classList.contains('hidden'), 'old server stats without neighbour fields tolerated');
 
-  // ---- traffic / police / crime / special-building stats ----
+  // ---- traffic / crime stats ----
   net.emit('msg', { t: 'stats', stats: baseStats({ traffic: 0.3, crime: 0.6, policeStations: 0, fireStations: 1 }) });
-  const trafficEl = q<HTMLElement>('#traffic')!, policeEl = q<HTMLElement>('#police')!, crimeEl = q<HTMLElement>('#crime')!, specialsEl = q<HTMLElement>('#specials')!;
+  const trafficEl = q<HTMLElement>('#traffic')!, crimeEl = q<HTMLElement>('#crime')!;
   assert(!trafficEl.classList.contains('hidden') && trafficEl.textContent === '🚗 moderate traffic', `traffic line, got "${trafficEl.textContent}"`);
   assert(q<HTMLElement>('#traffic .fill')!.style.width === '30%', 'traffic meter width');
-  assert(policeEl.textContent === '👮 0 police' && policeEl.title === POLICE_HELP, `police count + tooltip, got "${policeEl.textContent}"`);
   assert(!crimeEl.classList.contains('hidden') && crimeEl.textContent === '⚠ crime' && crimeEl.classList.contains('bad'), 'crime warning shown in red');
-  assert(policeEl.parentElement === crimeEl.parentElement, 'crime warning on the police line');
-  assert(specialsEl.classList.contains('hidden'), 'no special chips without specials');
   net.emit('msg', { t: 'stats', stats: baseStats({ traffic: 0.1, crime: 0.6, policeStations: 2, specials: { stadium: 1, seaport: 0, airport: 1 } }) });
-  assert(trafficEl.textContent === '🚗 light traffic' && policeEl.textContent === '👮 2 police' && crimeEl.classList.contains('hidden'), 'light traffic, police present hides the crime warning');
-  assert(!specialsEl.classList.contains('hidden') && qa('#specials .chip').map((c) => c.textContent).join('|') === '🏟 stadium|✈ airport', `special chips, got "${specialsEl.textContent}"`);
+  assert(trafficEl.textContent === '🚗 light traffic' && crimeEl.classList.contains('hidden'), 'light traffic, police present hides the crime warning');
+  assert(!q('#specials') && !q('#rci .chip'), 'no special-building badges');
   net.emit('msg', { t: 'stats', stats: baseStats({ traffic: 0.7 }) });
   assert(trafficEl.textContent === '🚗 heavy traffic', 'heavy traffic');
   net.emit('msg', { t: 'stats', stats: baseStats() });
-  assert(trafficEl.classList.contains('hidden') && specialsEl.classList.contains('hidden') && policeEl.textContent === '👮 0 police', 'traffic + chips hidden at zero');
+  assert(trafficEl.classList.contains('hidden'), 'traffic hidden at zero');
   net.emit('msg', { t: 'stats', stats: { ...baseStats(), crime: undefined, policeStations: undefined, specials: undefined, traffic: undefined } as unknown as PlayerStats });
-  assert(trafficEl.classList.contains('hidden') && crimeEl.classList.contains('hidden') && policeEl.textContent === '👮 0 police', 'old server stats without the new fields tolerated');
+  assert(trafficEl.classList.contains('hidden') && crimeEl.classList.contains('hidden'), 'old server stats without the new fields tolerated');
 
   // ---- presence markers ----
   r.setCamera(CHUNK, CHUNK, 1); // view covers roughly tiles 39..89 x 45..83

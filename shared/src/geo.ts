@@ -31,3 +31,15 @@ export function inWorld(x: number, y: number): boolean {
 export function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
 }
+
+/**
+ * Deterministic per-lot randomness in [0,1): the same tile always gets the same answer (stable across ticks
+ * and restarts), while neighbours differ. Used for land-value jitter and building variety (server) and
+ * the land value overlay (client); both must use this one function.
+ */
+export function lotHash(x: number, y: number, salt: number): number {
+  let h = (x * 73856093) ^ (y * 19349663) ^ (salt * 83492791);
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+  h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
+  return ((h ^ (h >>> 15)) >>> 0) / 4294967296;
+}

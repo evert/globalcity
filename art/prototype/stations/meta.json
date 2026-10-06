@@ -1,0 +1,60 @@
+{
+  "halt_ew": {
+    "name": "Halt",
+    "w": 3,
+    "h": 2,
+    "orient": "ew",
+    "tracks": "1 platform track"
+  },
+  "halt_ns": {
+    "name": "Halt",
+    "w": 2,
+    "h": 3,
+    "orient": "ns",
+    "tracks": "1 platform track"
+  },
+  "station_ew": {
+    "name": "Station",
+    "w": 4,
+    "h": 3,
+    "orient": "ew",
+    "tracks": "2 platform tracks"
+  },
+  "station_ns": {
+    "name": "Station",
+    "w": 3,
+    "h": 4,
+    "orient": "ns",
+    "tracks": "2 platform tracks"
+  },
+  "grand_ew": {
+    "name": "Grand Central",
+    "w": 6,
+    "h": 5,
+    "orient": "ew",
+    "tracks": "3 platform tracks"
+  },
+  "grand_ns": {
+    "name": "Grand Central",
+    "w": 5,
+    "h": 6,
+    "orient": "ns",
+    "tracks": "3 platform tracks"
+  },
+  "hall_ew": {
+    "name": "Grand Central (single track)",
+    "w": 6,
+    "h": 3,
+    "orient": "ew",
+    "tracks": "1 platform track",
+    "frames": 8
+  },
+  "hall_ns": {
+    "name": "Grand Central (single track)",
+    "w": 3,
+    "h": 6,
+    "orient": "ns",
+    "tracks": "1 platform track",
+    "frames": 8
+  }
+}

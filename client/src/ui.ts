@@ -1,6 +1,8 @@
 // DOM overlay: top bar, toolbar, RCI, toasts, query popover, welcome/about panels, minimap widget.
 import type { ClaimInfo, Demand, LeaderboardEntry, QueryInfo, ToolId } from '@globalcity/shared';
-import { CHUNK, claimCost, MILESTONE_BUILDINGS, MILESTONE_ORDER, isMilestoneTool, type MilestoneBuilding, MAX_CHUNKS_PER_PLAYER, POWER_PRICE_PER_UNIT, TOOLS, TOOL_ORDER, WORLD_H, WORLD_W, chunkOf, lonLatToTile } from '@globalcity/shared';
+import { OVERLAY_INFO, OVERLAY_MODES, type OverlayMode } from './overlays.ts';
+import { LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, LIFELINE_REPAY_SHARE, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT, LOMASK, FIRESTBASE, POLICESTBASE, chunkKey, shipCargo, flightLoad } from '@globalcity/shared';
+import { CHUNK, claimCost, MILESTONE_BUILDINGS, MILESTONE_ORDER, isMilestoneTool, nextMilestone, type MilestoneBuilding, MAX_CHUNKS_PER_PLAYER, POWER_PRICE_PER_UNIT, TOOLS, TOOL_ORDER, PLANT_OUTPUT, CUSTOM_BUILDINGS, GRAND_CENTRAL, WORLD_H, WORLD_W, chunkOf, lonLatToTile } from '@globalcity/shared';
 import type { Actions } from './actions.ts';
 import type { Minimap, SpriteSheet } from './assets.ts';
 import { drawTile } from './assets.ts';
@@ -9,6 +11,33 @@ import type { Renderer } from './renderer.ts';
 import { isFireTile, withAlpha } from './renderer.ts';
 import type { AppState } from './state.ts';
 
+/** Toolbar groups: members share one button with a flyout once two or more of them are unlocked. */
+const TOOL_GROUPS: { id: string; name: string; members: ToolId[] }[] = [
+  { id: 'power', name: 'Power plants', members: ['coal', 'nuclear', 'windfarm', 'offshore'] },
+  { id: 'education', name: 'Education', members: ['school', 'university'] },
+  { id: 'ports', name: 'Ports', members: ['seaport', 'airport'] },
+];
+interface ToolGroupUi { def: (typeof TOOL_GROUPS)[number]; wrap: HTMLElement; head: HTMLButtonElement; icon: HTMLCanvasElement; label: HTMLElement; cost: HTMLElement; flyout: HTMLElement; grouped: boolean | null; last: ToolId | null; shown: ToolId | null }
+
+/** Price for a toolbar label; power plants add how many zones they power. */
+const priceLabel = (id: ToolId): string => `${fmtMoney(TOOLS[id].cost)}${PLANT_OUTPUT[id] ? ` · ⚡${PLANT_OUTPUT[id]}` : ''}`;
+
+/** Draw a custom building's image (its first frame, when animated) centred in a px x px square. */
+function drawCustomFit(g: CanvasRenderingContext2D, img: HTMLImageElement, kind: string, px: number): void {
+  const frames = CUSTOM_BUILDINGS[kind]?.frames ?? 1;
+  const fw = img.naturalWidth / frames, fh = img.naturalHeight;
+  const s = Math.min(px / fw, px / fh), w = fw * s, h = fh * s;
+  g.drawImage(img, 0, 0, fw, fh, (px - w) / 2, (px - h) / 2, w, h);
+}
+
+/** Leaderboard cell: the share of milestones unlocked, as a number over a thin bar. */
+function milestoneCell(pct: number | undefined): HTMLElement {
+  if (pct === undefined) return el('span', { class: 'ms' });
+  const fill = el('i', { class: 'lbms-fill' });
+  fill.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+  return el('span', { class: `ms${pct >= 100 ? ' full' : ''}`, title: `${pct}% of milestones unlocked` }, el('b', { text: `${pct}%` }), el('span', { class: 'lbms-bar' }, fill));
+}
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const WELCOMED_KEY = 'globalcity.welcomed';
 const TOAST_DEDUP_MS = 3000;
@@ -16,7 +45,6 @@ const POWER_TRADE_HELP = 'Power flows over wires across plot borders; surplus is
 export const NEIGHBOUR_HELP = "Neighbouring cities' jobs and shoppers add demand across the border; rail connecting your zones to theirs boosts commerce.";
 export const POLICE_HELP = 'Police stations cover 14 tiles; uncovered lots lose land value once the city grows (crime)';
 export const TRAFFIC_HELP = 'Average traffic on your roads: zones send cars along nearby roads; busy roads are drawn with traffic.';
-export const SPECIALS_HELP = 'Powered special buildings boost demand: a stadium attracts residents, a seaport (near water) industry, an airport commerce once another mayor has an airport to fly to.';
 
 /** Traffic word for stats.traffic (0..1), or '' when there is none. */
 export function trafficLabel(t: number): '' | 'light' | 'moderate' | 'heavy' {
@@ -74,10 +102,14 @@ export class UI {
   private status!: HTMLElement; private offline!: HTMLElement;
   private claimBtn!: HTMLButtonElement; private findBtn!: HTMLButtonElement; private cityBtn!: HTMLButtonElement; private worldBtn!: HTMLButtonElement;
   private toolButtons = new Map<ToolId, HTMLButtonElement>();
+  private toolGroups: ToolGroupUi[] = [];
+  private openGroup: ToolGroupUi | null = null;
+  private autoOverlay: OverlayMode | null = null; // map view opened by clicking a station
   private rciBars!: Record<'r' | 'c' | 'i', HTMLElement>; private rciBoost!: Record<'r' | 'c' | 'i', HTMLElement>;
-  private powerText!: HTMLElement; private stationsText!: HTMLElement; private tradeText!: HTMLElement; private neighbourText!: HTMLElement; private budgetText!: HTMLElement;
-  private policeText!: HTMLElement; private crimeText!: HTMLElement; private trafficText!: HTMLElement; private trafficWord!: HTMLElement; private trafficFill!: HTMLElement; private specialsText!: HTMLElement;
+  private powerText!: HTMLElement; private tradeText!: HTMLElement; private neighbourText!: HTMLElement; private budgetText!: HTMLElement;
+  private crimeText!: HTMLElement; private trafficText!: HTMLElement; private trafficWord!: HTMLElement; private trafficFill!: HTMLElement;
   private toasts!: HTMLElement; private lastToast: { msg: string; kind: ToastKind; el: HTMLElement; at: number; timer: ReturnType<typeof setTimeout> } | null = null;
+  private lifelineBtn!: HTMLButtonElement; private lifelinePanel!: HTMLElement;
   private milestones!: HTMLElement; private msRows!: HTMLElement; private msBtn!: HTMLButtonElement;
   private leaderboard!: HTMLElement; private lbRows!: HTMLElement; private lbMe!: HTMLElement; private lbBtn!: HTMLButtonElement;
   private fireBtn!: HTMLButtonElement; private fireCycle = 0;
@@ -108,6 +140,8 @@ export class UI {
     this.buildAbout();
     this.buildLeaderboard();
     this.buildMilestones();
+    this.buildOverlayBar();
+    this.buildLifeline();
     this.buildMinimap();
     this.root.append(this.toasts, this.query, this.touchBar, this.banners);
     this.bind();
@@ -142,6 +176,8 @@ export class UI {
     this.msBtn.onclick = () => this.toggleMilestones();
     this.lbBtn = el('button', { class: 'btn', id: 'lbBtn', title: 'Leaderboard: the most populous cities on the planet' }, '🏆 Top cities');
     this.lbBtn.onclick = () => this.toggleLeaderboard();
+    this.lifelineBtn = el('button', { class: 'btn lifeline hidden', id: 'lifelineBtn', title: 'Your city is nearly broke: an emergency loan is available' }, '🛟 Lifeline');
+    this.lifelineBtn.onclick = () => this.toggleLifeline();
     this.fireBtn = el('button', { class: 'btn fire hidden', id: 'fireBtn', title: 'Your city is burning! Click to jump to the next fire.' }, '🔥 0 fires');
     this.fireBtn.onclick = () => this.nextFire();
     const discordBtn = discordLink('', 'btn ghost discord-btn');
@@ -158,7 +194,7 @@ export class UI {
       el('div', { class: 'stat', title: 'Players online' }, el('span', { class: 'ico' }, '●'), this.online),
       el('div', { class: 'stat world-pop', title: 'World population: every city on the planet combined' }, el('span', { class: 'ico' }, '🌍'), this.worldPop),
       this.plotsStat,
-      this.claimBtn, this.findBtn, this.cityBtn, this.worldBtn, this.msBtn, this.lbBtn, this.fireBtn,
+      this.claimBtn, this.findBtn, this.cityBtn, this.worldBtn, this.msBtn, this.lbBtn, this.lifelineBtn, this.fireBtn,
       el('div', { class: 'spacer' }),
       this.status, this.cityNameBtn, this.nameBtn, discordBtn, aboutBtn,
     );
@@ -185,18 +221,112 @@ export class UI {
       const g = icon.getContext('2d')!;
       g.imageSmoothingEnabled = false;
       drawTile(g, this.sheet, t.icon, 0, 0, 32, 32);
-      const cost = t.cost ? fmtMoney(t.cost) : 'free';
+      if (t.custom) {
+        const img = this.renderer.customs.images.get(t.custom);
+        const paint = () => { if (img && img.naturalWidth) { g.clearRect(0, 0, 32, 32); drawCustomFit(g, img, t.custom!, 32); } };
+        if (img?.complete) paint(); else img?.addEventListener('load', paint, { once: true });
+      }
+      const cost = t.cost ? priceLabel(id) : 'free';
       const btn = el('button', { class: 'tool', 'data-tool': id, title: `${t.name} — ${cost} (${t.hotkey.toUpperCase()})`, 'aria-label': t.name },
         icon,
         el('span', { class: 'key', text: t.hotkey.toUpperCase() }),
         el('span', { class: 'label', text: t.name }),
-        el('span', { class: 'cost', text: t.cost ? fmtMoney(t.cost) : '' }),
+        el('span', { class: 'cost', text: t.cost ? priceLabel(id) : '' }),
       );
-      btn.onclick = () => this.state.setTool(id);
+      btn.onclick = () => { this.state.setTool(id); this.closeToolGroup(); };
       this.toolButtons.set(id, btn);
-      bar.append(btn);
+      const def = TOOL_GROUPS.find((g) => g.members.includes(id));
+      if (!def) { bar.append(btn); continue; }
+      const grp = this.toolGroups.find((x) => x.def === def) ?? this.buildToolGroup(def, bar);
+      grp.flyout.append(btn); // layoutToolGroups() moves it into the bar while the group is not needed
     }
+    bar.addEventListener('scroll', () => this.closeToolGroup(), { passive: true });
+    document.addEventListener('pointerdown', (e) => {
+      const g = this.openGroup;
+      if (g && !g.flyout.contains(e.target as Node) && !g.head.contains(e.target as Node)) this.closeToolGroup();
+    });
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') this.closeToolGroup(); });
+    window.addEventListener('resize', () => this.closeToolGroup());
     this.root.append(bar);
+    this.layoutToolGroups();
+  }
+
+  private buildToolGroup(def: (typeof TOOL_GROUPS)[number], bar: HTMLElement): ToolGroupUi {
+    const icon = el('canvas', { class: 'icon', width: '32', height: '32' });
+    const label = el('span', { class: 'label', text: def.name });
+    const cost = el('span', { class: 'cost' });
+    const head = el('button', { class: 'tool group-head', 'data-group': def.id, 'aria-haspopup': 'true', 'aria-expanded': 'false', 'aria-label': def.name },
+      icon, label, cost, el('span', { class: 'caret', text: '▸' }));
+    const flyout = el('div', { class: 'tool-flyout panel hidden', role: 'menu', 'aria-label': def.name });
+    const wrap = el('div', { class: 'tool-group', 'data-group': def.id }, head);
+    this.root.append(flyout); // outside the toolbar so it stacks above the minimap and RCI panel
+    const g: ToolGroupUi = { def, wrap, head, icon, label, cost, flyout, grouped: null, last: null, shown: null };
+    head.onclick = () => (this.openGroup === g ? this.closeToolGroup() : this.openToolGroup(g));
+    bar.append(wrap);
+    this.toolGroups.push(g);
+    return g;
+  }
+
+  private openToolGroup(g: ToolGroupUi): void {
+    this.closeToolGroup();
+    this.openGroup = g;
+    g.flyout.classList.remove('hidden');
+    g.head.setAttribute('aria-expanded', 'true');
+    const r = g.head.getBoundingClientRect(), f = g.flyout.getBoundingClientRect();
+    const vw = window.innerWidth, vh = window.innerHeight;
+    if (r.right < vw / 2 && r.top < vh - 120) { // toolbar down the left edge: open to the right
+      g.flyout.style.left = `${Math.round(r.right + 6)}px`;
+      g.flyout.style.top = `${Math.round(Math.max(8, Math.min(r.top, vh - f.height - 8)))}px`;
+    } else { // toolbar along the bottom (phones): open upwards
+      g.flyout.style.left = `${Math.round(Math.max(8, Math.min(r.left, vw - f.width - 8)))}px`;
+      g.flyout.style.top = `${Math.round(Math.max(8, r.top - f.height - 6))}px`;
+    }
+  }
+
+  private closeToolGroup(): void {
+    const g = this.openGroup;
+    if (!g) return;
+    this.openGroup = null;
+    g.flyout.classList.add('hidden');
+    g.head.setAttribute('aria-expanded', 'false');
+  }
+
+  private toolUnlocked(id: ToolId): boolean {
+    return !isMilestoneTool(id) || (this.state.stats?.unlocked?.includes(id) ?? false);
+  }
+
+  /** Group members share one button once two or more are unlocked; otherwise they sit in the bar as before. */
+  private layoutToolGroups(): void {
+    for (const g of this.toolGroups) {
+      const unlocked = g.def.members.filter((id) => this.toolUnlocked(id));
+      const grouped = unlocked.length >= 2;
+      if (grouped !== g.grouped) {
+        g.grouped = grouped;
+        for (const id of g.def.members) {
+          const btn = this.toolButtons.get(id)!;
+          if (grouped) g.flyout.append(btn); else g.wrap.before(btn);
+        }
+        g.wrap.classList.toggle('hidden', !grouped);
+        if (!grouped && this.openGroup === g) this.closeToolGroup();
+      }
+      if (!grouped) continue;
+      const tool = this.state.tool as ToolId;
+      if (g.def.members.includes(tool)) g.last = tool;
+      const cur = g.last && unlocked.includes(g.last) ? g.last : unlocked[0];
+      const active = g.def.members.includes(tool);
+      g.head.classList.toggle('selected', active);
+      g.label.textContent = active ? TOOLS[cur].name : g.def.name;
+      g.cost.textContent = active ? priceLabel(cur) : `${unlocked.length} buildings`;
+      g.head.title = `${g.def.name}: ${unlocked.map((id) => `${TOOLS[id].name} (${TOOLS[id].hotkey.toUpperCase()})`).join(', ')}`;
+      if (g.shown !== cur) {
+        g.shown = cur;
+        const src = this.toolButtons.get(cur)!.querySelector('canvas')!;
+        const ctx = g.icon.getContext('2d')!;
+        ctx.imageSmoothingEnabled = false;
+        ctx.clearRect(0, 0, 32, 32);
+        ctx.drawImage(src, 0, 0);
+      }
+    }
   }
 
   private buildRci(): void {
@@ -210,22 +340,18 @@ export class UI {
     this.rciBars = { r: r.fill, c: c.fill, i: i.fill };
     this.rciBoost = { r: r.boost, c: c.boost, i: i.boost };
     this.powerText = el('span', { class: 'power', text: '⚡ 0 / 0' });
-    this.stationsText = el('span', { class: 'stations hidden', title: 'Powered fire stations (each protects 12 tiles around it)' }, '🚒 0 stations');
-    this.policeText = el('span', { class: 'police hidden', id: 'police', title: POLICE_HELP }, '👮 0 police');
     this.crimeText = el('span', { class: 'crime bad hidden', id: 'crime', title: `Crime is high and no police station is powered. ${POLICE_HELP}` }, '⚠ crime');
     this.trafficWord = el('span', { class: 'word' });
     this.trafficFill = el('span', { class: 'fill' });
     this.trafficText = el('div', { class: 'traffic hidden', id: 'traffic', title: TRAFFIC_HELP }, el('span', { text: '🚗 ' }), this.trafficWord, el('span', { class: 'meter' }, this.trafficFill));
-    this.specialsText = el('div', { class: 'specials hidden', id: 'specials', title: SPECIALS_HELP });
     this.tradeText = el('div', { class: 'trade hidden', id: 'powerTrade', title: POWER_TRADE_HELP });
     this.neighbourText = el('div', { class: 'neighbours hidden', id: 'neighbours', title: NEIGHBOUR_HELP });
     this.budgetText = el('div', { class: 'budget', id: 'budget', title: 'Net budget over the last game year: taxes on your population minus upkeep for roads, rail, stations and power plants. The economy idles while you are away.' });
     const box = el('div', { id: 'rci', class: 'panel', title: 'Residential / Commercial / Industrial demand' },
       el('div', { class: 'rci-bars' }, r.wrap, c.wrap, i.wrap),
-      el('div', { class: 'power-line' }, this.powerText, this.stationsText),
-      el('div', { class: 'power-line', id: 'safety' }, this.policeText, this.crimeText),
+      el('div', { class: 'power-line' }, this.powerText),
+      el('div', { class: 'power-line', id: 'safety' }, this.crimeText),
       this.trafficText,
-      this.specialsText,
       this.tradeText,
       this.neighbourText,
       this.budgetText);
@@ -284,7 +410,7 @@ export class UI {
       el('h2', { text: '🏆 Top cities' }),
       el('div', { class: 'lb-head' },
         el('span', { class: 'rank', text: '#' }), el('span', { class: 'sw' }), el('span', { class: 'name', text: 'City' }),
-        el('span', { class: 'pop', text: 'Population' }), el('span', { class: 'chunks', text: 'Plots' }), el('span', { class: 'fires' }), el('span', { class: 'visit' })),
+        el('span', { class: 'pop', text: 'Population' }), el('span', { class: 'ms', text: 'Milestones', title: 'Share of milestone buildings unlocked (see 🏛 Milestones)' }), el('span', { class: 'chunks', text: 'Plots' }), el('span', { class: 'fires' }), el('span', { class: 'visit' })),
       this.lbRows,
       this.lbMe,
       this.lbWorld,
@@ -345,27 +471,25 @@ export class UI {
       boost.classList.toggle('hidden', bh <= 0);
     }
     const net = s?.lastIncome ?? 0;
-    this.budgetText.textContent = `💰 ${net >= 0 ? '+' : '−'}${fmtMoney(Math.abs(net))} last year`;
+    const debt = s?.debt ?? 0;
+    this.budgetText.textContent = `💰 ${net >= 0 ? '+' : '−'}${fmtMoney(Math.abs(net))} last year${debt > 0 ? ` · 🛟 owes ${fmtMoney(debt)}` : ''}`;
+    this.lifelineBtn.classList.toggle('hidden', !s?.lifelineAvailable);
+    if (!s?.lifelineAvailable) this.lifelinePanel?.classList.add('hidden');
     this.budgetText.classList.toggle('bad', net < 0);
     this.budgetText.classList.toggle('hidden', !s);
     const neighbours = s?.neighbours ?? 0, railLinks = s?.railLinks ?? 0;
     this.neighbourText.textContent = `🤝 ${neighbours} ${neighbours === 1 ? 'neighbour' : 'neighbours'} · 🚆 ${railLinks} ${railLinks === 1 ? 'rail link' : 'rail links'}`;
     this.neighbourText.classList.toggle('hidden', neighbours <= 0 && railLinks <= 0);
     const sup = s?.powerSupply ?? 0, dem = s?.powerDemand ?? 0;
-    this.powerText.textContent = `⚡ ${sup} / ${dem}`;
-    this.powerText.title = `Power supply ${sup} / demand ${dem} (zone units). ${POWER_TRADE_HELP}`;
+    this.powerText.textContent = `⚡ ${dem} / ${sup}`;
+    this.powerText.title = `Power: ${dem} zones in use of ${sup} capacity. ${POWER_TRADE_HELP}`;
     this.powerText.classList.toggle('bad', dem > sup);
     this.refreshPowerTrade(s?.powerImported ?? 0, s?.powerExported ?? 0, s?.powerTradeNet ?? 0);
-    const stations = s?.fireStations ?? 0;
-    this.stationsText.textContent = `🚒 ${stations} ${stations === 1 ? 'station' : 'stations'}`;
-    this.stationsText.classList.toggle('hidden', !s);
     const fires = s?.fires ?? 0;
     this.fireBtn.textContent = `🔥 ${fires} ${fires === 1 ? 'fire' : 'fires'}`;
     this.fireBtn.classList.toggle('hidden', fires <= 0);
-    // police / crime (old servers omit these: treat as no police, no crime)
+    // crime warning (old servers omit these: treat as no police, no crime)
     const police = s?.policeStations ?? 0, crime = s?.crime ?? 0;
-    this.policeText.textContent = `👮 ${police} police`;
-    this.policeText.classList.toggle('hidden', !s);
     this.crimeText.classList.toggle('hidden', !(crime >= 0.5 && police === 0));
     // traffic
     const traffic = Math.max(0, Math.min(1, s?.traffic ?? 0));
@@ -374,14 +498,6 @@ export class UI {
     this.trafficFill.style.width = `${Math.round(traffic * 100)}%`;
     this.trafficFill.className = `fill ${word}`;
     this.trafficText.classList.toggle('hidden', !word);
-    // special-building boosts
-    const sp = s?.specials;
-    const chips: string[] = [];
-    if (sp && sp.stadium > 0) chips.push('🏟 stadium');
-    if (sp && sp.seaport > 0) chips.push('⚓ seaport');
-    if (sp && sp.airport > 0) chips.push('✈ airport');
-    this.specialsText.replaceChildren(...chips.map((c) => el('span', { class: 'chip', text: c })));
-    this.specialsText.classList.toggle('hidden', chips.length === 0);
   }
 
   /** Second line of the power widget: what we buy/sell over the borders and what it costs/earns. */
@@ -419,19 +535,128 @@ export class UI {
     for (const [id, btn] of this.toolButtons) {
       btn.classList.toggle('selected', this.state.tool === id);
       btn.classList.toggle('poor', this.state.funds < TOOLS[id].cost);
+      if (id === 'grandcentral') {
+        // unlocked by a rail link to another mayor's city rather than by population; hidden until then
+        const unlocked = st?.unlocked?.includes(id) ?? false, built = (st?.built?.grandcentral ?? 0) >= 1;
+        btn.classList.toggle('hidden', !unlocked);
+        btn.classList.toggle('built', built);
+        const cost = btn.querySelector('.cost');
+        if (cost) cost.textContent = built ? 'Built' : priceLabel(id);
+        btn.title = built ? 'Grand Central: your city already has one (one per city). It can be rebuilt if it is destroyed.'
+          : `Grand Central — ${priceLabel(id)} (${TOOLS[id].hotkey.toUpperCase()}). Click your east-west rail line: the track runs through the station. ${GRAND_CENTRAL.benefits.slice(0, 2).join('. ')}.`;
+        continue;
+      }
       if (!isMilestoneTool(id)) continue;
-      // Milestone buildings: locked until the population milestone, then one per city.
+      // Milestone buildings: show what is unlocked plus only the next one, so the toolbar never fills with
+      // locked choices. A per-city limit (city hall) shows as "Built" once reached.
       const m = MILESTONE_BUILDINGS[id];
       const unlocked = st?.unlocked?.includes(id) ?? false;
-      const built = (st?.built?.[id] ?? 0) > 0;
+      const isNext = !unlocked && nextMilestone(st?.peakPop ?? 0)?.building === id;
+      const atMax = unlocked && m.max !== undefined && (st?.built?.[id] ?? 0) >= m.max;
+      btn.classList.toggle('hidden', !unlocked && !isNext);
       btn.classList.toggle('locked', !unlocked);
-      btn.classList.toggle('built', unlocked && built);
+      btn.classList.toggle('built', atMax);
       const cost = btn.querySelector('.cost');
-      if (cost) cost.textContent = !unlocked ? `🔒 ${fmtCompact(m.pop)} pop` : built ? 'Built' : fmtMoney(TOOLS[id].cost);
+      if (cost) cost.textContent = !unlocked ? `🔒 ${fmtCompact(m.pop)} pop` : atMax ? 'Built' : priceLabel(id);
       btn.title = !unlocked ? `${m.name}: unlocks at ${m.pop.toLocaleString('en-US')} people. ${m.benefits.join('. ')}.`
-        : built ? `${m.name}: your city already has one (one per city). It can be rebuilt if it is destroyed.`
-        : `${m.name} — ${fmtMoney(TOOLS[id].cost)} (${TOOLS[id].hotkey.toUpperCase()}). ${m.benefits.join('. ')}.`;
+        : atMax ? `${m.name}: your city already has one (one per city). It can be rebuilt if it is destroyed.`
+        : `${m.name} — ${priceLabel(id)} (${TOOLS[id].hotkey.toUpperCase()}). ${m.benefits.join('. ')}.`;
     }
+    this.layoutToolGroups();
+  }
+
+  // ---------- lifeline ----------
+  private buildLifeline(): void {
+    const close = el('button', { class: 'btn ghost round close', title: 'Close' }, '×');
+    close.onclick = () => this.hide(this.lifelinePanel);
+    const take = el('button', { class: 'btn primary', type: 'button' }, `Take the ${fmtMoney(LIFELINE_AMOUNT)} lifeline`);
+    take.onclick = () => { this.actions.lifeline(); this.hide(this.lifelinePanel); };
+    const later = el('button', { class: 'btn', type: 'button' }, 'Not now');
+    later.onclick = () => this.hide(this.lifelinePanel);
+    this.lifelinePanel = el('div', { id: 'lifeline', class: 'panel card hidden' },
+      close,
+      el('h2', { text: '🛟 Lifeline' }),
+      el('p', { text: `Your city has less than ${fmtMoney(LIFELINE_MAX_FUNDS)}. Take an emergency loan of ${fmtMoney(LIFELINE_AMOUNT)} to get it running again: enough for a power plant and repairs.` }),
+      el('ul', { class: 'ms-benefits' },
+        el('li', { text: 'No interest' }),
+        el('li', { text: `Repaid automatically from ${Math.round(LIFELINE_REPAY_SHARE * 100)}% of each month's surplus` }),
+        el('li', { text: 'Nothing is taken in months that run at a loss' }),
+        el('li', { text: `New cities (under ${LIFELINE_EARLY_PEAK_POP.toLocaleString('en-US')} people) may take another while still repaying, up to ${fmtMoney(LIFELINE_MAX_DEBT)} owed` }),
+        el('li', { text: 'Bigger cities: one lifeline at a time' })),
+      el('div', { class: 'row' }, take, later),
+    );
+    this.root.append(this.lifelinePanel);
+  }
+  private toggleLifeline(): void {
+    if (!this.lifelinePanel.classList.contains('hidden')) { this.hide(this.lifelinePanel); return; }
+    this.hide(this.milestones); this.hide(this.leaderboard); this.hide(this.about);
+    this.lifelinePanel.classList.remove('hidden');
+  }
+
+  // ---------- map overlays ----------
+  private overlayBar!: HTMLElement;
+  private overlayLegend!: HTMLElement;
+  private overlayToggle!: HTMLButtonElement;
+  private overlayBody!: HTMLElement;
+  private buildOverlayBar(): void {
+    const btns = OVERLAY_MODES.map((m) => {
+      const info = OVERLAY_INFO[m];
+      const b = el('button', { class: 'btn ov-btn', type: 'button', 'data-mode': m, title: `Map view: ${info.name}`, 'aria-pressed': String(m === 'none') }, `${info.icon} ${m === 'none' ? 'Normal' : info.name}`);
+      b.onclick = () => { this.autoOverlay = null; this.setOverlay(m); };
+      return b;
+    });
+    this.overlayLegend = el('div', { class: 'ov-legend hidden' });
+    this.overlayBody = el('div', { class: 'ov-body hidden', id: 'ovBody' }, el('div', { class: 'ov-buttons', role: 'group', 'aria-label': 'Map view' }, ...btns), this.overlayLegend);
+    // Collapsed by default to a single small button; remembers the viewer's choice.
+    this.overlayToggle = el('button', { class: 'btn ov-toggle', type: 'button', 'aria-expanded': 'false', 'aria-controls': 'ovBody', title: 'Map views: power, fire hazard, crime, traffic, pollution, land value (V)' }, '🗺 Map view');
+    this.overlayToggle.onclick = () => this.setOverlayOpen(this.overlayBody.classList.contains('hidden'));
+    this.overlayBar = el('div', { id: 'overlays', class: 'panel' }, this.overlayToggle, this.overlayBody);
+    this.root.append(this.overlayBar);
+    let open = false;
+    try { open = localStorage.getItem('globalcity.mapViewOpen') === '1'; } catch { /* ignore */ }
+    this.setOverlayOpen(open);
+    window.addEventListener('keydown', (e) => {
+      if (e.key.toLowerCase() !== 'v' || e.ctrlKey || e.metaKey || e.altKey || (e.target as HTMLElement)?.tagName === 'INPUT') return;
+      const i = OVERLAY_MODES.indexOf(this.renderer.overlay.mode);
+      this.autoOverlay = null; this.setOverlay(OVERLAY_MODES[(i + 1) % OVERLAY_MODES.length]);
+    });
+  }
+  private setOverlayOpen(open: boolean): void {
+    this.overlayBody.classList.toggle('hidden', !open);
+    this.overlayToggle.setAttribute('aria-expanded', String(open));
+    this.overlayBar.classList.toggle('open', open);
+    try { localStorage.setItem('globalcity.mapViewOpen', open ? '1' : '0'); } catch { /* ignore */ }
+    this.refreshOverlayToggle();
+  }
+  private refreshOverlayToggle(): void {
+    const m = this.renderer.overlay.mode, info = OVERLAY_INFO[m];
+    const open = !this.overlayBody.classList.contains('hidden');
+    this.overlayToggle.textContent = `${m === 'none' ? '🗺 Map view' : `${info.icon} ${info.name}`} ${open ? '▴' : '▾'}`;
+    this.overlayToggle.classList.toggle('active', m !== 'none');
+  }
+  /** Turn the map view off; false when it was already off. */
+  clearOverlay(): boolean {
+    if (this.renderer.overlay.mode === 'none') return false;
+    this.autoOverlay = null;
+    this.setOverlay('none');
+    return true;
+  }
+
+  setOverlay(m: OverlayMode): void {
+    this.renderer.overlay.setMode(m);
+    for (const b of this.overlayBar.querySelectorAll<HTMLButtonElement>('.ov-btn')) {
+      const on = b.dataset.mode === m;
+      b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on));
+    }
+    const info = OVERLAY_INFO[m];
+    this.overlayLegend.replaceChildren(
+      ...info.legend.map((l) => el('span', { class: 'ov-key' }, el('i', { style: `background:${l.color}` }), l.label)),
+      ...(info.note ? [el('p', { class: 'ov-note', text: info.note })] : []),
+    );
+    this.overlayLegend.classList.toggle('hidden', m === 'none');
+    this.refreshOverlayToggle();
+    if (m !== 'none' && !this.renderer.isTileMode()) this.toast('Zoom in to see the map view', 'info');
+    this.renderer.invalidate();
   }
 
   // ---------- milestones ----------
@@ -442,7 +667,7 @@ export class UI {
     this.milestones = el('div', { id: 'milestones', class: 'panel card hidden' },
       close,
       el('h2', { text: '🏛 Milestones' }),
-      el('p', { class: 'muted', text: 'As your city grows it unlocks special buildings. Each city can have one of each, and a destroyed one can be rebuilt.' }),
+      el('p', { class: 'muted', text: 'As your city grows it unlocks special buildings. Here is what you have unlocked, and the next one to work towards.' }),
       this.msRows,
     );
     this.root.append(this.milestones);
@@ -459,6 +684,12 @@ export class UI {
     const c = el('canvas', { class: 'ms-icon', width: String(px), height: String(px) });
     const g = c.getContext('2d')!;
     g.imageSmoothingEnabled = false;
+    if (t.custom) {
+      const img = this.renderer.customs.images.get(t.custom);
+      const paint = () => { if (img && img.naturalWidth) drawCustomFit(g, img, t.custom!, px); };
+      if (img?.complete) paint(); else img?.addEventListener('load', paint, { once: true });
+      return c;
+    }
     const cell = px / n;
     for (let k = 0; k < n * n; k++) drawTile(g, this.sheet, t.base! + k, (k % n) * cell, Math.floor(k / n) * cell, cell, cell);
     return c;
@@ -467,11 +698,13 @@ export class UI {
     if (!this.milestones || this.milestones.classList.contains('hidden')) return;
     const st = this.state.stats;
     const peak = st?.peakPop ?? 0;
-    const rows = MILESTONE_ORDER.map((b) => {
+    const next = nextMilestone(peak)?.building;
+    const shown = MILESTONE_ORDER.filter((b) => (st?.unlocked?.includes(b) ?? false) || b === next).reverse(); // next one on top
+    const rows = shown.map((b) => {
       const m = MILESTONE_BUILDINGS[b];
       const unlocked = st?.unlocked?.includes(b) ?? false;
-      const built = (st?.built?.[b] ?? 0) > 0;
-      const status = built ? { cls: 'done', text: 'Built' } : unlocked ? { cls: 'ready', text: 'Unlocked: build it from the toolbar' }
+      const built = m.max !== undefined && (st?.built?.[b] ?? 0) >= m.max;
+      const status = built ? { cls: 'done', text: 'Built (one per city)' } : unlocked ? { cls: 'ready', text: 'Unlocked: build it from the toolbar' }
         : { cls: 'locked', text: `${(m.pop - peak).toLocaleString('en-US')} more people` };
       const pct = Math.max(0, Math.min(100, (peak / m.pop) * 100));
       const t = TOOLS[m.tool];
@@ -480,12 +713,34 @@ export class UI {
         el('div', { class: 'ms-body' },
           el('div', { class: 'ms-head' }, el('strong', { text: m.name }), el('span', { class: 'chip', text: `${m.pop.toLocaleString('en-US')} people` })),
           el('ul', { class: 'ms-benefits' }, ...m.benefits.map((x) => el('li', { text: x }))),
-          el('div', { class: 'ms-meta muted', text: `${fmtMoney(t.cost)} · ${t.size}×${t.size} tiles` }),
+          el('div', { class: 'ms-meta muted', text: `${fmtMoney(t.cost)} · ${t.w ?? t.size}×${t.h ?? t.size} tiles` }),
           unlocked ? el('div', { class: `ms-status ${status.cls}`, text: status.text })
             : el('div', { class: 'ms-progress' }, el('div', { class: 'ms-bar' }, el('div', { class: 'ms-fill', style: `width:${pct.toFixed(1)}%` })), el('span', { class: 'ms-status locked', text: status.text })),
         ));
     });
+    rows.unshift(this.grandCentralRow());
     this.msRows.replaceChildren(...rows);
+  }
+
+  /** Grand Central's row in the milestones panel: unlocked by a rail link, not by population. */
+  private grandCentralRow(): HTMLDivElement {
+    const st = this.state.stats;
+    const t = TOOLS.grandcentral;
+    const unlocked = st?.unlocked?.includes('grandcentral') ?? false, built = (st?.built?.grandcentral ?? 0) >= 1;
+    const status = built ? { cls: 'done', text: 'Built (one per city)' } : unlocked ? { cls: 'ready', text: 'Unlocked: click your east-west rail line with it' }
+      : { cls: 'locked', text: GRAND_CENTRAL.unlock };
+    const c = el('canvas', { class: 'ms-icon', width: '72', height: '72' });
+    const g = c.getContext('2d')!;
+    g.imageSmoothingEnabled = false;
+    const img = this.renderer.customs.images.get('grandcentral');
+    const paint = () => { if (img && img.naturalWidth) drawCustomFit(g, img, 'grandcentral', 72); };
+    if (img?.complete) paint(); else img?.addEventListener('load', paint, { once: true });
+    return el('div', { class: `ms-row ${status.cls}` }, c,
+      el('div', { class: 'ms-body' },
+        el('div', { class: 'ms-head' }, el('strong', { text: 'Grand Central' }), el('span', { class: 'chip', text: '🚆 rail link' })),
+        el('ul', { class: 'ms-benefits' }, ...GRAND_CENTRAL.benefits.map((x) => el('li', { text: x }))),
+        el('div', { class: 'ms-meta muted', text: `${fmtMoney(t.cost)} · ${t.w}×${t.h} tiles` }),
+        el('div', { class: `ms-status ${status.cls}`, text: status.text })));
   }
 
   private refreshClaimButtons(): void {
@@ -680,6 +935,7 @@ export class UI {
       el('span', { class: 'rank', text: `${rank}` }),
       sw, name,
       el('span', { class: 'pop', text: e.population.toLocaleString('en-US') }),
+      milestoneCell(e.milestones),
       el('span', { class: 'chunks', text: `${e.chunks}` }),
       el('span', { class: `fires${e.fires > 0 ? '' : ' none'}`, text: e.fires > 0 ? `🔥 ${e.fires}` : '' }),
       visit,
@@ -823,6 +1079,11 @@ export class UI {
 
   showQuery(info: QueryInfo): void {
     this.queryPending = false;
+    // Clicking a fire or police station shows its coverage map; clicking elsewhere drops a map view opened that way.
+    const id = info.tile & LOMASK;
+    const auto: OverlayMode | null = id >= FIRESTBASE && id < FIRESTBASE + 9 ? 'fire' : id >= POLICESTBASE && id < POLICESTBASE + 9 ? 'crime' : null;
+    if (auto) { if (this.renderer.overlay.mode !== auto) { this.setOverlay(auto); this.autoOverlay = auto; } }
+    else if (this.autoOverlay && this.renderer.overlay.mode === this.autoOverlay) { this.setOverlay('none'); this.autoOverlay = null; }
     const q = this.query;
     q.replaceChildren(
       el('div', { class: 'qname', text: info.name }),
@@ -832,6 +1093,52 @@ export class UI {
       ...(info.zonePop !== undefined ? [el('div', { class: 'qrow', text: `Population: ${info.zonePop}` })] : []),
     );
     if (info.owner) (q.firstElementChild as HTMLElement).style.color = info.owner.color;
+    this.placeQuery();
+  }
+
+  /** Where a plane or ship is going, where from, and what it carries (cargo is cosmetic, the same for everyone). */
+  showVehicle(v: NonNullable<ReturnType<Renderer['pickVehicle']>>, cssX: number, cssY: number): void {
+    this.queryPos = { x: cssX, y: cssY };
+    this.queryPending = false;
+    const city = (x: number, y: number): { text: string; color: string } => {
+      const { cx, cy } = chunkOf(((Math.round(x) % WORLD_W) + WORLD_W) % WORLD_W, Math.round(y));
+      const c = this.state.claims.get(chunkKey(cx, cy));
+      return c ? { text: c.cityName ? `${c.cityName} (${c.ownerName})` : c.ownerName, color: c.color } : { text: 'Unknown port', color: '' };
+    };
+    const row = (label: string, p: { text: string; color: string }) => {
+      const r = el('div', { class: 'qrow' }, `${label}: `, el('b', { text: p.text }));
+      if (p.color) (r.lastElementChild as HTMLElement).style.color = p.color;
+      return r;
+    };
+    const eta = (progress: number, duration: number): string => {
+      const s = Math.max(0, Math.round((1 - progress) * duration / 1000));
+      return s < 60 ? `${s} s` : `${Math.round(s / 60)} min`;
+    };
+    const q = this.query;
+    if (v.kind === 'plane') {
+      const f = v.flight, load = flightLoad(f.key);
+      q.replaceChildren(
+        el('div', { class: 'qname', text: `✈ Flight ${load.flight}` }),
+        row('From', city(f.fromX, f.fromY)),
+        row('To', city(f.toX, f.toY)),
+        el('div', { class: 'qrow', text: `Carrying ${load.passengers} passengers and ${load.freightT} t of ${load.freight}` }),
+        el('div', { class: 'qrow muted', text: `Lands in ${eta(f.progress, f.duration)}` }),
+      );
+    } else {
+      const s = v.voyage, cargo = shipCargo(s.key);
+      q.replaceChildren(
+        el('div', { class: 'qname', text: `🚢 ${cargo.kind}` }),
+        row('From', city(s.from.x, s.from.y)),
+        row('To', city(s.to.x, s.to.y)),
+        el('div', { class: 'qrow', text: `Carrying ${cargo.amount.toLocaleString('en-US')} ${cargo.unit} of ${cargo.goods}` }),
+        el('div', { class: 'qrow muted', text: `Docks in ${eta(s.progress, s.duration)}` }),
+      );
+    }
+    this.placeQuery();
+  }
+
+  private placeQuery(): void {
+    const q = this.query;
     q.classList.remove('hidden');
     const pad = 12;
     const w = q.offsetWidth, h = q.offsetHeight;

@@ -29,7 +29,7 @@ class C {
     this.chunk = null; this.send({ t: 'sub', chunks: [[this.spot.cx, this.spot.cy]] }); this.send({ t: 'claim', cx: this.spot.cx, cy: this.spot.cy });
     while (!this.chunk) await sleep(20);
     this.send({ t: 'devFunds', amount: 100000 });
-    this.send({ t: 'devPeak', pop: 60000 }); // airports unlock at 50,000 people
+    this.send({ t: 'devPeak', pop: 600000 }); // airports unlock at 35,000 people
     // dry 12x8 block for coal (4x4) + wire + airport (6x6)
     for (let y = 2; y < 50; y++) for (let x = 2; x < 50; x++) {
       let ok = true; for (let dy = 0; dy < 8 && ok; dy++) for (let dx = 0; dx < 13; dx++) if (isWater(this.chunk.a[(y + dy) * CHUNK + x + dx] & LOMASK)) { ok = false; break; }

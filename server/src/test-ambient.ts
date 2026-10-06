@@ -11,6 +11,7 @@ import {
   COALSMOKE1, COALSMOKE4, RADAR0, NUKESWIRL1, FULLSTADIUM, STADIUM, IZB, SMOKEBASE, COALBASE, POWERPLANT,
   lonLatToTile, chunkOf, chunkKey, decodeChunk, isWater, isRoad, isRubble, roadPiece, IND_SMOKE, ANI_TILE,
   type ClientMsg, type ServerMsg, type PlayerStats, type QueryInfo, type ToolId,
+  COAL_POWER, NUCLEAR_POWER,
 } from '@globalcity/shared';
 
 const port = Number(process.env.PORT) || DEFAULT_PORT;
@@ -191,7 +192,7 @@ async function main(): Promise<void> {
   A.send({ t: 'claim', cx, cy });
   await waitFor(() => A.claims.has(chunkKey(cx, cy)), 'claim');
   A.sendRaw({ t: 'devFunds', amount: 200_000 });
-  A.sendRaw({ t: 'devPeak', pop: 60_000 }); // seaport/airport are milestone buildings
+  A.sendRaw({ t: 'devPeak', pop: 600_000 }); // seaport/airport are milestone buildings
   await waitFor(() => (A.stats?.funds ?? 0) > 100_000, 'devFunds');
 
   // Positions of interest (centres = footprint top-left + (1,1)).
@@ -240,7 +241,8 @@ async function main(): Promise<void> {
   // the airport only counts when another mayor has one to fly to (smoke:flights covers that), so 0 or 1 here
   const s0 = A.stats!;
   console.log(`stats: police=${s0.policeStations} specials=${JSON.stringify(s0.specials)} crime=${s0.crime} demand=${JSON.stringify(s0.demand)} supply=${s0.powerSupply}`);
-  if (s0.powerSupply !== 2700) fail(`power supply ${s0.powerSupply}, expected 2700`);
+  // one coal plant + one nuclear plant
+  if (s0.powerSupply !== COAL_POWER + NUCLEAR_POWER) fail(`power supply ${s0.powerSupply}, expected ${COAL_POWER + NUCLEAR_POWER}`);
   if (s0.specials.seaport !== 0) fail('no seaport was built');
   const q = await A.query(police.x, police.y);
   if (q.name !== `Police station (covers ${POLICE_RANGE} tiles)` || !q.powered) fail(`police query: ${JSON.stringify(q)}`);

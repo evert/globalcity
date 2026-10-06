@@ -6,6 +6,7 @@ import {
   DEFAULT_PORT, CHUNK, STARTING_FUNDS, LOMASK,
   lonLatToTile, chunkOf, decodeChunk, isWater, isTree,
   type ClientMsg, type ServerMsg, type PlayerStats,
+  COAL_POWER,
 } from '@globalcity/shared';
 
 const port = Number(process.env.PORT) || DEFAULT_PORT;
@@ -129,7 +130,7 @@ async function main(): Promise<void> {
   if (s.funds > expected + 200) fail(`funds ${s.funds} higher than expected <= ${expected}`);
   if (tileUpdates < 16 + 2 + 27 + RW) fail(`too few tile updates (${tileUpdates})`);
   if (statsCount < 1) fail('no stats arrived');
-  if (s.powerSupply !== 700) fail(`power supply ${s.powerSupply}, expected 700`);
+  if (s.powerSupply !== COAL_POWER) fail(`power supply ${s.powerSupply}, expected ${COAL_POWER}`);
   if (s.powerDemand !== 3) fail(`power demand ${s.powerDemand}, expected 3 (zones not connected to grid?)`);
   if (toasts.some((t) => t.startsWith('error'))) fail('an error toast was received');
   console.log('PASS');

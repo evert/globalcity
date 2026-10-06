@@ -50,6 +50,10 @@ export function overviewClass(v: number): OvClass {
   if ((id >= T.COALBASE && id <= T.LASTPOWERPLANT) || (id >= T.NUCLEARBASE && id <= T.LASTZONE)) return OvClass.Power;
   if (id >= T.FIRESTBASE && id < T.STADIUMBASE) return OvClass.Civic;
   if (id >= T.CITYHALLBASE && id <= T.LASTCITYHALL) return OvClass.Civic;
+  if (id >= T.SCHOOLBASE && id <= T.LASTSCHOOL) return OvClass.Civic;
+  if (id >= T.WINDBASE && id <= T.LASTWIND) return OvClass.Power;
+  if (id >= T.OFFSHOREBASE && id <= T.LASTOFFSHORE) return OvClass.Water;
+  if (id === T.CUSTOMFILL || id === T.CUSTOMCENTRE) return OvClass.Civic;
   if ((id >= T.PORTBASE && id <= T.LASTAIRPORT) || (id >= T.STADIUMBASE && id < T.NUCLEARBASE)) return OvClass.Special;
   // animated building cells (smoke, radar, stadium game, swirl) belong to their buildings
   if (id >= T.COALSMOKE1 && id < T.COALSMOKE4 + 4) return OvClass.Power;

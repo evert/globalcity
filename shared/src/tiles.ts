@@ -68,9 +68,9 @@ export const HTRFBASE = 144; // heavy traffic
 export const LASTROAD = 206;
 
 // ---- power lines ----
-export const HPOWER = 208; // underwater horizontal
+export const HPOWER = 208; // underwater power line; NB: the art runs north-south despite the Micropolis name
 export const POWERBASE = HPOWER;
-export const VPOWER = 209; // underwater vertical
+export const VPOWER = 209; // underwater power line; NB: the art runs east-west despite the Micropolis name
 export const LHPOWER = 210;
 export const LVPOWER = 211;
 export const LVPOWER2 = 212;
@@ -179,7 +179,29 @@ export const NUKESWIRL4 = 955;
 export const CITYHALLBASE = 960; // 4x4 city hall (art: art/prototype/civic/city_hall.py)
 export const CITYHALL = 965; // centre (hot-spot at 1,1)
 export const LASTCITYHALL = 975;
-export const TILE_COUNT = 976;
+export const SCHOOLBASE = 976; // 3x3 elementary school (art/prototype/civic/school.py)
+export const SCHOOL = 980;
+export const LASTSCHOOL = 984;
+export const WINDBASE = 985; // 4x4 wind farm (art/prototype/utilities/wind_farm.py)
+export const WINDFARM = 990;
+export const LASTWIND = 1000;
+export const OFFSHOREBASE = 1001; // 4x4 offshore wind farm, built on water (art/prototype/utilities/offshore_wind.py)
+export const OFFSHORE = 1006;
+export const LASTOFFSHORE = 1016;
+// Custom-building layer: buildings drawn as whole images (any width x height), not tile by tile. The world
+// stores two generic tiles (the hot-spot tile at footprint offset (1,1) carries ZONEBIT, the rest are fill)
+// and the server's building registry records each building's kind, position and size.
+export const CUSTOMFILL = 1017;
+export const CUSTOMCENTRE = 1018;
+// Underwater power line corners (GlobalCity additions, drawn by art/sheet/build_sheet.py in the style of
+// 208/209), named by the two sides they connect.
+export const UWPOWER_NE = 1019;
+export const UWPOWER_SE = 1020;
+export const UWPOWER_SW = 1021;
+export const UWPOWER_NW = 1022;
+export const TILE_COUNT = 1023;
+/** Any underwater power line piece: the two straights (208/209) or a corner. */
+export const isUnderwaterWireId = (t: number): boolean => t === HPOWER || t === VPOWER || (t >= UWPOWER_NE && t <= UWPOWER_NW);
 
 // ---- connection tables (index = N:1 | E:2 | S:4 | W:8 of same-kind neighbours) ----
 export const ROAD_TABLE: readonly number[] = [
@@ -221,7 +243,7 @@ export const isTree = (v: number): boolean => { const t = v & LOMASK; return t >
 export const isRubble = (v: number): boolean => { const t = v & LOMASK; return t >= RUBBLE && t <= LASTRUBBLE; };
 export const isRoad = (v: number): boolean => { const t = v & LOMASK; return t >= ROADBASE && t <= LASTROAD; };
 export const isRail = (v: number): boolean => { const t = v & LOMASK; return (t >= RAIL_LOW && t <= RAIL_HIGH) || t === RAILHPOWERV || t === RAILVPOWERH; };
-export const isWire = (v: number): boolean => { const t = v & LOMASK; return (t >= POWER_LOW && t <= POWER_HIGH) || t === HROADPOWER || t === VROADPOWER; };
+export const isWire = (v: number): boolean => { const t = v & LOMASK; return (t >= POWER_LOW && t <= POWER_HIGH) || t === HROADPOWER || t === VROADPOWER || (t >= UWPOWER_NE && t <= UWPOWER_NW); };
 export const isZoneCenter = (v: number): boolean => (v & ZONEBIT) !== 0;
 export const isPowered = (v: number): boolean => (v & PWRBIT) !== 0;
 export const isConductive = (v: number): boolean => (v & CONDBIT) !== 0;
@@ -230,12 +252,12 @@ export const isBulldozable = (v: number): boolean => (v & BULLBIT) !== 0;
  *  Removing one must leave water behind, never land. */
 export const isOverWater = (v: number): boolean => {
   const t = v & LOMASK;
-  return t === HBRIDGE || t === VBRIDGE || t === BRWH || t === BRWV || t === HPOWER || t === VPOWER
+  return t === HBRIDGE || t === VBRIDGE || t === BRWH || t === BRWV || isUnderwaterWireId(t)
     || t === HRAIL || t === VRAIL || (t >= HBRDG0 && t <= HBRDG3) || (t >= VBRDG0 && t <= VBRDG3);
 };
 export const isHouse = (v: number): boolean => { const t = v & LOMASK; return t >= HOUSE && t <= HHTHR; };
 /** True for any tile that is part of a multi-tile zone/building (240..826, excluding single-tile houses). */
-export const isZoneTile = (v: number): boolean => { const t = v & LOMASK; return (t >= RESBASE && t <= LASTZONE && !(t >= HOUSE && t <= HHTHR)) || (t >= CITYHALLBASE && t <= LASTCITYHALL); };
+export const isZoneTile = (v: number): boolean => { const t = v & LOMASK; return (t >= RESBASE && t <= LASTZONE && !(t >= HOUSE && t <= HHTHR)) || (t >= CITYHALLBASE && t <= CUSTOMCENTRE); };
 export const isResZone = (v: number): boolean => { const t = v & LOMASK; return t >= RESBASE && t <= HOSPITALBASE - 1; };
 export const isComZone = (v: number): boolean => { const t = v & LOMASK; return t >= COMBASE && t <= COMLAST; };
 export const isIndZone = (v: number): boolean => { const t = v & LOMASK; return t >= INDBASE && t <= INDLAST; };
@@ -245,6 +267,8 @@ export function zoneSizeForCenter(t: number): number {
   t &= LOMASK;
   if (t >= PORTBASE && t <= LASTPORT) return 4;
   if (t >= CITYHALLBASE && t <= LASTCITYHALL) return 4;
+  if (t >= SCHOOLBASE && t <= LASTSCHOOL) return 3;
+  if (t >= WINDBASE && t <= LASTOFFSHORE) return 4;
   if (t >= AIRPORTBASE && t <= LASTAIRPORT) return 6;
   if (t >= COALBASE && t <= LASTPOWERPLANT) return 4;
   if (t >= STADIUMBASE && t <= FULLSTADIUMBASE + 15) return 4;
@@ -269,3 +293,7 @@ export const indBuildingCenter = (density: number, value: number): number => (va
 
 /** Displayed city population from the three zone pop counters (Micropolis getPopulation). */
 export const displayPopulation = (resPop: number, comPop: number, indPop: number): number => (resPop + (comPop + indPop) * 8) * 20;
+
+/** Offshore wind farm tiles: built on water, revert to water (not rubble) when removed. */
+export const isOffshoreTile = (v: number): boolean => { const t = v & LOMASK; return t >= OFFSHOREBASE && t <= LASTOFFSHORE; };
+export const isCustomTile = (v: number): boolean => { const t = v & LOMASK; return t === CUSTOMFILL || t === CUSTOMCENTRE; };

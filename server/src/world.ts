@@ -2,6 +2,7 @@
 // Low 10 bits = tile id, upper 6 bits = flags (ZONEBIT, PWRBIT, ...), exactly as Micropolis.
 
 import fs from 'node:fs';
+import { Buildings } from './buildings.ts';
 import {
   WORLD_W, WORLD_H, CHUNK, CHUNKS_X, CHUNKS_Y, MIN_LAND_TILES_TO_CLAIM,
   RIVER, DIRT, WOODS, BLBNBIT, LOMASK, WATER_LOW, WATER_HIGH, WOODS_LOW, WOODS_HIGH,
@@ -19,6 +20,8 @@ const zoneLike = (v: number): boolean => isZoneTile(v) || isHouse(v);
 
 export class World {
   readonly tiles = new Uint16Array(WORLD_W * WORLD_H);
+  /** custom-building layer (non-square buildings drawn as images) */
+  readonly buildings = new Buildings();
   /** Chunks modified since the last save (only ever-edited chunks get a file). */
   readonly dirty = new Set<ChunkIndex>();
   /** Tile updates since the last network flush, grouped by chunk as flat [x, y, v, ...]. */

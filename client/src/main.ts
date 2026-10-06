@@ -60,6 +60,8 @@ async function boot(): Promise<void> {
   const ui = new UI(state, net, renderer, actions, sheet, minimap);
   const input = new Input(renderer, state, actions, {
     onQueryClick: (x, y) => ui.queryPendingAt(x, y),
+    onVehicleClick: (v, x, y) => ui.showVehicle(v, x, y),
+    onClearOverlay: () => ui.clearOverlay(),
     onInteract: () => ui.hideQuery(),
     onTouchTarget: (t) => ui.setTouchTarget(t),
   });
@@ -111,6 +113,11 @@ async function boot(): Promise<void> {
 
   // expose for debugging in the console
   (window as unknown as { gc: unknown }).gc = { state, map, net, renderer, actions, ui };
+}
+
+// Offline fallback page (and what makes the game installable as an Android app); not during self-tests.
+if ('serviceWorker' in navigator && !location.hash.startsWith('#selftest')) {
+  window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => { /* not fatal */ }); });
 }
 
 boot().catch((err) => {

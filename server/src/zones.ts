@@ -5,12 +5,13 @@
 import {
   LOMASK, ZONEBIT, BULLBIT, PWRBIT, BNCNBIT,
   FREEZ, RZB, COMCLR, CZB, INDCLR, IZB, HOUSE, HHTHR, RESBASE, HOSPITALBASE, COMBASE, COMLAST, INDBASE, INDLAST,
-  POWERPLANT, NUCLEAR, RADAR0, RADAR7, SMOKEBASE, FOOTBALLGAME2, NUKESWIRL1, NUKESWIRL4,
+  POWERPLANT, NUCLEAR, WINDFARM, OFFSHORE, RADAR0, RADAR7, SMOKEBASE, FOOTBALLGAME2, NUKESWIRL1, NUKESWIRL4,
   zoneSizeForCenter, resZonePop, comZonePop, indZonePop, inWorld, isZoneTile,
+  isCustomTile, CUSTOM_BUILDINGS,
 } from '@globalcity/shared';
 import type { World } from './world.ts';
 
-export type ZoneKind = 'res' | 'com' | 'ind' | 'coal' | 'nuclear' | 'other';
+export type ZoneKind = 'res' | 'com' | 'ind' | 'coal' | 'nuclear' | 'wind' | 'offshore' | 'other';
 
 export function zoneKind(centerTile: number): ZoneKind {
   const id = centerTile & LOMASK;
@@ -19,6 +20,8 @@ export function zoneKind(centerTile: number): ZoneKind {
   if (id >= INDBASE && id <= INDLAST) return 'ind';
   if (id === POWERPLANT) return 'coal';
   if (id === NUCLEAR) return 'nuclear';
+  if (id === WINDFARM) return 'wind';
+  if (id === OFFSHORE) return 'offshore';
   return 'other';
 }
 
@@ -38,7 +41,7 @@ export const isBuildingTile = (v: number): boolean => {
 export const isPlantCenter = (v: number): boolean => {
   if ((v & ZONEBIT) === 0) return false;
   const id = v & LOMASK;
-  return id === POWERPLANT || id === NUCLEAR;
+  return id === POWERPLANT || id === NUCLEAR || id === WINDFARM || id === OFFSHORE;
 };
 
 /** Houses (single-tile HOUSE..HHTHR) in the 8 tiles around an empty residential zone centre. */
@@ -69,7 +72,15 @@ export function zonePop(world: World, x: number, y: number, centerTile: number):
  * Find the centre of the multi-tile zone/building covering tile (x,y).
  * Centres lie within [x-4, x+1] x [y-4, y+1] for footprints up to 6x6 with the (1,1) hot-spot.
  */
-export function findZoneCenter(world: World, x: number, y: number): { cx: number; cy: number; size: number } | null {
+/**
+ * The building covering (x,y): its hot-spot tile (cx, cy) at footprint offset (1,1), width and height
+ * (size = the larger side, for square-only callers). Custom-layer buildings come from the registry.
+ */
+export function findZoneCenter(world: World, x: number, y: number): { cx: number; cy: number; size: number; w: number; h: number } | null {
+  if (isCustomTile(world.get(x, y))) {
+    const b = world.buildings.at(x, y);
+    return b ? { cx: b.x + 1, cy: b.y + 1, size: Math.max(b.w, b.h), w: b.w, h: b.h } : null;
+  }
   for (let cy = y - 4; cy <= y + 1; cy++) {
     for (let cx = x - 4; cx <= x + 1; cx++) {
       if (!inWorld(cx, cy)) continue;
@@ -78,10 +89,21 @@ export function findZoneCenter(world: World, x: number, y: number): { cx: number
       const size = zoneSizeForCenter(v);
       if (size === 0) continue;
       const ox = cx - 1, oy = cy - 1;
-      if (x >= ox && x < ox + size && y >= oy && y < oy + size) return { cx, cy, size };
+      if (x >= ox && x < ox + size && y >= oy && y < oy + size) return { cx, cy, size, w: size, h: size };
     }
   }
   return null;
+}
+
+/** Clear a building's footprint to `tile(dx,dy)`, dropping it from the custom layer if it is one. */
+export function clearFootprint(world: World, z: { cx: number; cy: number; w: number; h: number }, tile: (dx: number, dy: number) => number): void {
+  const b = isCustomTile(world.get(z.cx, z.cy)) ? world.buildings.at(z.cx, z.cy) : undefined;
+  const keepRow = b ? CUSTOM_BUILDINGS[b.kind]?.railRow : undefined; // a station's track outlives the station
+  for (let dy = 0; dy < z.h; dy++) for (let dx = 0; dx < z.w; dx++) {
+    if (dy === keepRow) continue;
+    world.set(z.cx - 1 + dx, z.cy - 1 + dy, tile(dx, dy));
+  }
+  if (b) world.buildings.remove(b);
 }
 
 /**

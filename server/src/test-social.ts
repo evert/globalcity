@@ -6,7 +6,7 @@
 
 import WebSocket from 'ws';
 import {
-  DEFAULT_PORT, CHUNK, TICK_MS, MAX_CHUNKS_PER_PLAYER, ABANDON_DECAY_DAYS, ABANDON_FREE_DAYS, CHUNKS_X, CHUNKS_Y,
+  DEFAULT_PORT, CHUNK, TICK_MS, MAX_CHUNKS_PER_PLAYER, ABANDON_DECAY_DAYS, ABANDON_FREE_DAYS, ABANDON_DECAY_ENABLED, CHUNKS_X, CHUNKS_Y,
   lonLatToTile, chunkOf, chunkKey, decodeChunk, isWater, isRubble, isRoad, isZoneTile, isHouse,
   type ClientMsg, type ServerMsg, type PlayerStats, type ClaimInfo, type Presence, type QueryInfo,
 } from '@globalcity/shared';
@@ -318,6 +318,10 @@ async function main(): Promise<void> {
   console.log('waiting for rail links...');
   await waitFor(() => A.stats?.railLinks === 1 && B.stats?.railLinks === 1 && A.stats.railDemand > 0 && B.stats.railDemand > 0, 'railLinks === 1 and railDemand > 0 on both', ticks(10));
   console.log(`rail: A links=${A.stats!.railLinks} demand=${A.stats!.railDemand}; B links=${B.stats!.railLinks} demand=${B.stats!.railDemand}`);
+  // the first rail link unlocks Grand Central for good, with a toast naming the other city
+  await waitFor(() => A.stats?.unlocked?.includes('grandcentral') && B.stats?.unlocked?.includes('grandcentral'), 'Grand Central unlocked on both', ticks(3));
+  if (!A.toasts.some((t) => /You can now build Grand Central/.test(t.msg))) fail('no Grand Central unlock toast for A');
+  console.log('Grand Central unlocked by the rail link');
   // >= 1, not === 1: cities from earlier runs in the same save dir may also border the site.
   if (A.stats!.neighbours < 1 || B.stats!.neighbours < 1) fail(`neighbours A=${A.stats!.neighbours} B=${B.stats!.neighbours}`);
   console.log(`neighbours: A=${A.stats!.neighbours} B=${B.stats!.neighbours}`);
@@ -393,9 +397,15 @@ async function main(): Promise<void> {
   if (rubbleInD() > 0) fail('D tiles decayed before ABANDON_DECAY_DAYS');
   const decayAt = dLeft + ABANDON_DECAY_DAYS * DAY_MS;
   await sleep(Math.max(0, decayAt + 1000 - Date.now()));
-  console.log(`day ${idleNow()}: waiting for ruins...`);
-  await waitFor(() => rubbleInD() > 0, 'first rubble tile in D', ticks(20));
-  console.log(`day ${idleNow()}: ${rubbleInD()} rubble tiles in D`);
+  if (ABANDON_DECAY_ENABLED) {
+    console.log(`day ${idleNow()}: waiting for ruins...`);
+    await waitFor(() => rubbleInD() > 0, 'first rubble tile in D', ticks(20));
+    console.log(`day ${idleNow()}: ${rubbleInD()} rubble tiles in D`);
+  } else {
+    await sleep(ticks(10));
+    console.log(`day ${idleNow()}: decay is off, ${rubbleInD()} rubble tiles in D`);
+    if (rubbleInD() > 0) fail('D decayed although decay is switched off');
+  }
   // Returning owner stops the decay: resume D with its token? We only have D's id, not the token
   // in this script (welcome carried it) - check that the idle clock keeps running instead.
   const freeAt = dLeft + ABANDON_FREE_DAYS * DAY_MS;
@@ -403,7 +413,8 @@ async function main(): Promise<void> {
   const rubbleAfter = rubbleInD();
   console.log(`unclaim received at idle ${((Date.now() - dLeft) / 1000).toFixed(1)} s; ${rubbleAfter} rubble tiles remain`);
   if (A.claims.has(dKey)) fail("D's claim still listed after unclaim");
-  if (rubbleAfter === 0) fail('ruins vanished');
+  if (ABANDON_DECAY_ENABLED && rubbleAfter === 0) fail('ruins vanished');
+  if (!ABANDON_DECAY_ENABLED && rubbleAfter > 0) fail('D decayed although decay is switched off');
   const spot = await A.findFree(dSite.cx, dSite.cy);
   if (!spot || spot.cx !== dSite.cx || spot.cy !== dSite.cy) fail(`findFree did not return the released chunk (${JSON.stringify(spot)})`);
   const E = new TestClient('Eve');

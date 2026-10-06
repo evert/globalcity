@@ -2,9 +2,9 @@
 // overview mode (minimap + claim rectangles). Redraws only when invalidated.
 import {
   CHUNK, CHUNKS_X, CHUNKS_Y, WORLD_W, WORLD_H, TILE_PX, MAX_SUBSCRIBED_CHUNKS,
-  LOMASK, ZONEBIT, PWRBIT, ANIMBIT, LIGHTNINGBOLT, FIRE, LASTFIRE, TOOLS, footprintOrigin, chunkKey, parseChunkKey, clamp, inWorld,
+  LOMASK, ZONEBIT, PWRBIT, ANIMBIT, LIGHTNINGBOLT, FIRE, LASTFIRE, TOOLS, CUSTOM_BUILDINGS, footprintOrigin, toolW, toolH, chunkKey, parseChunkKey, clamp, inWorld,
 } from '@globalcity/shared';
-import type { ClaimInfo } from '@globalcity/shared';
+import type { ClaimInfo, Flight, Voyage } from '@globalcity/shared';
 import type { SpriteSheet, Minimap } from './assets.ts';
 import { drawTile } from './assets.ts';
 import { ANI_TILE, isAnimatedId } from './anim.ts';
@@ -14,7 +14,9 @@ import { claimIdleState, claimLabel, claimShortLabel } from './state.ts';
 import { Emitter } from './emitter.ts';
 import { PresenceTracker, presenceLabel, PRESENCE_STALE_MS } from './presence.ts';
 import type { SpriteEngine } from './sprites.ts';
-import { FlightLayer } from './flights.ts';
+import { FlightLayer, ShipLayer } from './flights.ts';
+import { OverlayLayer } from './overlays.ts';
+import { CustomLayer } from './custom.ts';
 import { OverviewMap, speckleTile } from './overviewmap.ts';
 import { WORLD_W as FLIGHT_WORLD_W } from '@globalcity/shared';
 
@@ -113,6 +115,14 @@ export class Renderer extends Emitter<RendererEvents> {
   sprites: SpriteEngine | null = null;
   /** inter-city air traffic (airports published by the server) */
   readonly flightLayer = new FlightLayer();
+  /** ships between seaports */
+  readonly shipLayer = new ShipLayer();
+  /** map overlays (power, fire, crime, traffic, land value), zoomed-in view only */
+  overlay!: OverlayLayer;
+  /** custom-building layer: non-square buildings drawn as one image */
+  readonly customs = new CustomLayer();
+  /** pending redraw for the next frame of an animated custom building on screen */
+  private customAnimTimer: ReturnType<typeof setTimeout> | null = null;
   /** zoomed-out map view: per-plot pixel images + tile-coloured terrain with specks */
   readonly overviewMap = new OverviewMap();
   private speckle: CanvasPattern | null = null;
@@ -140,6 +150,21 @@ export class Renderer extends Emitter<RendererEvents> {
     if (!ctx) throw new Error('2d context unavailable');
     this.ctx = ctx;
     map.on('chunk', () => this.invalidate());
+    this.overlay = new OverlayLayer(map);
+    // police reach doubles in a city with a powered university: the overlay asks who owns what
+    this.overlay.ownerAt = (x, y) => this.state.claims.get(chunkKey(Math.floor(x / CHUNK), Math.floor(y / CHUNK)))?.ownerId;
+    this.overlay.uniOwners = () => {
+      const out = new Set<string>();
+      for (const b of this.customs.ofKind('university')) {
+        const v = this.map.get(b.x + 1, b.y + 1);
+        const o = this.overlay.ownerAt(b.x + 1, b.y + 1);
+        if (v !== undefined && (v & PWRBIT) && o) out.add(o);
+      }
+      return out;
+    };
+    this.customs.onChange = () => this.invalidate();
+    this.customs.load();
+    this.overlay.isOwn = (cx, cy) => this.state.ownsChunk(cx, cy);
     map.on('tiles', () => this.invalidate());
     map.on('drop', (key) => { this.chunkCanvases.delete(key); this.invalidate(); });
     state.on('claims', () => this.invalidate());
@@ -257,6 +282,20 @@ export class Renderer extends Emitter<RendererEvents> {
     const tp = this.tilePx();
     return { x: (tx - this.cam.x) * tp + this.cssW / 2, y: (ty - this.cam.y) * tp + this.cssH / 2 };
   }
+  /** The plane or ship drawn under a screen point (CSS px), if any: the nearest within reach of its sprite. */
+  pickVehicle(cssX: number, cssY: number): { kind: 'plane'; flight: Flight } | { kind: 'ship'; voyage: Voyage } | null {
+    const reach = Math.max(14, this.isTileMode() ? this.tilePx() * 1.5 : 10);
+    let best: { kind: 'plane'; flight: Flight } | { kind: 'ship'; voyage: Voyage } | null = null, bestD = reach;
+    const dist = (tx: number, ty: number): number => {
+      let d = Infinity;
+      for (const off of [0, -WORLD_W, WORLD_W]) { const p = this.tileToScreen(tx + off, ty); d = Math.min(d, Math.hypot(p.x - cssX, p.y - cssY)); }
+      return d;
+    };
+    if (this.flightLayer.interCity) for (const f of this.flightLayer.flights()) { const d = dist(f.x, f.y); if (d < bestD) { bestD = d; best = { kind: 'plane', flight: f }; } }
+    for (const v of this.shipLayer.voyages()) { const d = dist(v.x, v.y); if (d < bestD) { bestD = d; best = { kind: 'ship', voyage: v }; } }
+    return best;
+  }
+
   /** Visible world rect in tile units. */
   viewRect(): { x0: number; y0: number; x1: number; y1: number } {
     const a = this.screenToTile(0, 0), b = this.screenToTile(this.cssW, this.cssH);
@@ -390,10 +429,9 @@ export class Renderer extends Emitter<RendererEvents> {
   }
 
   private renderFlights(g: CanvasRenderingContext2D): void {
-    const layer = this.flightLayer;
-    if (!layer.interCity) return;
-    const flights = layer.flights();
-    if (!flights.length) { this.scheduleFlights(2000); return; }
+    const flights = this.flightLayer.interCity ? this.flightLayer.flights() : [];
+    const ships = this.shipLayer.voyages();
+    if (!flights.length && !ships.length) { if (this.flightLayer.interCity || this.shipLayer.routes.length) this.scheduleFlights(2000); return; }
     const W = this.canvas.width, H = this.canvas.height, d = this.dpr;
     const tile = this.isTileMode();
     // the world wraps at the date line: try the position and its copies one world-width either side
@@ -405,24 +443,58 @@ export class Renderer extends Emitter<RendererEvents> {
       return null;
     };
     let visible = 0;
-    if (!tile) {
-      // overview: faint trail from the origin to the plane
+    for (const f of flights) if (toPx(f.x, f.y)) visible++;
+    for (const v of ships) if (toPx(v.x, v.y)) visible++;
+    if (tile) {
+      // zoomed in: the Micropolis sprites at true scale (48px sprite = 3 tiles)
+      if (this.sprites) {
+        this.sprites.drawFlights(g, flights, toPx, this.tilePx() * d * 3);
+        this.sprites.drawShips(g, ships, toPx, this.tilePx() * d * 3);
+      }
+    } else {
+      // world map: simple shapes and faint trails
       g.save();
-      g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = Math.max(1, Math.round(d));
+      g.lineWidth = Math.max(1, Math.round(d));
       g.setLineDash([Math.round(3 * d), Math.round(4 * d)]);
+      g.strokeStyle = 'rgba(255,255,255,0.35)';
       for (const f of flights) {
-        const dxT = f.toX - f.fromX, curX = f.fromX + dxT * f.progress;
-        for (const off of [0, -FLIGHT_WORLD_W, FLIGHT_WORLD_W]) {
-          g.beginPath(); g.moveTo(this.dx(f.fromX + off), this.dy(f.fromY)); g.lineTo(this.dx(curX + off), this.dy(f.y)); g.stroke();
-        }
+        const curX = f.fromX + (f.toX - f.fromX) * f.progress;
+        for (const off of [0, -FLIGHT_WORLD_W, FLIGHT_WORLD_W]) { g.beginPath(); g.moveTo(this.dx(f.fromX + off), this.dy(f.fromY)); g.lineTo(this.dx(curX + off), this.dy(f.y)); g.stroke(); }
+      }
+      g.strokeStyle = 'rgba(160,220,255,0.45)';
+      for (const v of ships) for (const off of [0, -FLIGHT_WORLD_W, FLIGHT_WORLD_W]) {
+        g.beginPath(); g.moveTo(this.dx(v.trail[0] + off), this.dy(v.trail[1]));
+        for (let i = 2; i < v.trail.length; i += 2) g.lineTo(this.dx(v.trail[i] + off), this.dy(v.trail[i + 1]));
+        g.stroke();
+      }
+      g.setLineDash([]);
+      const r = Math.round(5 * d);
+      for (const f of flights) {
+        const at = toPx(f.x, f.y); if (!at) continue;
+        // plane: a white arrowhead pointing where it flies
+        const len = Math.hypot(f.vx, f.vy) || 1, ux = f.vx / len, uy = f.vy / len;
+        g.fillStyle = '#ffffff'; g.strokeStyle = 'rgba(0,0,0,0.75)';
+        g.beginPath();
+        g.moveTo(at.x + ux * r * 1.6, at.y + uy * r * 1.6);
+        g.lineTo(at.x - ux * r + uy * r, at.y - uy * r - ux * r);
+        g.lineTo(at.x - ux * r * 0.4, at.y - uy * r * 0.4);
+        g.lineTo(at.x - ux * r - uy * r, at.y - uy * r + ux * r);
+        g.closePath(); g.fill(); g.stroke();
+      }
+      for (const v of ships) {
+        const at = toPx(v.x, v.y); if (!at) continue;
+        // ship: a small hull along its heading
+        const ux = v.vx, uy = v.vy, hw = r * 0.55;
+        g.fillStyle = '#e8eef5'; g.strokeStyle = 'rgba(0,30,80,0.9)';
+        g.beginPath();
+        g.moveTo(at.x + ux * r * 1.4, at.y + uy * r * 1.4);
+        g.lineTo(at.x + ux * r * 0.3 + uy * hw, at.y + uy * r * 0.3 - ux * hw);
+        g.lineTo(at.x - ux * r * 1.1 + uy * hw, at.y - uy * r * 1.1 - ux * hw);
+        g.lineTo(at.x - ux * r * 1.1 - uy * hw, at.y - uy * r * 1.1 + ux * hw);
+        g.lineTo(at.x + ux * r * 0.3 - uy * hw, at.y + uy * r * 0.3 + ux * hw);
+        g.closePath(); g.fill(); g.stroke();
       }
       g.restore();
-    }
-    for (const f of flights) if (toPx(f.x, f.y)) visible++;
-    if (this.sprites) {
-      // zoomed in: true scale (48px sprite = 3 tiles); overview: a fixed, readable icon size
-      const px = tile ? this.tilePx() * d * 3 : Math.round(26 * d);
-      this.sprites.drawFlights(g, flights, toPx, px);
     }
     if (visible > 0) {
       if (tile) { if (this.animated) this.invalidate(); } else this.scheduleFlights(100);
@@ -502,8 +574,47 @@ export class Renderer extends Emitter<RendererEvents> {
         }
       }
     }
+    // 1. custom-layer buildings: one image over the whole footprint (+ the unpowered bolt for your own)
+    let customAnimMs = Infinity;
+    {
+      const v = this.viewRect();
+      g.imageSmoothingEnabled = false;
+      for (const b of this.customs.within(Math.floor(v.x0), Math.floor(v.y0), Math.ceil(v.x1), Math.ceil(v.y1))) {
+        const img = this.customs.ready(b.kind);
+        const x0 = this.dx(b.x), y0 = this.dy(b.y), x1 = this.dx(b.x + b.w), y1 = this.dy(b.y + b.h);
+        const def = CUSTOM_BUILDINGS[b.kind];
+        if (img && def?.frames && def.frameMs) {
+          // animated building: a strip of frames, all players see the same frame (wall clock)
+          const fw = img.naturalWidth / def.frames;
+          const f = Math.floor(Date.now() / def.frameMs) % def.frames;
+          g.drawImage(img, f * fw, 0, fw, img.naturalHeight, x0, y0, x1 - x0, y1 - y0);
+          customAnimMs = Math.min(customAnimMs, def.frameMs - (Date.now() % def.frameMs) + 5);
+        } else if (img) g.drawImage(img, x0, y0, x1 - x0, y1 - y0);
+        const cv = this.map.get(b.x + 1, b.y + 1);
+        if (cv !== undefined && (cv & ZONEBIT) && !(cv & PWRBIT) && this.state.ownsChunk(Math.floor((b.x + 1) / CHUNK), Math.floor((b.y + 1) / CHUNK))) {
+          const t = this.tilePx() * this.dpr;
+          drawTile(g, this.sheet, LIGHTNINGBOLT, this.dx(b.x + 1), this.dy(b.y + 1), t, t);
+        }
+      }
+    }
+    if (customAnimMs < Infinity && this.animated && !this.customAnimTimer) {
+      this.customAnimTimer = setTimeout(() => { this.customAnimTimer = null; this.invalidate(); }, customAnimMs);
+    }
+    // 1a. map overlay: dim the city, then one pixel per tile from the overlay layer
+    if (this.overlay.mode !== 'none') {
+      this.overlay.ownCrime = this.state.stats?.crime ?? 0;
+      g.fillStyle = 'rgba(6,8,14,0.55)';
+      g.fillRect(0, 0, W, H);
+      g.imageSmoothingEnabled = false;
+      for (let cy = r.cy0; cy <= r.cy1; cy++) for (let cx = r.cx0; cx <= r.cx1; cx++) {
+        const x0 = this.dx(cx * CHUNK), x1 = this.dx((cx + 1) * CHUNK), y0 = this.dy(cy * CHUNK), y1 = this.dy((cy + 1) * CHUNK);
+        if (x1 <= 0 || y1 <= 0 || x0 >= W || y0 >= H) continue;
+        const oc = this.overlay.canvasFor(cx, cy);
+        if (oc) g.drawImage(oc, x0, y0, x1 - x0, y1 - y0);
+      }
+    }
     // 1b. sprites above the tiles, below outlines / labels / cursor
-    this.renderSprites(g, now);
+    if (this.overlay.mode === 'none') this.renderSprites(g, now);
     // 2. chunk borders + claims
     g.lineWidth = Math.max(1, Math.round(this.dpr));
     const me = this.state.me;
@@ -575,14 +686,14 @@ export class Renderer extends Emitter<RendererEvents> {
     if (!h || !inWorld(h.x, h.y)) return;
     const tool = TOOLS[this.state.tool];
     const { x0, y0 } = footprintOrigin(tool, h.x, h.y);
-    const size = tool.size;
+    const fw = toolW(tool), fh = toolH(tool);
     let ok = this.state.funds >= tool.cost;
     if (tool.id !== 'query') {
-      for (let y = y0; y < y0 + size && ok; y++) for (let x = x0; x < x0 + size; x++) {
+      for (let y = y0; y < y0 + fh && ok; y++) for (let x = x0; x < x0 + fw; x++) {
         if (!inWorld(x, y) || !this.state.ownsChunk(Math.floor(x / CHUNK), Math.floor(y / CHUNK))) { ok = false; break; }
       }
     }
-    const px0 = this.dx(x0), py0 = this.dy(y0), px1 = this.dx(x0 + size), py1 = this.dy(y0 + size);
+    const px0 = this.dx(x0), py0 = this.dy(y0), px1 = this.dx(x0 + fw), py1 = this.dy(y0 + fh);
     g.fillStyle = ok ? 'rgba(255,255,255,0.12)' : 'rgba(255,60,60,0.18)';
     g.fillRect(px0, py0, px1 - px0, py1 - py0);
     g.lineWidth = Math.max(2, Math.round(2 * this.dpr));

@@ -44,6 +44,9 @@ export class Actions {
     return this.net.send({ t: 'query', x, y });
   }
 
+  /** Ask for the emergency lifeline loan (the server checks eligibility). */
+  lifeline(): boolean { return this.net.send({ t: 'lifeline' }); }
+
   rename(name: string): boolean {
     name = name.trim().slice(0, 24);
     if (!name) return false;

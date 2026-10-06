@@ -178,6 +178,8 @@ async function main(): Promise<void> {
   B.send({ t: 'build', tool: 'residential', x: BX + 3, y: Y + 1 });
   B.send({ t: 'build', tool: 'residential', x: BX + 6, y: Y + 1 });
   B.send({ t: 'build', tool: 'residential', x: BX + 9, y: Y + 1 });
+  B.sendRaw({ t: 'devPeak', pop: 10000 }); // fire stations unlock at 5,000 people
+  await sleep(200);
   B.send({ t: 'build', tool: 'fire', x: BX + 12, y: Y + 1 });
   for (let dx = 0; dx < B_COLS; dx++) B.send({ t: 'build', tool: 'road', x: BX + dx, y: Y + 4 });
   await sleep(500);

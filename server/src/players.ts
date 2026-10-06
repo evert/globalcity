@@ -6,6 +6,7 @@ import {
   chunkKey, parseChunkKey, colorForId,
   type PlayerStats, type PlayerPublic, type ClaimInfo, type GameTime, START_YEAR,
   MILESTONE_BUILDINGS, milestoneUnlocksFor, nextMilestone,
+  LIFELINE_MAX_FUNDS, LIFELINE_REPAY_SHARE, LIFELINE_AMOUNT, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT,
 } from '@globalcity/shared';
 import { World, validChunk } from './world.ts';
 import type { Places } from './places.ts';
@@ -18,6 +19,12 @@ export interface PlayerRecord {
   grandfathered?: string[];
   /** milestone unlocks the mayor has been told about */
   announced?: string[];
+  /** lifeline still owed */
+  debt?: number;
+  /** the city's rail has reached another mayor's city at least once (unlocks Grand Central for good) */
+  railLinked?: boolean;
+  /** set by the admin: the mayor and city names can no longer be changed by the player */
+  namesLocked?: boolean;
   /** message shown to the player on their next visit (e.g. why their plot was released), then cleared */
   notice?: string;
   token: string; // secret, never sent except in 'welcome' to its owner
@@ -78,12 +85,15 @@ export function emptyStats(funds: number): PlayerStats {
     neighbours: 0, neighbourDemand: { r: 0, c: 0, i: 0 }, railLinks: 0, railDemand: 0,
     crime: 0, policeStations: 0, specials: { stadium: 0, seaport: 0, airport: 0 }, traffic: 0,
     peakPop: 0, nextMilestone: MILESTONE_BUILDINGS.cityhall.pop, unlocked: [], built: {}, cityHall: 0,
+    debt: 0, lifelineAvailable: false,
   };
 }
 
+export const NAMES_LOCKED_MSG = 'Your mayor and city names have been set by the admin and can no longer be changed';
+
 /** Milestone buildings this player may build: reached by peak population, plus grandfathered. */
 export function unlockedOf(p: PlayerRecord): string[] {
-  return [...new Set([...milestoneUnlocksFor(p.peakPop ?? 0), ...(p.grandfathered ?? [])])];
+  return [...new Set([...milestoneUnlocksFor(p.peakPop ?? 0), ...(p.grandfathered ?? []), ...(p.railLinked ? ['grandcentral'] : [])])];
 }
 
 /** Recompute the milestone part of a player's stats from their record. */
@@ -93,6 +103,36 @@ export function refreshMilestoneStats(p: PlayerRecord): void {
   s.peakPop = peak;
   s.nextMilestone = nextMilestone(peak)?.pop ?? null;
   s.unlocked = unlockedOf(p);
+  refreshLifeline(p);
+}
+
+/**
+ * Apply one month's net budget to a player. A lifeline is repaid from surplus months only: a share
+ * (LIFELINE_REPAY_SHARE, at least $1) of the gain, until cleared; loss months leave the debt alone.
+ * Funds never go below $0. Returns what was repaid and whether the debt was just cleared.
+ */
+export function applyMonthlyNet(p: PlayerRecord, delta: number): { net: number; repaid: number; cleared: boolean } {
+  let net = delta, repaid = 0, cleared = false;
+  if (net > 0 && (p.debt ?? 0) > 0) {
+    repaid = Math.min(p.debt!, Math.max(1, Math.ceil(net * LIFELINE_REPAY_SHARE)));
+    p.debt = p.debt! - repaid; net -= repaid;
+    if (p.debt <= 0) { p.debt = 0; cleared = true; }
+  }
+  p.funds = Math.max(0, p.funds + net);
+  return { net, repaid, cleared };
+}
+
+/** Lifeline status in stats: what is owed, and whether a new lifeline can be taken now. */
+export function refreshLifeline(p: PlayerRecord): void {
+  p.stats.debt = p.debt ?? 0;
+  p.stats.lifelineAvailable = p.chunks.length > 0 && p.funds < LIFELINE_MAX_FUNDS && lifelineDebtOk(p);
+}
+
+/** Debt rule for a new lifeline: nothing owed, or an early city that stays within LIFELINE_MAX_DEBT. */
+export function lifelineDebtOk(p: PlayerRecord): boolean {
+  const debt = p.debt ?? 0;
+  if (debt <= 0) return true;
+  return (p.peakPop ?? 0) < LIFELINE_EARLY_PEAK_POP && debt + LIFELINE_AMOUNT <= LIFELINE_MAX_DEBT;
 }
 
 export class Players {
@@ -143,9 +183,12 @@ export class Players {
     return p;
   }
 
-  rename(p: PlayerRecord, name: string): void {
+  /** Rename the mayor; false when the admin has locked this player's names. */
+  rename(p: PlayerRecord, name: string): boolean {
+    if (p.namesLocked) return false;
     p.name = name;
     this.dirty = true;
+    return true;
   }
 
   /** Mark the player as seen now (any message from their socket). */
@@ -188,6 +231,7 @@ export class Players {
   }
 
   renameCity(p: PlayerRecord, name: string): { ok: true } | { ok: false; msg: string } {
+    if (p.namesLocked) return { ok: false, msg: NAMES_LOCKED_MSG };
     if (this.cityNameTaken(name, p)) return { ok: false, msg: `There is already a city called ${name}` };
     p.cityName = name;
     this.dirty = true;

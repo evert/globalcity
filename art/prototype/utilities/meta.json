@@ -52,5 +52,11 @@
     "tiles": 4,
     "zone": "civic",
     "idea": "Prestige landmark: big tourism and high-tech industry boost, rare launch events; needs a large budget, power and an airport nearby."
+  },
+  "offshore_wind": {
+    "name": "Offshore wind farm",
+    "tiles": 4,
+    "zone": "power",
+    "idea": "400 units of clean power; must be placed entirely on water"
   }
 }

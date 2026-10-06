@@ -40,6 +40,9 @@ export const LEADERBOARD_SIZE = 20;
 export const ABANDON_DECAY_DAYS = 30; // owner not seen for this long -> tiles start decaying
 export const ABANDON_FREE_DAYS = 60; // ...and after this long the claims are released
 export const ABANDON_DECAY_P = 0.004;
+/** Decay of idle cities into rubble. Off for now (2026-10-05): the world is still empty, so ruins only hurt.
+ *  Idle cities still show as abandoned and their plots are still released after ABANDON_FREE_DAYS. */
+export const ABANDON_DECAY_ENABLED = false;
 // Barely-started cities don't hold land for long: with fewer than SMALL_CITY_MAX_ITEMS things built
 // (each zone/building counts once, each road/rail/power line/park tile once) and the mayor away for
 // SMALL_CITY_RELEASE_MS, the plots are released for others to claim.
@@ -64,12 +67,33 @@ export const TRAFFIC_RAIL_SHARE = 0.7; // share of a rail-served zone's trips ta
 export const TRAFFIC_RAIL_REACH = 6; // a zone is rail-served when track is within this many tiles of its centre (a short walk to the line)
 
 // Special buildings (all require power)
+// Lifeline: a broke city (funds below LIFELINE_MAX_FUNDS, nothing owed) can take an interest-free loan,
+// repaid automatically as a share of each month's surplus (nothing is taken in months at a loss).
+// Early cities (peak population below LIFELINE_EARLY_PEAK_POP) may take more while still repaying, as long as
+// the total owed stays within LIFELINE_MAX_DEBT; bigger cities must repay before the next one.
+export const LIFELINE_AMOUNT = 10_000;
+export const LIFELINE_MAX_FUNDS = 1_000;
+export const LIFELINE_REPAY_SHARE = 0.25;
+export const LIFELINE_EARLY_PEAK_POP = 2_000;
+export const LIFELINE_MAX_DEBT = 30_000;
 export const CITYHALL_TAX_BONUS = 0.1; // +10% taxes with a powered city hall
 export const CITYHALL_CRIME_FACTOR = 0.6; // crime x0.6 with a powered city hall
 export const UPKEEP_CITYHALL = 200; // per year
+export const UPKEEP_SCHOOL = 100;
+export const UPKEEP_WIND = 50;
+export const UPKEEP_OFFSHORE = 80;
+export const UPKEEP_UNIVERSITY = 300;
+export const GRAND_CENTRAL_RANGE = 20; // zones within this many tiles of a powered Grand Central count as rail-served
+export const GRAND_CENTRAL_RAIL_BOOST = 1.5; // rail-link demand multiplier for a city with a powered Grand Central
+export const UPKEEP_GRANDCENTRAL = 200; // per year
+export const UNIVERSITY_POLICE_FACTOR = 2; // police stations in a city with a powered university cover twice the range
+export const UNIVERSITY_RANGE = 12; // a powered university raises land value within this range
+export const UNIVERSITY_IND_BOOST = 0.1;
+export const SCHOOL_RANGE = 8; // a powered school raises land value within this Chebyshev range
 export const STADIUM_RES_BOOST = 0.15; // residential demand per powered stadium (cap 1 stadium counts)
 export const SEAPORT_IND_BOOST = 0.2; // industrial demand per powered seaport (needs water within 6 tiles)
 export const AIRPORT_COM_BOOST = 0.2; // commercial demand per powered airport
+export const CRIME_LAND_VALUE_THRESHOLD = 0.5; // city crime at/above this costs uncovered lots one land value step
 export const POLICE_RANGE = 14; // Chebyshev tiles covered by a powered police station
 export const CRIME_PER_POP = 1 / 4000; // city crime level = min(1, population * CRIME_PER_POP) outside police cover
 

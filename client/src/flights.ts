@@ -1,6 +1,6 @@
 // Inter-city air traffic. The server publishes powered airports and its clock; flights are derived
 // from that with the shared deterministic schedule, so every viewer sees the same planes.
-import { activeFlights, FLIGHT_GROUND_S, type AirportInfo, type Flight } from '@globalcity/shared';
+import { activeFlights, activeVoyages, FLIGHT_GROUND_S, type AirportInfo, type Flight, type PortInfo, type SeaRoute, type Voyage } from '@globalcity/shared';
 
 export class FlightLayer {
   airports: AirportInfo[] = [];
@@ -31,4 +31,17 @@ export function flightFrame(f: Flight, dirFrame: (vx: number, vy: number) => num
 export function flightAlpha(f: Flight): number {
   const edge = Math.min(f.progress, 1 - f.progress) * f.duration / 1000;
   return Math.min(1, edge / 1.5);
+}
+
+/** Ships between seaports: the server publishes ports + sea routes and its clock. */
+export class ShipLayer {
+  ports: PortInfo[] = [];
+  routes: SeaRoute[] = [];
+  private offset = 0;
+  set(ports: PortInfo[], routes: SeaRoute[], serverNow: number): void {
+    this.ports = Array.isArray(ports) ? ports : [];
+    this.routes = Array.isArray(routes) ? routes : [];
+    if (Number.isFinite(serverNow)) this.offset = serverNow - Date.now();
+  }
+  voyages(): Voyage[] { return activeVoyages(this.ports, this.routes, Date.now() + this.offset); }
 }

@@ -6,10 +6,18 @@ import type { Renderer } from './renderer.ts';
 import type { AppState } from './state.ts';
 
 export const PAINT_TOOLS: ReadonlySet<ToolId> = new Set<ToolId>(['road', 'rail', 'wire', 'bulldozer', 'park']);
+/** Line tools whose drags lock to one axis (hold Shift for freeform). */
+export const LINE_TOOLS: ReadonlySet<ToolId> = new Set<ToolId>(['road', 'rail', 'wire']);
+/** Tiles moved from the drag start before the axis locks. */
+const AXIS_LOCK_TILES = 2;
 
 export interface InputHooks {
   /** called when the user clicks with the query tool; (cssX, cssY) is where to show the popover */
   onQueryClick(cssX: number, cssY: number): void;
+  /** a plane or ship was clicked (query tool, or anywhere on the world map) */
+  onVehicleClick(v: NonNullable<ReturnType<Renderer['pickVehicle']>>, cssX: number, cssY: number): void;
+  /** right-click in query mode: turn off the map view (overlay); false when none was on */
+  onClearOverlay(): boolean;
   /** called on any gesture that should dismiss popovers */
   onInteract(): void;
   /** touch: a build tool was aimed at a tile (null = cleared); the UI shows a confirm bar */
@@ -27,6 +35,9 @@ export class Input {
   private mode: Mode = 'none';
   private spaceHeld = false;
   private lastPaint: { x: number; y: number } | null = null;
+  /** drag start tile and the locked axis for line tools ('h' / 'v' / null = not decided yet) */
+  private paintStart: { x: number; y: number } | null = null;
+  private axis: 'h' | 'v' | null = null;
   private pinch: { dist: number; zoom: number } | null = null;
   private wheelAcc = 0;
   private lastWheelStep = 0;
@@ -90,7 +101,8 @@ export class Input {
     const tool = this.state.tool;
     const panButton = e.button === 1 || e.button === 2;
     if (panButton || this.spaceHeld || !this.renderer.isTileMode() || e.pointerType === 'touch' || tool === 'query') {
-      this.mode = panButton || this.spaceHeld ? 'pan' : 'maybe-click';
+      // middle button / space: pan at once; right button: pan once dragged, a plain right-click picks the query tool
+      this.mode = e.button === 1 || this.spaceHeld ? 'pan' : 'maybe-click';
       return;
     }
     // left button, tile mode, build tool
@@ -100,6 +112,7 @@ export class Input {
     if (PAINT_TOOLS.has(tool)) {
       this.mode = 'paint';
       this.lastPaint = t;
+      this.paintStart = t; this.axis = null;
       this.enqueueBuild(t.x, t.y, true);
     } else {
       this.mode = 'none';
@@ -131,7 +144,8 @@ export class Input {
     }
     this.updateHover(e.clientX, e.clientY);
     if (this.mode === 'paint' && this.lastPaint) {
-      const t = this.tileAt(e.clientX, e.clientY);
+      const t = this.lockToAxis(this.tileAt(e.clientX, e.clientY), e.shiftKey);
+      if (this.paintStart && LINE_TOOLS.has(this.state.tool) && !e.shiftKey) this.renderer.setHover(t);
       if (t.x !== this.lastPaint.x || t.y !== this.lastPaint.y) {
         this.paintLine(this.lastPaint, t);
         this.lastPaint = t;
@@ -147,7 +161,16 @@ export class Input {
       if (this.pointers.size < 2) { this.pinch = null; this.mode = this.pointers.size === 1 ? 'pan' : 'none'; }
       return;
     }
-    if (this.mode === 'maybe-click' && p && this.renderer.isTileMode()) {
+    if (this.mode === 'maybe-click' && p && p.button === 2 && this.state.tool !== 'query') {
+      // right-click drops the build tool and returns to query mode (a right-drag still pans)
+      this.state.setTool('query');
+      this.renderer.setHover(null);
+    } else if (this.mode === 'maybe-click' && p && p.button === 2 && this.hooks.onClearOverlay()) {
+      // right-click in query mode with a map view on: back to the normal map
+    } else if (this.mode === 'maybe-click' && p && (this.state.tool === 'query' || !this.renderer.isTileMode())
+      && this.renderer.pickVehicle(e.clientX, e.clientY)) {
+      this.hooks.onVehicleClick(this.renderer.pickVehicle(e.clientX, e.clientY)!, e.clientX, e.clientY);
+    } else if (this.mode === 'maybe-click' && p && this.renderer.isTileMode()) {
       const t = this.tileAt(e.clientX, e.clientY);
       if (inWorld(t.x, t.y)) {
         if (this.state.tool === 'query' || p.button !== 0) {
@@ -171,8 +194,25 @@ export class Input {
     const wasGesture = this.mode === 'pan'; // (a pinch always ends through 'pan' or returns above)
     this.mode = 'none';
     this.lastPaint = null;
+    this.paintStart = null; this.axis = null;
     if (e.pointerType === 'touch' && wasGesture) { this.renderer.setHover(null); this.hooks.onTouchTarget(null); }
   };
+
+  /**
+   * Line tools: keep the drag on one axis. Until the pointer is AXIS_LOCK_TILES from the start it follows
+   * the dominant direction; then that axis locks until release. Shift (or other tools) = freeform.
+   */
+  private lockToAxis(t: { x: number; y: number }, free: boolean): { x: number; y: number } {
+    const s = this.paintStart;
+    if (!s || free || !LINE_TOOLS.has(this.state.tool)) return t;
+    const dx = t.x - s.x, dy = t.y - s.y;
+    let axis = this.axis;
+    if (!axis) {
+      axis = Math.abs(dx) >= Math.abs(dy) ? 'h' : 'v';
+      if (Math.max(Math.abs(dx), Math.abs(dy)) >= AXIS_LOCK_TILES) this.axis = axis;
+    }
+    return axis === 'h' ? { x: t.x, y: s.y } : { x: s.x, y: t.y };
+  }
 
   /** Commit the touch-aimed footprint (called by the UI's Build button). */
   buildAtHover(): void {

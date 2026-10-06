@@ -5,7 +5,7 @@ import {
   LOMASK, ZONEBIT, ANIMBIT, BULLBIT, BURNBIT, CONDBIT, PWRBIT, BLBNBIT, BLBNCNBIT, BNCNBIT,
   DIRT, RUBBLE, WOODS2, FOUNTAIN, FIRE, LASTFIRE, FLOOD, LASTFLOOD, RADTILE, FIRSTRIVEDGE, LASTRIVEDGE,
   HBRIDGE, VBRIDGE, ROADBASE, ROADS, HROADPOWER, VROADPOWER, LTRFBASE, HTRFBASE, LASTROAD, POLICE_RANGE,
-  HPOWER, VPOWER, LHPOWER, LVPOWER, LVPOWER10, RAILHPOWERV, RAILVPOWERH,
+  HPOWER, VPOWER, UWPOWER_NE, UWPOWER_SE, UWPOWER_SW, UWPOWER_NW, isUnderwaterWireId, LHPOWER, LVPOWER, LVPOWER10, RAILHPOWERV, RAILVPOWERH,
   HRAIL, VRAIL, LHRAIL, LVRAIL, LVRAIL10, HRAILROAD, VRAILROAD,
   FREEZ, COMCLR, INDCLR, HOSPITALBASE, CHURCHBASE, COMBASE, INDBASE, PORTBASE, LASTPORT, AIRPORTBASE, LASTAIRPORT,
   COALBASE, LASTPOWERPLANT, FIRESTBASE, POLICESTBASE, STADIUMBASE, FULLSTADIUMBASE, NUCLEARBASE, LASTZONE,
@@ -18,11 +18,13 @@ import {
   RIVER,
   MILESTONE_BUILDINGS, isMilestoneTool, CITYHALLBASE, LASTCITYHALL,
   CHUNK,
+  SCHOOLBASE, LASTSCHOOL, WINDBASE, LASTWIND, OFFSHOREBASE, LASTOFFSHORE, isOffshoreTile,
+  CUSTOMCENTRE, CUSTOMFILL, CUSTOM_BUILDINGS, isCustomTile, toolW, toolH, GRAND_CENTRAL,
 } from '@globalcity/shared';
 import type { World } from './world.ts';
 import type { Players, PlayerRecord } from './players.ts';
 import { unlockedOf } from './players.ts';
-import { findZoneCenter, zonePop, zoneKind, isBuildingTile } from './zones.ts';
+import { findZoneCenter, zonePop, zoneKind, isBuildingTile, clearFootprint } from './zones.ts';
 import { randInt } from './util.ts';
 
 export interface BuildCtx {
@@ -74,6 +76,33 @@ function fixTile(world: World, x: number, y: number): void {
   if (isPlainRoadPiece(piece)) world.set(x, y, trafficTile(ROAD_TABLE[neighbourMask(world, x, y, roadLike)] - ROADBASE, trafficLevel(id)) | flags);
   else if (isPlainRail(id)) world.set(x, y, RAIL_TABLE[neighbourMask(world, x, y, railLike)] | flags);
   else if (isPlainWire(id)) world.set(x, y, WIRE_TABLE[neighbourMask(world, x, y, wireLike)] | flags);
+  else if (isUnderwaterWireId(id)) {
+    const uw = underwaterWire(neighbourMask(world, x, y, wireLike), id);
+    if (uw !== id) world.set(x, y, uw | flags);
+  }
+}
+
+/**
+ * Underwater power line piece for a neighbour mask (N=1 E=2 S=4 W=8): a corner when it links exactly one
+ * N/S and one E/W neighbour, otherwise a straight run that keeps its axis where it can; unchanged when alone.
+ * Micropolis' names are misleading: 208 (HPOWER) draws the cable north-south and 209 (VPOWER) east-west.
+ */
+function underwaterWire(m: number, current: number): number {
+  switch (m) {
+    case 1 | 2: return UWPOWER_NE;
+    case 4 | 2: return UWPOWER_SE;
+    case 4 | 8: return UWPOWER_SW;
+    case 1 | 8: return UWPOWER_NW;
+  }
+  const ns = (m & 5) === 5, ew = (m & 10) === 10;
+  if (ns && !ew) return HPOWER;
+  if (ew && !ns) return VPOWER;
+  // ambiguous (a T or cross, or a lone link): keep a straight that still links along its own axis
+  if (current === HPOWER && m & 5) return HPOWER;
+  if (current === VPOWER && m & 10) return VPOWER;
+  if (m & 10) return VPOWER;
+  if (m & 5) return HPOWER;
+  return current;
 }
 
 /** Fix the tile and its 4 neighbours (Micropolis fixZone). */
@@ -92,14 +121,42 @@ function clearCost(v: number): number {
   return -1;
 }
 
+/** How many custom-layer buildings of `kind` stand in p's plots. */
+export function countCustom(world: World, p: PlayerRecord, kind: string): number {
+  let n = 0;
+  for (const key of p.chunks) {
+    const [cx, cy] = key.split(',').map(Number);
+    for (let dy = 0; dy < CHUNK; dy++) for (let dx = 0; dx < CHUNK; dx++) {
+      const x = cx * CHUNK + dx, y = cy * CHUNK + dy, v = world.get(x, y);
+      if ((v & ZONEBIT) && (v & LOMASK) === CUSTOMCENTRE && world.buildings.at(x, y)?.kind === kind) n++;
+    }
+  }
+  return n;
+}
+
+/** How many of milestone building `b` stand in p's plots (tile buildings by centre id, custom ones by kind). */
+export function countMilestone(world: World, p: PlayerRecord, b: string): number {
+  const m = MILESTONE_BUILDINGS[b as keyof typeof MILESTONE_BUILDINGS];
+  if (m.centres.length) return countCentres(world, p, m.centres);
+  let n = 0;
+  for (const key of p.chunks) {
+    const [cx, cy] = key.split(',').map(Number);
+    for (let dy = 0; dy < CHUNK; dy++) for (let dx = 0; dx < CHUNK; dx++) {
+      const x = cx * CHUNK + dx, y = cy * CHUNK + dy, v = world.get(x, y);
+      if ((v & ZONEBIT) && (v & LOMASK) === CUSTOMCENTRE && world.buildings.at(x, y)?.kind === b) n++;
+    }
+  }
+  return n;
+}
+
 /** Number of buildings in p's chunks whose centre tile id is `centre` (ZONEBIT set). */
-function countCentres(world: World, p: PlayerRecord, centre: number): number {
+function countCentres(world: World, p: PlayerRecord, centres: number[]): number {
   let n = 0;
   for (const key of p.chunks) {
     const [cx, cy] = key.split(',').map(Number);
     for (let dy = 0; dy < CHUNK; dy++) for (let dx = 0; dx < CHUNK; dx++) {
       const v = world.get(cx * CHUNK + dx, cy * CHUNK + dy);
-      if ((v & ZONEBIT) && (v & LOMASK) === centre) n++;
+      if ((v & ZONEBIT) && centres.includes(v & LOMASK)) n++;
     }
   }
   return n;
@@ -120,8 +177,8 @@ export function applyBuild(ctx: BuildCtx, p: PlayerRecord, toolId: ToolId, x: nu
   const { world, players } = ctx;
   const { x0, y0 } = footprintOrigin(tool, x, y);
   // Every footprint tile must be in the world and in a chunk owned by this player.
-  for (let dy = 0; dy < tool.size; dy++) {
-    for (let dx = 0; dx < tool.size; dx++) {
+  for (let dy = 0; dy < toolH(tool); dy++) {
+    for (let dx = 0; dx < toolW(tool); dx++) {
       const tx = x0 + dx, ty = y0 + dy;
       if (!inWorld(tx, ty)) return fail('Outside the world');
       const c = chunkOf(tx, ty);
@@ -129,11 +186,21 @@ export function applyBuild(ctx: BuildCtx, p: PlayerRecord, toolId: ToolId, x: nu
     }
   }
 
-  // Milestone buildings: unlocked by population (or grandfathered), and one per city.
+  // Milestone buildings: unlocked by population (or grandfathered); some have a per-city limit.
   if (isMilestoneTool(toolId) && !opts.ignoreMilestones) {
     const m = MILESTONE_BUILDINGS[toolId];
     if (!unlockedOf(p).includes(toolId)) return fail(`The ${m.name.toLowerCase()} unlocks at ${m.pop.toLocaleString('en-US')} people`);
-    if (countCentres(world, p, tool.base! + (tool.size === 6 ? 7 : 5)) > 0) return fail(`Your city already has a ${m.name.toLowerCase()} (one per city)`);
+    if (m.max !== undefined && countMilestone(world, p, toolId) >= m.max) return fail(`Your city already has a ${m.name.toLowerCase()} (one per city)`);
+  }
+
+  // Grand Central: unlocked by the first rail link to another mayor's city; one per city.
+  if (toolId === 'grandcentral' && !opts.ignoreMilestones) {
+    if (!p.railLinked) return fail(`Grand Central unlocks when you ${GRAND_CENTRAL.unlock.toLowerCase()}`);
+    if (countCustom(world, p, 'grandcentral') >= 1) return fail('Your city already has a Grand Central (one per city)');
+  }
+  // Tiles inside a custom building (e.g. Grand Central's track) only change through the building itself.
+  if ((toolId === 'road' || toolId === 'rail' || toolId === 'wire' || toolId === 'park') && world.buildings.at(x, y)) {
+    return fail(`That is part of the ${(CUSTOM_BUILDINGS[world.buildings.at(x, y)!.kind]?.name ?? 'building').toLowerCase()}`, 'info');
   }
 
   let result: BuildResult;
@@ -143,6 +210,9 @@ export function applyBuild(ctx: BuildCtx, p: PlayerRecord, toolId: ToolId, x: nu
     case 'rail': result = layRail(world, p, x, y); break;
     case 'wire': result = layWire(world, p, x, y); break;
     case 'park': result = layPark(world, p, x, y); break;
+    case 'offshore': result = placeOffshore(world, p, tool.base!, tool.size, tool.cost, x0, y0); break;
+    case 'university': result = placeCustom(world, p, tool.custom!, tool.cost, x0, y0); break;
+    case 'grandcentral': result = placeCustom(world, p, tool.custom!, tool.cost, x0, y0); break;
     default: result = placeZone(world, p, tool.base!, tool.size, tool.cost, x0, y0); break;
   }
   if (result.ok) {
@@ -157,6 +227,11 @@ export function applyBuild(ctx: BuildCtx, p: PlayerRecord, toolId: ToolId, x: nu
 function bulldoze(world: World, p: PlayerRecord, x: number, y: number): BuildResult {
   const v = world.get(x, y);
   const id = v & LOMASK;
+  const inside = world.buildings.at(x, y);
+  if (inside && !isCustomTile(v)) {
+    // a building's rail row: the track belongs to the building and is kept when the building goes
+    return fail(`The track runs through ${CUSTOM_BUILDINGS[inside.kind]?.name ?? 'the building'}: bulldoze the building to remove it`, 'info');
+  }
   if (isBuildingTile(v)) {
     const z = findZoneCenter(world, x, y);
     if (!z) {
@@ -165,13 +240,11 @@ function bulldoze(world: World, p: PlayerRecord, x: number, y: number): BuildRes
       world.set(x, y, (RUBBLE + randInt(3)) | BULLBIT);
       return { ok: true, cost: 1 };
     }
-    const cost = z.size * z.size;
+    const cost = z.w * z.h;
     if (p.funds < cost) return fail('Not enough funds');
-    for (let dy = 0; dy < z.size; dy++) {
-      for (let dx = 0; dx < z.size; dx++) {
-        world.set(z.cx - 1 + dx, z.cy - 1 + dy, (RUBBLE + randInt(3)) | BULLBIT);
-      }
-    }
+    const offshore = isOffshoreTile(world.get(z.cx, z.cy));
+    clearFootprint(world, z, () => (offshore ? RIVER : (RUBBLE + randInt(3)) | BULLBIT));
+    if (offshore) for (let i = -1; i <= z.size; i++) { fixZone(world, z.cx - 1 + i, z.cy - 2); fixZone(world, z.cx - 1 + i, z.cy - 1 + z.size); }
     return { ok: true, cost };
   }
   if (isDirt(v)) return fail('Nothing to bulldoze', 'info');
@@ -273,7 +346,9 @@ function layWire(world: World, p: PlayerRecord, x: number, y: number): BuildResu
   let tile: number;
   let cost: number;
   if (isWater(v)) {
-    tile = (orientation(world, x, y, wireLike) === 'h' ? HPOWER : VPOWER) | CONDBIT | BULLBIT;
+    // Micropolis' names are misleading here: tile 208 (HPOWER) draws the cable north-south and 209 (VPOWER)
+    // east-west, so a horizontal run uses VPOWER.
+    tile = (orientation(world, x, y, wireLike) === 'h' ? VPOWER : HPOWER) | CONDBIT | BULLBIT;
     cost = UNDERWATER_WIRE_COST;
   } else if (isPlainRoadPiece(pieceOf(v))) {
     const piece = pieceOf(v);
@@ -351,6 +426,58 @@ function placeZone(world: World, p: PlayerRecord, base: number, size: number, ba
   return { ok: true, cost };
 }
 
+/**
+ * Custom-layer building (any w x h): footprint must be clear like a zone; tiles are CUSTOMFILL, the hot-spot
+ * tile at (1,1) is CUSTOMCENTRE with ZONEBIT, all burnable and conductive; the registry records the kind.
+ */
+function placeCustom(world: World, p: PlayerRecord, kind: string, baseCost: number, x0: number, y0: number): BuildResult {
+  const def = CUSTOM_BUILDINGS[kind];
+  let cost = baseCost;
+  for (let dy = 0; dy < def.h; dy++) for (let dx = 0; dx < def.w; dx++) {
+    const v = world.get(x0 + dx, y0 + dy);
+    if (dy === def.railRow) {
+      // the rail row: clear land, or an existing straight east-west line that the station is built over
+      if ((v & LOMASK) === LHRAIL) continue;
+      if (isRail(v)) return fail(`${def.name} needs a straight east-west stretch of rail (no junctions or crossings)`);
+    }
+    if (isPlainWire(v & LOMASK)) { cost += AUTO_BULLDOZE_COST; continue; }
+    const extra = clearCost(v);
+    if (extra < 0) return fail(isWater(v) ? "Can't build on water" : 'Area must be clear');
+    cost += extra;
+  }
+  if (p.funds < cost) return fail('Not enough funds');
+  for (let dy = 0; dy < def.h; dy++) for (let dx = 0; dx < def.w; dx++) {
+    if (dy === def.railRow) {
+      const old = world.get(x0 + dx, y0 + dy);
+      if ((old & LOMASK) !== LHRAIL) world.set(x0 + dx, y0 + dy, LHRAIL | BLBNBIT);
+      continue;
+    }
+    world.set(x0 + dx, y0 + dy, dx === 1 && dy === 1 ? CUSTOMCENTRE | BNCNBIT | ZONEBIT | BULLBIT : CUSTOMFILL | BNCNBIT);
+  }
+  world.buildings.add(kind, x0, y0);
+  // join the station's track to rail built up to either end (and any line running into it)
+  if (def.railRow !== undefined) for (let dx = 0; dx < def.w; dx++) fixZone(world, x0 + dx, y0 + def.railRow);
+  return { ok: true, cost };
+}
+
+/**
+ * Offshore wind farm: every footprint tile must be water (open sea or shoreline). The tiles conduct power
+ * (connect with an underwater power line) but don't burn, and removing the farm leaves water.
+ */
+function placeOffshore(world: World, p: PlayerRecord, base: number, size: number, cost: number, x0: number, y0: number): BuildResult {
+  for (let dy = 0; dy < size; dy++) for (let dx = 0; dx < size; dx++) {
+    if (!isWater(world.get(x0 + dx, y0 + dy))) return fail('An offshore wind farm must be placed entirely on water');
+  }
+  if (p.funds < cost) return fail('Not enough funds');
+  let t = base;
+  for (let dy = 0; dy < size; dy++) for (let dx = 0; dx < size; dx++) {
+    let v = t++ | CONDBIT | BULLBIT;
+    if (dx === 1 && dy === 1) v |= ZONEBIT;
+    world.set(x0 + dx, y0 + dy, v);
+  }
+  return { ok: true, cost };
+}
+
 /** Tiles from the footprint edge within which a seaport must find water to count (sim.ts uses the same rule). */
 export const SEAPORT_WATER_RANGE = 6;
 
@@ -378,6 +505,7 @@ export function queryTile(ctx: BuildCtx, x: number, y: number): QueryInfo {
   let powered = isPowered(v);
 
   const zone = isBuildingTile(v) ? findZoneCenter(world, x, y) : null;
+  const custom = isCustomTile(v) ? world.buildings.at(x, y) : undefined;
   if (zone) {
     const cv = world.get(zone.cx, zone.cy);
     powered = isPowered(cv);
@@ -389,7 +517,7 @@ export function queryTile(ctx: BuildCtx, x: number, y: number): QueryInfo {
       const label = kind === 'res' ? 'Residential' : kind === 'com' ? 'Commercial' : 'Industrial';
       name = `${label} zone${empty && kind !== 'res' ? ' (empty)' : ` (pop ${zonePopN})`}`;
     } else {
-      name = buildingName(cv & LOMASK);
+      name = custom ? CUSTOM_BUILDINGS[custom.kind]?.name ?? 'Building' : buildingName(cv & LOMASK);
     }
   } else {
     name = terrainName(v);
@@ -411,6 +539,9 @@ function buildingName(id: number): string {
   if (id >= CHURCHBASE && id < COMBASE) return 'Church';
   if (id >= PORTBASE && id <= LASTPORT) return 'Seaport';
   if (id >= CITYHALLBASE && id <= LASTCITYHALL) return 'City hall';
+  if (id >= SCHOOLBASE && id <= LASTSCHOOL) return 'Elementary school';
+  if (id >= WINDBASE && id <= LASTWIND) return 'Wind farm';
+  if (id >= OFFSHOREBASE && id <= LASTOFFSHORE) return 'Offshore wind farm';
   if (id >= AIRPORTBASE && id <= LASTAIRPORT) return 'Airport';
   if (id >= COALBASE && id <= LASTPOWERPLANT) return 'Coal power plant';
   if (id >= FIRESTBASE && id < POLICESTBASE) return 'Fire station';
@@ -440,7 +571,7 @@ function terrainName(v: number): string {
   if (id === RAILHPOWERV || id === RAILVPOWERH) return 'Rail with power line';
   if (id >= LTRFBASE && id <= LASTROAD) return id >= HTRFBASE ? 'Road (heavy traffic)' : 'Road (light traffic)';
   if (isRoad(v)) return 'Road';
-  if (id === HPOWER || id === VPOWER) return 'Underwater power line';
+  if (isUnderwaterWireId(id)) return 'Underwater power line';
   if (isWire(v)) return 'Power line';
   if (id === HRAIL || id === VRAIL) return 'Underwater rail';
   if (isRail(v)) return 'Rail';
