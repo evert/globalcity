@@ -17,6 +17,11 @@ import type { SpriteEngine } from './sprites.ts';
 import { FlightLayer, ShipLayer } from './flights.ts';
 import { OverlayLayer } from './overlays.ts';
 import { CustomLayer } from './custom.ts';
+import { NightLayer } from './night.ts';
+import { NightLights } from './nightlights.ts';
+
+/** How much of the night shade the zoomed-in city gets: dim, never dark, so building stays easy at night. */
+const NIGHT_CITY_DIM = 0.8;
 import { OverviewMap, speckleTile } from './overviewmap.ts';
 import { WORLD_W as FLIGHT_WORLD_W } from '@globalcity/shared';
 
@@ -125,6 +130,10 @@ export class Renderer extends Emitter<RendererEvents> {
   private customAnimTimer: ReturnType<typeof setTimeout> | null = null;
   /** zoomed-out map view: per-plot pixel images + tile-coloured terrain with specks */
   readonly overviewMap = new OverviewMap();
+  /** real-time day and night (the actual sun over the actual Earth) */
+  readonly night = new NightLayer();
+  /** lit windows and street lamps for the zoomed-in view at night (derived from the tile art once the sheet loads) */
+  private nightLights: NightLights | null = null;
   private speckle: CanvasPattern | null = null;
   private flightTimer: ReturnType<typeof setTimeout> | null = null;
   /** transient marker (pulsing red ring) around a tile, e.g. after clicking a fire toast */
@@ -162,7 +171,10 @@ export class Renderer extends Emitter<RendererEvents> {
       }
       return out;
     };
+    try { this.nightLights = new NightLights(sheet); } catch { this.nightLights = null; } // the sheet is loaded before the renderer exists
     this.customs.onChange = () => this.invalidate();
+    // day and night move with the real sun: check once a minute and redraw when the shade changed
+    if (this.animated) setInterval(() => { if (this.night.update()) this.invalidate(); }, 60_000);
     this.customs.load();
     this.overlay.isOwn = (cx, cy) => this.state.ownsChunk(cx, cy);
     map.on('tiles', () => this.invalidate());
@@ -600,6 +612,34 @@ export class Renderer extends Emitter<RendererEvents> {
     if (customAnimMs < Infinity && this.animated && !this.customAnimTimer) {
       this.customAnimTimer = setTimeout(() => { this.customAnimTimer = null; this.invalidate(); }, customAnimMs);
     }
+    // 1b. night: the real-time shade over the city, then the lit windows and street lamps of every plot in the dark
+    this.night.update();
+    {
+      const v = this.viewRect();
+      const x0w = Math.max(0, v.x0), y0w = Math.max(0, v.y0), x1w = Math.min(WORLD_W, v.x1), y1w = Math.min(WORLD_H, v.y1);
+      const nc = this.night.canvas;
+      if (x1w > x0w && y1w > y0w) {
+        g.imageSmoothingEnabled = true;
+        g.globalAlpha = NIGHT_CITY_DIM;
+        g.drawImage(nc, (x0w / WORLD_W) * nc.width, (y0w / WORLD_H) * nc.height, ((x1w - x0w) / WORLD_W) * nc.width, ((y1w - y0w) / WORLD_H) * nc.height,
+          this.dx(x0w), this.dy(y0w), this.dx(x1w) - this.dx(x0w), this.dy(y1w) - this.dy(y0w));
+        g.globalAlpha = 1;
+        g.imageSmoothingEnabled = false;
+      }
+      if (this.nightLights) {
+        for (let cy = r.cy0; cy <= r.cy1; cy++) for (let cx = r.cx0; cx <= r.cx1; cx++) {
+          const lvl = this.nightAtChunk(cx, cy);
+          if (lvl < 0.05) continue;
+          const tiles = this.map.getChunk(cx, cy);
+          if (!tiles) continue;
+          const x0 = this.dx(cx * CHUNK), x1 = this.dx((cx + 1) * CHUNK), y0 = this.dy(cy * CHUNK), y1 = this.dy((cy + 1) * CHUNK);
+          if (x1 <= 0 || y1 <= 0 || x0 >= W || y0 >= H) continue;
+          g.globalAlpha = lvl;
+          g.drawImage(this.nightLights.canvasFor(chunkKey(cx, cy), cx, cy, tiles, now), x0, y0, x1 - x0, y1 - y0);
+        }
+        g.globalAlpha = 1;
+      }
+    }
     // 1a. map overlay: dim the city, then one pixel per tile from the overlay layer
     if (this.overlay.mode !== 'none') {
       this.overlay.ownCrime = this.state.stats?.crime ?? 0;
@@ -731,6 +771,43 @@ export class Renderer extends Emitter<RendererEvents> {
       }
       g.imageSmoothingEnabled = false;
     }
+    // night: the real-time shade over the whole map, then the lights of every city on the dark side
+    this.night.update();
+    g.imageSmoothingEnabled = true;
+    g.drawImage(this.night.canvas, left, top, right - left, bottom - top);
+    {
+      const vr = this.visibleChunkRect(0);
+      g.imageSmoothingEnabled = tpx < 1;
+      g.globalCompositeOperation = 'lighter';
+      // below a pixel per tile the lights average out, so draw them twice to keep cities glowing
+      const passes = tpx < 1 ? 2 : 1;
+      for (const claim of this.state.claims.values()) {
+        if (claim.cx < vr.cx0 || claim.cx > vr.cx1 || claim.cy < vr.cy0 || claim.cy > vr.cy1) continue;
+        const lights = this.overviewMap.lightsFor(claim.cx, claim.cy);
+        if (!lights) continue;
+        const lvl = this.nightAtChunk(claim.cx, claim.cy);
+        if (lvl < 0.05) continue;
+        g.globalAlpha = lvl;
+        const x0 = this.dx(claim.cx * CHUNK), x1 = this.dx((claim.cx + 1) * CHUNK);
+        const y0 = this.dy(claim.cy * CHUNK), y1 = this.dy((claim.cy + 1) * CHUNK);
+        for (let k = 0; k < passes; k++) g.drawImage(lights, x0, y0, x1 - x0, y1 - y0);
+        // zoomed far out a plot is a few pixels: give lit cities a soft warm glow, like Earth at night
+        const share = this.overviewMap.litShareOf(claim.cx, claim.cy);
+        if (tpx < 0.6 && share > 0.01) {
+          const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, rad = Math.max(5 * this.dpr, (x1 - x0) * 1.3);
+          const grad = g.createRadialGradient(mx, my, 0, mx, my, rad);
+          grad.addColorStop(0, `rgba(255, 205, 120, ${Math.min(0.55, 0.15 + share * 2) * lvl})`);
+          grad.addColorStop(1, 'rgba(255, 205, 120, 0)');
+          g.globalAlpha = 1;
+          g.fillStyle = grad;
+          g.fillRect(mx - rad, my - rad, rad * 2, rad * 2);
+          g.globalAlpha = lvl;
+        }
+      }
+      g.globalAlpha = 1;
+      g.globalCompositeOperation = 'source-over';
+      g.imageSmoothingEnabled = false;
+    }
     // chunk grid at the higher overview zooms
     if (this.cam.zoom >= 0.125) {
       const r = this.visibleChunkRect(0);
@@ -767,7 +844,9 @@ export class Renderer extends Emitter<RendererEvents> {
         const y0 = this.dy(claim.cy * CHUNK), y1 = this.dy((claim.cy + 1) * CHUNK);
         w = Math.max(1, x1 - x0); h = Math.max(1, y1 - y0);
         const hasImg = !!this.overviewMap.canvasFor(claim.cx, claim.cy);
-        const alpha = !hasImg ? (st.abandoned ? 0.45 : own ? 0.7 : 0.5) : tpxNow < 0.5 ? 0.55 : tpxNow < 1 ? 0.3 : 0;
+        // at night the owner tint fades so the city lights (drawn underneath) show through
+        const alpha = (!hasImg ? (st.abandoned ? 0.45 : own ? 0.7 : 0.5) : tpxNow < 0.5 ? 0.55 : tpxNow < 1 ? 0.3 : 0)
+          * (1 - 0.85 * this.nightAtChunk(claim.cx, claim.cy));
         if (alpha <= 0) continue;
         g.fillStyle = withAlpha(st.color, alpha);
         g.fillRect(x0, y0, w, h);
@@ -820,6 +899,12 @@ export class Renderer extends Emitter<RendererEvents> {
   }
 
   /** True if chunk (cx,cy) is claimed by `ownerId` (used to merge adjacent plots of one city). */
+  /** How dark it is (0..1) at the centre of plot (cx, cy) right now. */
+  private nightAtChunk(cx: number, cy: number): number {
+    const lat = 90 - ((cy + 0.5) * CHUNK / WORLD_H) * 180, lon = ((cx + 0.5) * CHUNK / WORLD_W) * 360 - 180;
+    return this.night.levelAt(lat, lon);
+  }
+
   private sameOwner(cx: number, cy: number, ownerId: string): boolean {
     return this.state.claimAt(cx, cy)?.ownerId === ownerId;
   }
@@ -938,6 +1023,7 @@ export class Renderer extends Emitter<RendererEvents> {
     if (this.map.dirty.size === 0) return;
     const dirty = this.map.takeDirty();
     for (const [key, idxs] of dirty) {
+      this.nightLights?.markDirty(key);
       const cc = this.chunkCanvases.get(key);
       if (!cc) continue;
       if (idxs.length && idxs[0] === DIRTY_ALL) { this.chunkCanvases.delete(key); continue; }

@@ -460,6 +460,7 @@ export class UI {
     this.state.on('me', () => { this.refreshName(); this.refreshClaimButtons(); this.refreshLeaderboard(); this.miniDirty = true; this.scheduleMini(); });
     this.state.on('city', () => { this.refreshName(); this.refreshWelcome(); });
     this.state.on('leaderboard', () => this.refreshLeaderboard());
+    setInterval(() => { this.miniDirty = true; this.scheduleMini(); }, 60_000); // the corner map's night shade moves with the sun
     this.state.on('time', () => this.refreshTime());
     this.state.on('tool', () => this.refreshTools());
     this.state.on('claims', () => { this.refreshClaimButtons(); this.refreshWelcome(); this.miniDirty = true; this.scheduleMini(); this.refreshWorldPop(); this.refreshLeaderboard(); });
@@ -1307,6 +1308,11 @@ export class UI {
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.imageSmoothingEnabled = true;
     g.drawImage(this.minimap.image, 0, 0, this.minimap.width, this.minimap.height, 0, 0, cssW, cssH);
+    // real-time night over the corner map too
+    this.renderer.night.update();
+    g.imageSmoothingEnabled = true;
+    g.drawImage(this.renderer.night.canvas, 0, 0, cssW, cssH);
+    g.imageSmoothingEnabled = false;
     const sx = cssW / WORLD_W, sy = cssH / WORLD_H;
     // claimed chunks as tiny dots
     for (const cl of this.state.claims.values()) {
