@@ -19,7 +19,7 @@ import {
   MILESTONE_BUILDINGS, isMilestoneTool, CITYHALLBASE, LASTCITYHALL,
   CHUNK,
   SCHOOLBASE, LASTSCHOOL, WINDBASE, LASTWIND, OFFSHOREBASE, LASTOFFSHORE, isOffshoreTile,
-  CUSTOMCENTRE, CUSTOMFILL, CUSTOM_BUILDINGS, isCustomTile, toolW, toolH, GRAND_CENTRAL,
+  displayPopulation, CUSTOMCENTRE, CUSTOMFILL, CUSTOM_BUILDINGS, isCustomTile, toolW, toolH, GRAND_CENTRAL,
 } from '@globalcity/shared';
 import type { World } from './world.ts';
 import type { Players, PlayerRecord } from './players.ts';
@@ -502,6 +502,7 @@ export function queryTile(ctx: BuildCtx, x: number, y: number): QueryInfo {
   const id = v & LOMASK;
   let name: string;
   let zonePopN: number | undefined;
+  let zoneKindQ: 'res' | 'com' | 'ind' | undefined;
   let powered = isPowered(v);
 
   const zone = isBuildingTile(v) ? findZoneCenter(world, x, y) : null;
@@ -511,11 +512,14 @@ export function queryTile(ctx: BuildCtx, x: number, y: number): QueryInfo {
     powered = isPowered(cv);
     const kind = zoneKind(cv);
     if (kind === 'res' || kind === 'com' || kind === 'ind') {
-      zonePopN = zonePop(world, zone.cx, zone.cy, cv);
+      // the same scale as the city's population: zone units x20 for homes, x8 x20 for jobs (displayPopulation)
+      const units = zonePop(world, zone.cx, zone.cy, cv);
+      zonePopN = kind === 'res' ? displayPopulation(units, 0, 0) : displayPopulation(0, units, 0);
+      zoneKindQ = kind;
       const cid = cv & LOMASK;
       const empty = cid === FREEZ || cid === COMCLR || cid === INDCLR;
       const label = kind === 'res' ? 'Residential' : kind === 'com' ? 'Commercial' : 'Industrial';
-      name = `${label} zone${empty && kind !== 'res' ? ' (empty)' : ` (pop ${zonePopN})`}`;
+      name = `${label} zone${empty && kind !== 'res' ? ' (empty)' : ''}`;
     } else {
       name = custom ? CUSTOM_BUILDINGS[custom.kind]?.name ?? 'Building' : buildingName(cv & LOMASK);
     }
@@ -530,7 +534,7 @@ export function queryTile(ctx: BuildCtx, x: number, y: number): QueryInfo {
   const owner = players.ownerOf(c.cx, c.cy);
   const info: QueryInfo = { x, y, tile: v, name, powered };
   if (owner) info.owner = players.publicOf(owner);
-  if (zonePopN !== undefined) info.zonePop = zonePopN;
+  if (zonePopN !== undefined) { info.zonePop = zonePopN; if (zoneKindQ) info.zoneKind = zoneKindQ; }
   return info;
 }
 

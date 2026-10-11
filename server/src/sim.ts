@@ -6,10 +6,10 @@
 // (coal/industrial smoke, stadium games, airport radar, nuclear swirl; the client cycles ANIMBIT tiles).
 
 import {
-  WORLD_W, WORLD_H, CHUNK, TAX_RATE, TAX_MULT, COAL_POWER, NUCLEAR_POWER, POWER_PRICE_PER_UNIT,
+  WORLD_W, WORLD_H, CHUNK, DEMAND_SMOOTHING, TAX_RATE, TAX_MULT, COAL_POWER, NUCLEAR_POWER, POWER_PRICE_PER_UNIT,
   UPKEEP_ROAD, UPKEEP_RAIL, UPKEEP_STATION, UPKEEP_COAL, UPKEEP_NUCLEAR, CITY_FREEZE_MS,
   POLICESTATION,
-  FIRE_SPREAD_P, FIRE_BURNOUT_P, FIRE_BURNOUT_P_COVERED, FIRE_STATION_RANGE, FIRE_OUTBREAK_BASE_P, FIRE_OWNER_ONLINE_MS,
+  FIRE_SPREAD_P, FIRE_BURNOUT_P, FIRE_BURNOUT_P_COVERED, FIRE_STATION_RANGE, FIRE_OUTBREAK_BASE_P, FIRE_OWNER_ONLINE_MS, FIRE_PREVENTED_P,
   ABANDON_DECAY_DAYS, ABANDON_FREE_DAYS, ABANDON_DECAY_P, ABANDON_DECAY_ENABLED, SMALL_CITY_MAX_ITEMS, SMALL_CITY_RELEASE_MS, NEIGHBOUR_DEMAND_MAX, RAIL_LINK_BOOST, RAIL_LINK_MAX,
   TRAFFIC_MAX_STEPS, TRAFFIC_ADD, TRAFFIC_DECAY, TRAFFIC_LIGHT, TRAFFIC_HEAVY, TRAFFIC_RAIL_SHARE, TRAFFIC_RAIL_REACH,
   STADIUM_RES_BOOST, SEAPORT_IND_BOOST, AIRPORT_COM_BOOST, POLICE_RANGE, CRIME_PER_POP,
@@ -341,6 +341,7 @@ export class Sim {
     const idleChanged = new Set<string>();
     for (const p of this.players.players.values()) {
       if (p.chunks.length === 0) { this.lastIdle.delete(p.id); continue; }
+      if (p.monument) continue; // monuments never decay or get released
       const idle = this.players.idleDays(p, now);
       const small = now - p.lastSeen >= SMALL_RELEASE_MS && this.builtItems(p, SMALL_CITY_MAX_ITEMS) < SMALL_CITY_MAX_ITEMS;
       if (idle >= ABANDON_FREE_DAYS || small) {
@@ -362,12 +363,18 @@ export class Sim {
       if (this.lastIdle.get(p.id) !== idle) { this.lastIdle.set(p.id, idle); idleChanged.add(p.id); }
     }
 
+    // Ruins of abandoned cities (released plots) keep crumbling until nothing is left to decay or someone claims them.
+    for (const key of [...this.players.ruins]) {
+      if (this.players.claims.has(key)) { this.players.ruins.delete(key); continue; }
+      const { cx, cy } = parseChunkKey(key);
+      if (!this.decayChunk(cx, cy)) { this.players.ruins.delete(key); this.players.dirty = true; }
+    }
     this.lap('abandon');
     // Cities whose mayor is away are frozen: they skip growth, traffic and the budget entirely
     // (cheap, and an unattended city can't decline or go bankrupt). Their plants still feed the grid.
     this.frozen.clear();
     for (const p of this.players.players.values()) {
-      if (p.chunks.length > 0 && now - p.lastSeen >= FREEZE_MS) this.frozen.add(p.id);
+      if (p.chunks.length > 0 && (p.monument || now - p.lastSeen >= FREEZE_MS)) this.frozen.add(p.id); // monuments stay frozen for good
     }
     // 1. Neighbourhood: rail networks and neighbour/rail demand for every running city with land.
     this.updateRailNetworks();
@@ -414,6 +421,35 @@ export class Sim {
   // 0. Abandonment: every built tile of a decaying city turns to rubble with ABANDON_DECAY_P per
   //    tick; a hit on a multi-tile building takes the whole footprint (like fireZone).
   // -------------------------------------------------------------------------
+  /** One decay step over an unowned chunk of ruins; false once nothing in it can decay any more. */
+  private decayChunk(cx: number, cy: number): boolean {
+    const tiles = this.world.tiles;
+    let left = 0;
+    const hits: number[] = [];
+    for (let dy = 0; dy < CHUNK; dy++) {
+      const row = (cy * CHUNK + dy) * WORLD_W + cx * CHUNK;
+      for (let dx = 0; dx < CHUNK; dx++) {
+        const i = row + dx;
+        if (!decays(tiles[i])) continue;
+        left++;
+        if (chance(ABANDON_DECAY_P)) hits.push(i);
+      }
+    }
+    for (const i of hits) {
+      const v = tiles[i];
+      if (!decays(v)) continue;
+      const x = i % WORLD_W, y = (i - x) / WORLD_W;
+      this.ruin(x, y, v);
+    }
+    return left > 0;
+  }
+
+  /** Released plots: drop their traffic maps and redraw their roads plain (shared by idle release and abandon). */
+  clearReleased(chunks: { cx: number; cy: number }[]): void {
+    for (const u of chunks) { const ci = chunkIndex(u.cx, u.cy); this.density.delete(ci); this.applyTrafficLevels(ci, null); }
+    this.lastDensityChunk = -1; this.lastDensityArr = null;
+  }
+
   private decayStep(p: PlayerRecord): void {
     const tiles = this.world.tiles;
     const hits: number[] = [];
@@ -820,7 +856,12 @@ export class Sim {
     const connected = c.airport > 0 && this.airports.some((a) => a.ownerId !== p.id);
     cd = clamp(cd + nd.c + rail + (connected ? AIRPORT_COM_BOOST : 0), -1, 1);
     id = clamp(id + nd.i + (c.seaport > 0 ? SEAPORT_IND_BOOST : 0) + (c.university > 0 ? UNIVERSITY_IND_BOOST : 0), -1, 1);
-    const newDemand: Demand = { r: round2(r), c: round2(cd), i: round2(id) };
+    // Smoothed: the bars (and growth, which reads them next tick) drift towards the target instead of jumping.
+    // A city with nobody living or working in it yet starts at its target, so a new mayor sees demand at once.
+    const was = p.stats.demand, fresh = c.R + c.C + c.I === 0 || !was;
+    const ease = (from: number, to: number): number => Math.round((from + (to - from) * DEMAND_SMOOTHING) * 1000) / 1000;
+    const newDemand: Demand = fresh ? { r: round2(r), c: round2(cd), i: round2(id) }
+      : { r: ease(was.r, r), c: ease(was.c, cd), i: ease(was.i, id) };
 
     // 4. Budget: monthly share of yearly taxes minus yearly upkeep, through a fractional accumulator.
     //    (Only running cities get here: a city whose mayor is away is frozen, see tick().)
@@ -951,6 +992,8 @@ export class Sim {
     if (pool.length === 0) return;
     const i = pool[randInt(pool.length - 1)];
     const x = i % WORLD_W, y = (i - x) / WORLD_W;
+    // Inside a powered fire station's range most outbreaks are caught before they start.
+    if (this.stations.some((s) => chebyshev(s, x, y) <= FIRE_STATION_RANGE) && chance(FIRE_PREVENTED_P)) return;
     if (this.ignite(x, y)) this.toasts.push({ playerId: p.id, kind: 'error', msg: 'Fire! A blaze broke out in your city', at: { x, y } });
   }
 

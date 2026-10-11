@@ -1,6 +1,6 @@
 // Mouse / touch / keyboard handling for the map canvas.
 import type { ToolId } from '@globalcity/shared';
-import { CHUNK, TOOLS, TOOL_ORDER, inWorld } from '@globalcity/shared';
+import { CHUNK, LOMASK, LHPOWER, LVPOWER10, TOOLS, TOOL_ORDER, inWorld, isDirt, isRubble, isTree } from '@globalcity/shared';
 import type { Actions } from './actions.ts';
 import type { Renderer } from './renderer.ts';
 import type { AppState } from './state.ts';
@@ -8,6 +8,9 @@ import type { AppState } from './state.ts';
 export const PAINT_TOOLS: ReadonlySet<ToolId> = new Set<ToolId>(['road', 'rail', 'wire', 'bulldozer', 'park']);
 /** Line tools whose drags lock to one axis (hold Shift for freeform). */
 export const LINE_TOOLS: ReadonlySet<ToolId> = new Set<ToolId>(['road', 'rail', 'wire']);
+/** Zone tools: a drag lays a zone in every 3x3 cell it crosses, on a grid anchored at the drag start. */
+export const ZONE_TOOLS: ReadonlySet<ToolId> = new Set<ToolId>(['residential', 'commercial', 'industrial']);
+const ZONE = 3;
 /** Tiles moved from the drag start before the axis locks. */
 const AXIS_LOCK_TILES = 2;
 
@@ -109,7 +112,7 @@ export class Input {
     this.updateHover(e.clientX, e.clientY);
     const t = this.tileAt(e.clientX, e.clientY);
     if (!inWorld(t.x, t.y)) { this.mode = 'none'; return; }
-    if (PAINT_TOOLS.has(tool)) {
+    if (PAINT_TOOLS.has(tool) || ZONE_TOOLS.has(tool)) {
       this.mode = 'paint';
       this.lastPaint = t;
       this.paintStart = t; this.axis = null;
@@ -144,10 +147,11 @@ export class Input {
     }
     this.updateHover(e.clientX, e.clientY);
     if (this.mode === 'paint' && this.lastPaint) {
-      const t = this.lockToAxis(this.tileAt(e.clientX, e.clientY), e.shiftKey);
-      if (this.paintStart && LINE_TOOLS.has(this.state.tool) && !e.shiftKey) this.renderer.setHover(t);
+      const zone = ZONE_TOOLS.has(this.state.tool);
+      const t = zone ? this.snapToZone(this.tileAt(e.clientX, e.clientY)) : this.lockToAxis(this.tileAt(e.clientX, e.clientY), e.shiftKey);
+      if (this.paintStart && (zone || (LINE_TOOLS.has(this.state.tool) && !e.shiftKey))) this.renderer.setHover(t);
       if (t.x !== this.lastPaint.x || t.y !== this.lastPaint.y) {
-        this.paintLine(this.lastPaint, t);
+        this.paintLine(this.lastPaint, t, zone ? ZONE : 1);
         this.lastPaint = t;
       }
     }
@@ -214,6 +218,26 @@ export class Input {
     return axis === 'h' ? { x: t.x, y: s.y } : { x: s.x, y: t.y };
   }
 
+  /** Zone tools: the centre of the 3x3 grid cell under t, the grid lined up with the drag start. */
+  private snapToZone(t: { x: number; y: number }): { x: number; y: number } {
+    const s = this.paintStart;
+    if (!s) return t;
+    return { x: s.x + ZONE * Math.round((t.x - s.x) / ZONE), y: s.y + ZONE * Math.round((t.y - s.y) / ZONE) };
+  }
+
+  /** A zone centred at (x, y) would fit: every tile in a plot we own, and clear (as the server checks it). */
+  private zoneFits(x: number, y: number): boolean {
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const tx = x + dx, ty = y + dy;
+      if (!inWorld(tx, ty) || !this.state.ownsChunk(Math.floor(tx / CHUNK), Math.floor(ty / CHUNK))) return false;
+      const v = this.renderer.map.get(tx, ty);
+      if (v === undefined) return false;
+      const id = v & LOMASK;
+      if (!isDirt(v) && !isTree(v) && !isRubble(v) && !(id >= LHPOWER && id <= LVPOWER10)) return false;
+    }
+    return true;
+  }
+
   /** Commit the touch-aimed footprint (called by the UI's Build button). */
   buildAtHover(): void {
     const h = this.renderer.hover;
@@ -262,10 +286,10 @@ export class Input {
     if (tool) { this.state.setTool(tool); return; }
     const step = 64;
     switch (key) {
-      case 'arrowleft': this.renderer.panBy(step, 0); break;
-      case 'arrowright': this.renderer.panBy(-step, 0); break;
-      case 'arrowup': this.renderer.panBy(0, step); break;
-      case 'arrowdown': this.renderer.panBy(0, -step); break;
+      case 'arrowleft': case 'a': this.renderer.panBy(step, 0); break;
+      case 'arrowright': case 'd': this.renderer.panBy(-step, 0); break;
+      case 'arrowup': case 'w': this.renderer.panBy(0, step); break;
+      case 'arrowdown': case 's': this.renderer.panBy(0, -step); break;
       case '+': case '=': this.renderer.zoomStep(1); break;
       case '-': case '_': this.renderer.zoomStep(-1); break;
       case 'h': this.renderer.showWorld(); break;
@@ -280,16 +304,19 @@ export class Input {
   };
 
   // ---------- painting ----------
-  private paintLine(a: { x: number; y: number }, b: { x: number; y: number }): void {
-    // Bresenham so fast drags do not skip tiles
-    let x0 = a.x, y0 = a.y;
-    const x1 = b.x, y1 = b.y;
+  /** Paint from a to b. `step` > 1 walks a grid of that spacing anchored at the drag start (zone cells). */
+  private paintLine(a: { x: number; y: number }, b: { x: number; y: number }, step = 1): void {
+    // Bresenham (in grid cells) so fast drags do not skip tiles
+    const o = this.paintStart ?? a;
+    const ax = (a.x - o.x) / step, ay = (a.y - o.y) / step;
+    let x0 = ax, y0 = ay;
+    const x1 = (b.x - o.x) / step, y1 = (b.y - o.y) / step;
     const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0);
     const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
     let err = dx + dy;
     let guard = 0;
     while (guard++ < 4096) {
-      if (x0 !== a.x || y0 !== a.y) this.enqueueBuild(x0, y0, false);
+      if (x0 !== ax || y0 !== ay) this.enqueueBuild(o.x + x0 * step, o.y + y0 * step, false);
       if (x0 === x1 && y0 === y1) break;
       const e2 = 2 * err;
       if (e2 >= dy) { err += dy; x0 += sx; }
@@ -299,8 +326,10 @@ export class Input {
 
   private enqueueBuild(x: number, y: number, first: boolean): void {
     if (!inWorld(x, y)) return;
-    // while dragging only paint on chunks we own (the first click goes through so the server can explain)
+    // while dragging only paint on chunks we own, and zones only where they fit (the first click goes
+    // through so the server can explain)
     if (!first && !this.state.ownsChunk(Math.floor(x / CHUNK), Math.floor(y / CHUNK))) return;
+    if (!first && ZONE_TOOLS.has(this.state.tool) && (!this.zoneFits(x, y) || this.state.funds < TOOLS[this.state.tool].cost)) return;
     this.buildQueue.push({ x, y });
     this.drainBuilds();
   }
@@ -315,7 +344,7 @@ export class Input {
       if (next) {
         this.lastBuildAt = performance.now();
         const tool = this.state.tool;
-        if (PAINT_TOOLS.has(tool)) this.actions.build(tool, next.x, next.y);
+        if (PAINT_TOOLS.has(tool) || ZONE_TOOLS.has(tool)) this.actions.build(tool, next.x, next.y);
       }
       if (this.buildQueue.length) this.drainBuilds();
     }, wait);

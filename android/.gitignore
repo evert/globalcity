@@ -1,0 +1,8 @@
+# build output and machine-specific files; the signing key never lives in the repo (~/.globalcity-android)
+.gradle/
+build/
+app/build/
+release/
+local.properties
+*.jks
+*.keystore

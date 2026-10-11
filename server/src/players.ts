@@ -25,6 +25,8 @@ export interface PlayerRecord {
   railLinked?: boolean;
   /** set by the admin: the mayor and city names can no longer be changed by the player */
   namesLocked?: boolean;
+  /** a retired city kept as a monument (a record of its own, no player behind it): frozen, never released */
+  monument?: { at: number; population: number; founderId: string };
   /** message shown to the player on their next visit (e.g. why their plot was released), then cleared */
   notice?: string;
   token: string; // secret, never sent except in 'welcome' to its owner
@@ -49,6 +51,8 @@ export interface StateFile {
   time: GameTime;
   players: PlayerRecord[];
   claims: [string, string][]; // chunkKey -> playerId
+  /** released plots of an abandoned city that are still crumbling (chunk keys); absent in older saves */
+  ruins?: string[];
 }
 
 export type ClaimResult = { ok: true; cost: number } | { ok: false; msg: string };
@@ -138,6 +142,8 @@ export function lifelineDebtOk(p: PlayerRecord): boolean {
 export class Players {
   readonly players = new Map<string, PlayerRecord>();
   readonly claims = new Map<string, string>();
+  /** plots of abandoned cities whose ruins are still crumbling (until fully decayed or claimed again) */
+  readonly ruins = new Set<string>();
   time: GameTime = { year: START_YEAR, month: 0 };
   /** state changed since last save */
   dirty = false;
@@ -284,9 +290,61 @@ export class Players {
     p.stats.chunks = p.chunks.length;
     p.stats.funds = p.funds;
     this.claims.set(key, p.id);
+    this.ruins.delete(key); // a new owner stops the decay
     this.claimsVersion++;
     this.dirty = true;
     return { ok: true, cost };
+  }
+
+  /**
+   * Retire p's city as a monument: a new record (same mayor name, city name and colour, the city's stats as they
+   * are now) takes over every plot and is frozen forever; p starts over with a fresh, empty account (starting
+   * funds, no plots, no unlocks, no debt) and claims a new first plot like a new player. Returns the monument.
+   */
+  /**
+   * Abandon p's (broke) city: every plot is released and marked as ruins that keep crumbling until claimed; p
+   * starts over like a new mayor (starting funds, lifeline debt written off, no unlocks). Returns the plots.
+   */
+  abandon(p: PlayerRecord): { cx: number; cy: number }[] {
+    const keys = [...p.chunks];
+    const released = this.release(p);
+    for (const k of keys) this.ruins.add(k);
+    this.resetForFreshStart(p);
+    return released;
+  }
+
+  /** A mayor starting over: starting funds, no plots, no city name, no debt, milestones from zero. */
+  private resetForFreshStart(p: PlayerRecord): void {
+    p.chunks = [];
+    p.cityName = '';
+    p.funds = STARTING_FUNDS;
+    p.debt = 0;
+    p.peakPop = 0;
+    p.grandfathered = [];
+    p.announced = [];
+    p.railLinked = false;
+    p.active = false;
+    p.incomeAcc = 0;
+    p.yearIncome = 0;
+    p.stats = emptyStats(STARTING_FUNDS);
+    this.dirty = true;
+  }
+
+  makeMonument(p: PlayerRecord): PlayerRecord {
+    const now = Date.now();
+    const m = this.create(p.name);
+    Object.assign(m, {
+      cityName: p.cityName, color: p.color, funds: p.funds, chunks: [...p.chunks], stats: { ...p.stats },
+      peakPop: p.peakPop, grandfathered: p.grandfathered, announced: p.announced, railLinked: p.railLinked,
+      namesLocked: true, createdAt: p.createdAt, lastSeen: now,
+      monument: { at: now, population: p.stats.population, founderId: p.id },
+    });
+    m.token = crypto.randomBytes(16).toString('hex'); // nobody can log in as a monument
+    for (const key of m.chunks) this.claims.set(key, m.id);
+    this.resetForFreshStart(p);
+    this.claimsVersion++;
+    this.dirty = true;
+    return m;
   }
 
   /**
@@ -352,7 +410,9 @@ export class Players {
   }
 
   claimInfo(cx: number, cy: number, p: PlayerRecord, now = Date.now()): ClaimInfo {
-    return { cx, cy, ownerId: p.id, ownerName: p.name, cityName: p.cityName, color: p.color, pop: p.stats.population, idleDays: this.idleDays(p, now) };
+    const info: ClaimInfo = { cx, cy, ownerId: p.id, ownerName: p.name, cityName: p.cityName, color: p.color, pop: p.stats.population, idleDays: p.monument ? 0 : this.idleDays(p, now) };
+    if (p.monument) info.monument = true;
+    return info;
   }
 
   claimInfosOf(p: PlayerRecord): ClaimInfo[] {
@@ -373,7 +433,7 @@ export class Players {
   }
 
   serialize(): StateFile {
-    return { version: 1, time: { ...this.time }, players: [...this.players.values()], claims: [...this.claims.entries()] };
+    return { version: 1, time: { ...this.time }, players: [...this.players.values()], claims: [...this.claims.entries()], ruins: [...this.ruins] };
   }
 
   /** Load a state file; players saved by older versions get the new fields (cityName derived from their first chunk, lastSeen = now). */
@@ -401,6 +461,7 @@ export class Players {
       if (!p.cityName && p.chunks.length > 0) unnamed.push(p);
     }
     for (const [key, id] of state.claims) if (this.players.has(id)) this.claims.set(key, id);
+    for (const key of state.ruins ?? []) if (!this.claims.has(key)) this.ruins.add(key);
     for (const p of unnamed) {
       const c = parseChunkKey(p.chunks[0]);
       p.cityName = this.defaultCityName(c.cx, c.cy, p);

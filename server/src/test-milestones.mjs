@@ -45,11 +45,11 @@ const a = await A.settle(70, 14, 20, 12);
 await A.build('residential', a.X + 15, a.Y + 9); // a city with a zone, so it is simulated
 let t = await A.build('cityhall', a.X + 1, a.Y + 1);
 console.log('city hall at 0 people:', t.join(' | '));
-if (!t.some((x) => /unlocks at 20,000 people/.test(x))) fail('city hall should be locked');
-A.send({ t: 'devPeak', pop: 25000 }); await ticks(3);
+if (!t.some((x) => /unlocks at 75,000 people/.test(x))) fail('city hall should be locked');
+A.send({ t: 'devPeak', pop: 80000 }); await ticks(3);
 console.log('after reaching 2,500: unlocked', JSON.stringify(A.stats.unlocked), '| next milestone', A.stats.nextMilestone, '| toast:', A.toasts.find((x) => /Milestone/.test(x)));
 if (!A.stats.unlocked.includes('cityhall') || A.stats.unlocked.includes('seaport')) fail('unlock set');
-if (!A.toasts.some((x) => /Milestone: 20,000 people/.test(x))) fail('no milestone message');
+if (!A.toasts.some((x) => /Milestone: 75,000 people/.test(x))) fail('no milestone message');
 t = await A.build('cityhall', a.X + 1, a.Y + 1);
 if (!((A.tile(a.X + 1, a.Y + 1) & LOMASK) === CITYHALL && (A.tile(a.X + 1, a.Y + 1) & ZONEBIT))) fail('city hall not placed: ' + t.join(' | '));
 t = await A.build('cityhall', a.X + 7, a.Y + 1);
@@ -91,25 +91,25 @@ const W = new C('Mayor-W'); await W.connect();
 const w = await W.settle(66, 18, 20, 10);
 t = await W.build('fire', w.X + 1, w.Y + 1);
 console.log('fire station at 0 people:', t.join(' | '));
-if (!t.some((x) => /unlocks at 5,000 people/.test(x))) fail('fire station should be locked below 5,000');
+if (!t.some((x) => /unlocks at 15,000 people/.test(x))) fail('fire station should be locked below 15,000');
 // a row of road in a city below the fire milestone: an ignited tile must not spread
 for (let x = w.X; x < w.X + 12; x++) await W.build('road', x, w.Y + 8);
 W.send({ t: 'devIgnite', x: w.X + 6, y: w.Y + 8 }); await ticks(14);
 let burnt = 0; for (let x = w.X; x < w.X + 12; x++) { const id = W.tile(x, w.Y + 8) & LOMASK; if (!(id >= 64 && id <= 206)) burnt++; }
-console.log('road tiles lost to a fire in a city below 5,000 people:', burnt);
+console.log('road tiles lost to a fire in a city below 15,000 people:', burnt);
 if (burnt > 1) fail('fire spread in a city that has not reached the fire milestone');
-W.send({ t: 'devPeak', pop: 40000 }); await ticks(2);
-console.log('at 40,000 people unlocked:', JSON.stringify(W.stats.unlocked));
-for (const b of ['fire', 'police', 'cityhall', 'airport']) if (!W.stats.unlocked.includes(b)) fail('missing unlock ' + b);
-for (const b of ['school', 'windfarm']) if (W.stats.unlocked.includes(b)) fail(b + ' should still be locked at 40,000');
-W.send({ t: 'devPeak', pop: 600000 }); await ticks(2);   // the wind farm unlocks at 500,000
-if (!W.stats.unlocked.includes('windfarm')) fail('wind farm should unlock at 500,000');
+W.send({ t: 'devPeak', pop: 60000 }); await ticks(2);
+console.log('at 60,000 people unlocked:', JSON.stringify(W.stats.unlocked));
+for (const b of ['fire', 'police', 'school']) if (!W.stats.unlocked.includes(b)) fail('missing unlock ' + b);
+for (const b of ['cityhall', 'windfarm', 'airport']) if (W.stats.unlocked.includes(b)) fail(b + ' should still be locked at 60,000');
+W.send({ t: 'devPeak', pop: 160000 }); await ticks(2);   // the wind farm unlocks at 150,000
+if (!W.stats.unlocked.includes('windfarm')) fail('wind farm should unlock at 150,000');
 await W.build('residential', w.X + 15, w.Y + 2); // keep the city simulated
 t = await W.build('windfarm', w.X + 1, w.Y + 2);
 await ticks(3);
 console.log('wind farm:', t.join(' | ') || 'placed', '| power supply', W.stats.powerSupply);
 if (W.stats.powerSupply < 100) fail('wind farm should supply 100');
-// offshore: needs 1,000,000 and a 4x4 of water
+// offshore: needs 300,000 and a 4x4 of water
 const O = new C('Mayor-O'); await O.connect();
 let site = null;
 for (const [cx, cy] of [[64, 13], [63, 12], [70, 12], [36, 17], [33, 16], [114, 25], [60, 14]]) {

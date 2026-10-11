@@ -29,6 +29,8 @@ a { color: var(--accent); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn.primary { background: #1f6f3d; border-color: #2f9a56; color: #fff; }
 .btn.primary:hover { background: #268a4b; }
+.btn.danger { background: #7a2424; border-color: #a83a3a; color: #fff; }
+.btn.danger:hover { background: #923030; }
 .btn.ghost { background: transparent; border-color: transparent; }
 .btn.ghost:hover { background: rgba(255,255,255,0.08); }
 .btn.round { border-radius: 999px; width: 28px; height: 28px; padding: 0; display: inline-grid; place-items: center; }
@@ -117,6 +119,14 @@ a { color: var(--accent); }
 /* leaderboard */
 #leaderboard { width: min(600px, calc(100vw - 32px)); max-height: calc(100vh - 80px); display: flex; flex-direction: column; }
 #leaderboard .lb-rows { overflow-y: auto; scrollbar-width: thin; margin: 0 -8px; padding: 0 8px; }
+#leaderboard .lb-view { display: flex; flex-direction: column; min-height: 0; }
+#leaderboard .lb-view.hidden { display: none; }
+.lb-title { display: flex; align-items: center; gap: 12px; margin-right: 36px; margin-bottom: 10px; }
+.lb-title h2 { margin: 0; }
+.lb-title .lb-page { margin-left: auto; font-size: 12px; padding: 3px 10px; white-space: nowrap; }
+.mon-intro { margin: 0 0 8px; font-size: 12px; }
+.mon-view .lb-head, .mon-view .lb-row { grid-template-columns: 28px 14px 1fr 92px 48px 96px 58px; }
+.lb-row .date, .lb-head .date { text-align: right; font-size: 12px; white-space: nowrap; }
 .lb-head, .lb-row { display: grid; grid-template-columns: 28px 14px 1fr 92px 72px 48px 48px 58px; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 4px; }
 .lb-head { color: var(--muted); font-size: 11px; border-bottom: 1px solid var(--panel-border); margin-bottom: 4px; padding-bottom: 6px; }
 .lb-row:nth-child(even) { background: rgba(255,255,255,0.03); }
@@ -188,6 +198,7 @@ a { color: var(--accent); }
   .lb-row .fires { font-size: 11px; }
   .lb-head .ms { font-size: 0; } .lb-head .ms::after { content: '🏛'; font-size: 11px; }
   .lb-head .chunks, .lb-row .chunks { display: none; }
+  .mon-view .lb-head, .mon-view .lb-row { grid-template-columns: 20px 10px minmax(0, 1fr) 70px 80px 44px; gap: 4px; }
   #miniwrap { bottom: 70px; }
   #minimap { width: 160px; height: 80px; }
 }

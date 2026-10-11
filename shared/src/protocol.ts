@@ -20,6 +20,8 @@ export interface ClaimInfo {
   color: string;
   pop: number; // displayed population of the whole city this chunk belongs to
   idleDays: number; // days since the owner was last seen; >= ABANDON_DECAY_DAYS means decaying, claims released at ABANDON_FREE_DAYS
+  /** a retired city kept as a monument: frozen, never released (absent = a normal city) */
+  monument?: boolean;
 }
 
 export interface GameTime {
@@ -82,6 +84,19 @@ export interface LeaderboardEntry {
   milestones?: number;
 }
 
+/** A city retired as a monument: frozen forever, listed apart from the leaderboard. */
+export interface MonumentEntry {
+  id: string;
+  name: string; // the mayor who built it
+  cityName: string;
+  color: string;
+  population: number; // when it was retired
+  chunks: number;
+  cx: number; // centroid chunk, for "visit"
+  cy: number;
+  at: number; // ms epoch when it was retired
+}
+
 /** Where an online player is looking / pointing. */
 export interface Presence {
   id: string;
@@ -102,7 +117,10 @@ export interface QueryInfo {
   name: string; // human readable e.g. "Residential zone (24 pop)"
   powered: boolean;
   owner?: PlayerPublic;
+  /** people in this zone on the top bar's scale (residents for homes, jobs for shops and industry) */
   zonePop?: number;
+  /** which kind of zone zonePop belongs to (absent from old servers) */
+  zoneKind?: 'res' | 'com' | 'ind';
 }
 
 // ---------- client -> server (JSON) ----------
@@ -118,6 +136,8 @@ export type ClientMsg =
   | { t: 'view'; x: number; y: number; zoom: number; cx?: number; cy?: number } // throttled by the client (~4/s)
   | { t: 'leaderboard' } // ask for the current top list
   | { t: 'lifeline' } // take the emergency lifeline loan
+  | { t: 'monument' } // retire my city (over MONUMENT_MIN_POP) as a monument and start over
+  | { t: 'abandon' } // give up my broke city (owes a lifeline, under ABANDON_MAX_FUNDS): plots released, ruins crumble, start over
   | { t: 'ping' };
 
 // ---------- server -> client (JSON) ----------
@@ -139,7 +159,7 @@ export type ServerMsg =
   | { t: 'freeSpot'; cx: number | null; cy: number | null }
   | { t: 'query'; info: QueryInfo }
   | { t: 'toast'; msg: string; kind: 'info' | 'error' | 'success'; at?: { x: number; y: number } } // `at`: clickable, fly there
-  | { t: 'leaderboard'; entries: LeaderboardEntry[]; me?: { rank: number; population: number } } // top cities; also pushed periodically
+  | { t: 'leaderboard'; entries: LeaderboardEntry[]; me?: { rank: number; population: number }; monuments?: MonumentEntry[] } // top cities (and monuments, absent from old servers); also pushed periodically
   | { t: 'presence'; players: Presence[] } // every PRESENCE_INTERVAL_MS, online players except the receiver
   | { t: 'airports'; airports: AirportInfo[]; now: number } // powered airports (sent on welcome and when the set changes); `now` = server clock ms, for flight sync
   | { t: 'unclaim'; cx: number; cy: number } // a chunk was released (abandoned); ruins stay

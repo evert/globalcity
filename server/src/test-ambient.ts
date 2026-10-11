@@ -192,7 +192,7 @@ async function main(): Promise<void> {
   A.send({ t: 'claim', cx, cy });
   await waitFor(() => A.claims.has(chunkKey(cx, cy)), 'claim');
   A.sendRaw({ t: 'devFunds', amount: 200_000 });
-  A.sendRaw({ t: 'devPeak', pop: 600_000 }); // seaport/airport are milestone buildings
+  A.sendRaw({ t: 'devPeak', pop: 1_100_000 }); // seaport/airport are milestone buildings
   await waitFor(() => (A.stats?.funds ?? 0) > 100_000, 'devFunds');
 
   // Positions of interest (centres = footprint top-left + (1,1)).

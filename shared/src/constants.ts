@@ -8,6 +8,10 @@ export const TILE_PX = 16; // sprite size in tiles.png
 
 // Economy
 export const STARTING_FUNDS = 20000;
+/** A city this big can be retired as a monument: frozen forever on the map, and its mayor starts over. */
+export const MONUMENT_MIN_POP = 1_000_000;
+/** A broke city (under this many $) that owes a lifeline may be abandoned: its plots are released and the ruins crumble. */
+export const ABANDON_MAX_FUNDS = 100;
 // Claiming more plots: the first is free, then the price escalates geometrically with every plot you own
 // (2nd $25,000, 3rd $43,750, 4th $76,563 ... 10th about $2.2M). Must be adjacent to one you own.
 export const CLAIM_BASE_COST = 25000;
@@ -60,6 +64,9 @@ export const RAIL_LINK_MAX = 0.5;
 // with rail within TRAFFIC_RAIL_REACH tiles sends most of its trips by train instead.
 export const TRAFFIC_MAX_STEPS = 16; // tiles per drive
 export const TRAFFIC_ADD = 8; // density added to each road tile driven over
+/** RCI demand moves this share of the way to its newly computed value each tick (like Micropolis' valves, which
+ *  accumulate rather than jump): most of a change settles within 10-15 game months. */
+export const DEMAND_SMOOTHING = 0.15;
 export const TRAFFIC_DECAY = 0.8; // multiplier per tick
 export const TRAFFIC_LIGHT = 80; // density >= -> light traffic tiles
 export const TRAFFIC_HEAVY = 150; // density >= -> heavy traffic tiles
@@ -95,7 +102,7 @@ export const SEAPORT_IND_BOOST = 0.2; // industrial demand per powered seaport (
 export const AIRPORT_COM_BOOST = 0.2; // commercial demand per powered airport
 export const CRIME_LAND_VALUE_THRESHOLD = 0.5; // city crime at/above this costs uncovered lots one land value step
 export const POLICE_RANGE = 14; // Chebyshev tiles covered by a powered police station
-export const CRIME_PER_POP = 1 / 4000; // city crime level = min(1, population * CRIME_PER_POP) outside police cover
+export const CRIME_PER_POP = 1 / 60_000; // city crime level = min(1, population * CRIME_PER_POP); reaches CRIME_LAND_VALUE_THRESHOLD (0.5) at 30,000 people, the police milestone
 
 // Presence
 export const PRESENCE_INTERVAL_MS = 500; // server broadcast cadence
@@ -114,6 +121,8 @@ export const FIRE_STATION_RANGE = 12; // Chebyshev distance from the station cen
 // comes back to a city that burnt down while they slept.
 export const FIRE_OUTBREAK_BASE_P = 0.0008; // per city per tick at ~30 zones; scales with sqrt(zones/30)
 export const FIRE_OWNER_ONLINE_MS = 60_000;
+/** Chance that an outbreak inside a powered fire station's range never starts (it is put out at once). */
+export const FIRE_PREVENTED_P = 0.75;
 
 // Time: one game month per tick
 export const TICK_MS = 2000;

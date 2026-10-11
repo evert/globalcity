@@ -17,7 +17,7 @@ import {
   encodeChunk, inWorld, clamp,
   type ClientMsg, type ServerMsg, type ToolId, type Presence,
   overviewClass, OVERVIEW_CHUNK_BYTES, parseChunkKey,
-  LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT,
+  LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, STARTING_FUNDS, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT,
 } from '@globalcity/shared';
 import { World, chunkIndex, chunkCoords, type ChunkIndex } from './world.ts';
 import { Players, NAMES_LOCKED_MSG, sanitizeName, sanitizeCityName, refreshMilestoneStats, refreshLifeline, type PlayerRecord } from './players.ts';
@@ -25,7 +25,7 @@ import { Sim, type TickResult } from './sim.ts';
 import { applyBuild, queryTile } from './tools.ts';
 import { Leaderboard } from './leaderboard.ts';
 import { log } from './util.ts';
-import { Admin, type Announcement } from './admin.ts';
+import { Admin, type Announcement, type GrantResult } from './admin.ts';
 
 // Clients paint at most one build per 25 ms (40/s); allow headroom above that so painting is never throttled.
 const BUILD_RATE_PER_SEC = 60;
@@ -103,7 +103,8 @@ export class Net {
     world.buildings.onChange = (op, b) => this.broadcast({ t: 'building', op, b });
     this.admin = new Admin(clientDist, opts.dataDir ?? path.join(repoRoot, 'data/save'),
       (v) => this.broadcast({ t: 'version', version: v }),
-      (a) => { for (const c of this.clients) if (c.player) this.sendAnnouncement(c, a); });
+      (a) => { for (const c of this.clients) if (c.player) this.sendAnnouncement(c, a); },
+      (who, amount) => this.adminGrant(who, amount));
     this.leaderboard = new Leaderboard(players);
     if (this.devHooks) log('DEV_HOOKS enabled: devIgnite/devFunds/devTraffic/devPeak/devRailLink/devPlace accepted');
   }
@@ -128,6 +129,25 @@ export class Net {
     if (this.presenceTimer) { clearInterval(this.presenceTimer); this.presenceTimer = null; }
     for (const c of this.clients) c.ws.close(1001, 'server shutting down');
     this.httpServer?.close();
+  }
+
+  /** Admin cash grant (from the admin API): one player by id prefix (6+ chars) or exact mayor name. */
+  private adminGrant(who: { id?: string; name?: string }, amount: number): GrantResult {
+    const all = [...this.players.players.values()];
+    const matches = who.id
+      ? (who.id.length >= 6 ? all.filter((p) => p.id.startsWith(who.id!)) : [])
+      : all.filter((p) => p.name.toLowerCase() === who.name!.trim().toLowerCase());
+    if (matches.length !== 1) return { ok: false, error: `expected exactly one player, found ${matches.length}` };
+    const p = matches[0];
+    p.funds += amount; p.stats.funds = p.funds;
+    refreshLifeline(p);
+    this.players.dirty = true;
+    for (const c of this.clients) {
+      if (c.player !== p) continue;
+      this.toast(c, `🎁 Your city received $${amount.toLocaleString('en-US')} from the GlobalCity team`, 'success');
+      this.sendStatsIfChanged(c);
+    }
+    return { ok: true, id: p.id, name: p.name, cityName: p.cityName, funds: p.funds };
   }
 
   onlineCount(): number {
@@ -365,6 +385,39 @@ export class Net {
         this.sendStatsIfChanged(client);
         break;
       }
+      case 'monument': {
+        const min = Number(process.env.MONUMENT_MIN_POP) || MONUMENT_MIN_POP; // tests lower it
+        if (p.chunks.length === 0 || p.stats.population < min) {
+          this.toast(client, `Only a city of more than ${min.toLocaleString('en-US')} people can become a monument`, 'error');
+          break;
+        }
+        const city = p.cityName || `${p.name}'s city`, pop = p.stats.population;
+        const m = this.players.makeMonument(p);
+        log(`${p.name} retired ${city} (${pop} people, ${m.chunks.length} plots) as a monument; starting over`);
+        this.broadcast({ t: 'claims', claims: this.players.claimInfosOf(m) });
+        this.send(client, this.welcomeMsg(p));
+        this.send(client, this.leaderboard.messageFor(p));
+        client.lastStatsJson = JSON.stringify(p.stats);
+        this.toast(client, `🏛 ${city} is now a monument and will stand forever. Claim a plot anywhere to start a new city.`, 'success');
+        for (const c of this.clients) if (c !== client && c.player) this.toast(c, `🏛 ${p.name} retired ${city} (${pop.toLocaleString('en-US')} people) as a monument`, 'info');
+        break;
+      }
+      case 'abandon': {
+        if (p.chunks.length === 0 || p.funds >= ABANDON_MAX_FUNDS || (p.debt ?? 0) <= 0) {
+          this.toast(client, 'Only a broke city that has already used a lifeline can be abandoned', 'error');
+          break;
+        }
+        const city = p.cityName || `${p.name}'s city`;
+        const released = this.players.abandon(p);
+        this.sim.clearReleased(released);
+        log(`${p.name} abandoned ${city} (${released.length} plots released as ruins); starting over`);
+        for (const u of released) this.broadcast({ t: 'unclaim', cx: u.cx, cy: u.cy });
+        this.send(client, this.welcomeMsg(p));
+        this.send(client, this.leaderboard.messageFor(p));
+        client.lastStatsJson = JSON.stringify(p.stats);
+        this.toast(client, `You left ${city}. Its ruins are free for anyone to claim. Claim a plot anywhere to start again with $${STARTING_FUNDS.toLocaleString('en-US')}.`, 'info');
+        break;
+      }
       case 'renameCity': {
         const name = sanitizeCityName(msg.name);
         if (!name) { this.toast(client, 'Invalid city name', 'error'); break; }
@@ -432,15 +485,7 @@ export class Net {
     client.clientVersion = msg.v ?? '';
     if (p.chunks.length > 0) this.sim.initMilestones(p); // a returning mayor of a frozen city sees correct unlocks at once
     client.lastStatsJson = JSON.stringify(p.stats);
-    this.send(client, {
-      t: 'welcome',
-      player: { ...this.players.publicOf(p), token: p.token },
-      stats: p.stats,
-      world: { w: WORLD_W, h: WORLD_H, chunk: CHUNK },
-      claims: this.players.allClaims(),
-      online: this.onlineCount(),
-      time: { ...this.players.time },
-    });
+    this.send(client, this.welcomeMsg(p));
     this.send(client, this.leaderboard.messageFor(p));
     this.send(client, this.airportsMsg());
     this.send(client, this.shippingMsg());
@@ -450,6 +495,19 @@ export class Net {
     const ann = this.admin.active();
     if (ann) this.sendAnnouncement(client, ann);
     log(`${p.name} (${p.id.slice(0, 8)}) connected; online=${this.onlineCount()}`);
+  }
+
+  /** The welcome message: who the player is, their stats, the world and every claim. */
+  private welcomeMsg(p: PlayerRecord): ServerMsg {
+    return {
+      t: 'welcome',
+      player: { ...this.players.publicOf(p), token: p.token },
+      stats: p.stats,
+      world: { w: WORLD_W, h: WORLD_H, chunk: CHUNK },
+      claims: this.players.allClaims(),
+      online: this.onlineCount(),
+      time: { ...this.players.time },
+    };
   }
 
   private onSub(client: Client, chunks: [number, number][]): void {
@@ -603,6 +661,8 @@ function parseClientMsg(raw: unknown): ClientMsg | null {
     }
     case 'leaderboard': return { t: 'leaderboard' };
     case 'lifeline': return { t: 'lifeline' };
+    case 'monument': return { t: 'monument' };
+    case 'abandon': return { t: 'abandon' };
     case 'ping': return { t: 'ping' };
     default: return null;
   }

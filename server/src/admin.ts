@@ -4,6 +4,7 @@
 // only rebuilds the client (no restart) still tells every connected client to update.
 //
 // Announcements: POST /admin/announce {msg, minutes?, level?}, POST /admin/clear, GET /admin/status.
+// Grants: POST /admin/grant {name | id (prefix), amount}: add cash to one city, live (no restart).
 // Only from the machine itself (loopback, and never through the Cloudflare tunnel, which also connects
 // from loopback but adds cf-* headers) and with the token in <data dir>/admin-token (created at boot, 0600).
 import fs from 'node:fs';
@@ -13,6 +14,7 @@ import type http from 'node:http';
 import { log, warn } from './util.ts';
 
 export interface Announcement { id: string; msg: string; level: 'info' | 'warn'; until: number }
+export type GrantResult = { ok: true; id: string; name: string; cityName: string; funds: number } | { ok: false; error: string };
 
 export class Admin {
   version = '';
@@ -21,7 +23,8 @@ export class Admin {
   private readonly versionFile: string;
 
   constructor(clientDist: string, dataDir: string, private readonly onVersion: (v: string) => void,
-    private readonly onAnnounce: (a: Announcement | null) => void) {
+    private readonly onAnnounce: (a: Announcement | null) => void,
+    private readonly onGrant: (who: { id?: string; name?: string }, amount: number) => GrantResult = () => ({ ok: false, error: 'grants not available' })) {
     this.versionFile = path.join(clientDist, 'version.json');
     this.readVersion();
     fs.watchFile(this.versionFile, { interval: 5000 }, () => {
@@ -82,6 +85,22 @@ export class Admin {
         log(`admin: announcement (${level}, ${minutes} min): ${msg}`);
         this.onAnnounce(this.announcement);
         reply(200, { ok: true, announcement: this.announcement });
+      });
+      return true;
+    }
+    if (req.method === 'POST' && pathname === '/admin/grant') {
+      let body = '';
+      req.on('data', (c) => { body += c; if (body.length > 4096) req.destroy(); });
+      req.on('end', () => {
+        let j: { id?: unknown; name?: unknown; amount?: unknown };
+        try { j = JSON.parse(body); } catch { reply(400, { error: 'invalid JSON' }); return; }
+        const amount = j.amount;
+        if (typeof amount !== 'number' || !Number.isInteger(amount) || amount <= 0 || amount > 10_000_000) { reply(400, { error: 'amount must be a whole number from 1 to 10,000,000' }); return; }
+        const who = { id: typeof j.id === 'string' ? j.id : undefined, name: typeof j.name === 'string' ? j.name : undefined };
+        if (!who.id && !who.name) { reply(400, { error: 'name or id required' }); return; }
+        const r = this.onGrant(who, amount);
+        if (r.ok) log(`admin: granted $${amount} to ${r.name} (${r.id.slice(0, 8)}, ${r.cityName || 'no city'}); funds now $${r.funds}`);
+        reply(r.ok ? 200 : 400, r);
       });
       return true;
     }

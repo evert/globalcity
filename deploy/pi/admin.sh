@@ -5,6 +5,7 @@
 #   deploy/pi/admin.sh announce "Server restart in 5 minutes" [minutes=60] [info|warn]
 #   deploy/pi/admin.sh clear
 #   deploy/pi/admin.sh status
+#   deploy/pi/admin.sh grant <mayor name | player id prefix> <amount>   # cash for one city, live
 #
 # Announcements show as a banner to everyone online and to anyone connecting before they expire
 # (players can dismiss them). Clients from before banners existed get the text as a toast.
@@ -23,5 +24,9 @@ case "$cmd" in
     python3 -c 'import json,sys; print(json.dumps({"msg": sys.argv[1], "minutes": float(sys.argv[2]), "level": sys.argv[3]}))' "$msg" "$minutes" "$level" | call POST /admin/announce ;;
   clear)  echo '{}' | call POST /admin/clear ;;
   status) echo '' | call GET /admin/status ;;
-  *) echo "unknown command: $cmd (announce | clear | status)"; exit 1 ;;
+  grant)
+    who="${2:?usage: admin.sh grant <mayor name | player id prefix> <amount>}"; amount="${3:?usage: admin.sh grant <mayor name | player id prefix> <amount>}"
+    # an id prefix is 6+ hex digits; anything else is taken as the exact mayor name (case-insensitive)
+    python3 -c 'import json,re,sys; w,a=sys.argv[1],int(sys.argv[2]); key="id" if re.fullmatch(r"[0-9a-f]{6,}", w) else "name"; print(json.dumps({key: w, "amount": a}))' "$who" "$amount" | call POST /admin/grant ;;
+  *) echo "unknown command: $cmd (announce | clear | status | grant)"; exit 1 ;;
 esac

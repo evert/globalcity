@@ -47,6 +47,12 @@ export class Actions {
   /** Ask for the emergency lifeline loan (the server checks eligibility). */
   lifeline(): boolean { return this.net.send({ t: 'lifeline' }); }
 
+  /** Retire my city as a monument and start over (the server checks the population). */
+  monument(): boolean { return this.net.send({ t: 'monument' }); }
+
+  /** Give up my broke city and start over (the server checks funds and the lifeline). */
+  abandon(): boolean { return this.net.send({ t: 'abandon' }); }
+
   rename(name: string): boolean {
     name = name.trim().slice(0, 24);
     if (!name) return false;

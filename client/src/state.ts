@@ -1,5 +1,5 @@
 // Central client state shared by net, renderer, input and ui.
-import type { ClaimInfo, GameTime, LeaderboardEntry, PlayerPublic, PlayerStats, Presence, ToolId } from '@globalcity/shared';
+import type { ClaimInfo, GameTime, LeaderboardEntry, MonumentEntry, PlayerPublic, PlayerStats, Presence, ToolId } from '@globalcity/shared';
 import {
   ABANDON_DECAY_DAYS, ABANDON_FREE_DAYS, CHUNKS_X, CHUNKS_Y, MAX_CHUNKS_PER_PLAYER, chunkKey, parseChunkKey, STARTING_FUNDS, START_YEAR,
 } from '@globalcity/shared';
@@ -30,6 +30,7 @@ export function claimCity(c: ClaimInfo): string { return c.cityName ?? ''; }
 export function claimIdleDays(c: ClaimInfo): number { return Math.max(0, Math.floor(c.idleDays ?? 0)); }
 
 export function claimIdleState(c: ClaimInfo): ClaimIdle {
+  if (c.monument) return 'active'; // monuments never decay
   const d = claimIdleDays(c);
   if (d >= ABANDON_DECAY_DAYS) return 'abandoned';
   if (d >= IDLE_HINT_DAYS) return 'idle';
@@ -44,6 +45,7 @@ export function claimLabel(c: ClaimInfo, own: boolean): string {
   const city = claimCity(c);
   let s = city ? `${city} — ${c.ownerName}` : c.ownerName;
   if (own) s += ' (you)';
+  if (c.monument) s += ' · 🏛 monument';
   const idle = claimIdleState(c);
   if (idle === 'abandoned') s += ` (abandoned, free in ${Math.max(0, ABANDON_FREE_DAYS - claimIdleDays(c))} days)`;
   else if (idle === 'idle') s += ` · idle ${claimIdleDays(c)}d`;
@@ -61,6 +63,8 @@ export class AppState extends Emitter<StateEvents> {
   /** last top list from the server (kept so the panel opens instantly) */
   leaderboard: LeaderboardEntry[] = [];
   leaderboardMe: LeaderboardMe | null = null;
+  /** retired cities, largest first (null: the server doesn't send them) */
+  monuments: MonumentEntry[] | null = null;
   leaderboardAt = 0; // performance.now() of the last update, 0 = never
   /** latest presence frame (other online players), replaced wholesale */
   presence: Presence[] = [];
@@ -84,9 +88,10 @@ export class AppState extends Emitter<StateEvents> {
   setTime(time: GameTime, online: number): void { this.time = time; this.online = online; this.emit('time', undefined); }
   setConnected(v: boolean): void { if (this.connected !== v) { this.connected = v; this.emit('connection', v); } }
   setTool(t: ToolId): void { if (this.tool !== t) { this.tool = t; this.emit('tool', t); } }
-  setLeaderboard(entries: LeaderboardEntry[], me?: LeaderboardMe): void {
+  setLeaderboard(entries: LeaderboardEntry[], me?: LeaderboardMe, monuments?: MonumentEntry[]): void {
     this.leaderboard = entries;
     this.leaderboardMe = me ?? null;
+    this.monuments = monuments ?? null;
     this.leaderboardAt = performance.now();
     this.emit('leaderboard', undefined);
   }

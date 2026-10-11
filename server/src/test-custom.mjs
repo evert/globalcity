@@ -1,4 +1,4 @@
-// Custom-building layer: a 5x4 university is locked until 150,000 people, placed as one building, reported to
+// Custom-building layer: a 5x4 university is locked until 250,000 people, placed as one building, reported to
 // every client, one per city, removed (and reported) by the bulldozer from any of its tiles, destroyed whole
 // by fire, and survives a save/restart. Needs DEV_HOOKS=1.
 import WebSocket from 'ws';
@@ -42,8 +42,8 @@ for (const [cx, cy] of [[72, 15], [80, 18], [60, 22], [100, 20]]) {
 if (X < 0) fail('no dry site');
 await sleep(300); A.send({ t: 'devFunds', amount: 100000 }); await sleep(200);
 let t = await A.build('university', X + 1, Y + 1);
-if (!t.some((x) => /unlocks at 150,000 people/.test(x))) fail('university should be locked: ' + t.join(' | '));
-A.send({ t: 'devPeak', pop: 160000 }); await sleep(300);
+if (!t.some((x) => /unlocks at 250,000 people/.test(x))) fail('university should be locked: ' + t.join(' | '));
+A.send({ t: 'devPeak', pop: 260000 }); await sleep(300);
 t = await A.build('university', X + 1, Y + 1);
 let fill = 0, centre = 0; for (let dy = 0; dy < 4; dy++) for (let dx = 0; dx < 5; dx++) { const v = A.tile(X + dx, Y + dy), id = v & LOMASK; if (id === CUSTOMFILL) fill++; if (id === CUSTOMCENTRE && (v & ZONEBIT)) centre++; }
 console.log(`placed: ${t.join(' | ') || 'ok'} | footprint ${fill} fill + ${centre} centre tiles | visitor saw: ${V.events.join(', ')}`);
