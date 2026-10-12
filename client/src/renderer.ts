@@ -827,6 +827,9 @@ export class Renderer extends Emitter<RendererEvents> {
     // claims
     const me = this.state.me;
     const showNames = this.cam.zoom >= 0.25;
+    // at the two most zoomed-out levels cities are just their own pixels: no coloured square or outline around them
+    const levels = this.zoomLevels();
+    const farOut = this.cam.zoom <= (levels[1] ?? levels[0]) + 1e-9;
     const v = this.visibleChunkRect(0);
     g.textBaseline = 'middle'; g.textAlign = 'center';
     // Group visible plots by city so multi-plot cities render as one shape with one name.
@@ -851,14 +854,14 @@ export class Renderer extends Emitter<RendererEvents> {
         w = Math.max(1, x1 - x0); h = Math.max(1, y1 - y0);
         const hasImg = !!this.overviewMap.canvasFor(claim.cx, claim.cy);
         // at night the owner tint fades so the city lights (drawn underneath) show through
-        const alpha = (!hasImg ? (st.abandoned ? 0.45 : own ? 0.7 : 0.5) : tpxNow < 0.5 ? 0.55 : tpxNow < 1 ? 0.3 : 0)
+        const alpha = (!hasImg ? (st.abandoned ? 0.45 : own ? 0.7 : 0.5) : farOut ? 0 : tpxNow < 0.5 ? 0.55 : tpxNow < 1 ? 0.3 : 0)
           * (1 - 0.85 * this.nightAtChunk(claim.cx, claim.cy));
         if (alpha <= 0) continue;
         g.fillStyle = withAlpha(st.color, alpha);
         g.fillRect(x0, y0, w, h);
         bx0 = Math.min(bx0, x0); by0 = Math.min(by0, y0); bx1 = Math.max(bx1, x1); by1 = Math.max(by1, y1);
       }
-      if (w >= 6) {
+      if (w >= 6 && !farOut) {
         // outline only the outer edges of the city: white for yours, the owner's colour for everyone else
         g.strokeStyle = own ? '#ffffff' : st.abandoned ? 'rgba(255,255,255,0.5)' : withAlpha(st.color, 0.9);
         g.lineWidth = Math.max(1, Math.round((own ? 1.5 : 1) * this.dpr));
