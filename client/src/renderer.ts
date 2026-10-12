@@ -22,6 +22,8 @@ import { NightLights, type NightImage } from './nightlights.ts';
 
 /** How much of the night shade the zoomed-in city gets: dim, never dark, so building stays easy at night. */
 const NIGHT_CITY_DIM = 0.8;
+/** How strong the city lights are on the world map at full night. */
+const NIGHT_MAP_LIGHTS = 0.8;
 import { OverviewMap, speckleTile } from './overviewmap.ts';
 import { WORLD_W as FLIGHT_WORLD_W } from '@globalcity/shared';
 
@@ -786,31 +788,27 @@ export class Renderer extends Emitter<RendererEvents> {
     {
       const vr = this.visibleChunkRect(0);
       g.imageSmoothingEnabled = tpx < 1;
-      g.globalCompositeOperation = 'lighter';
-      // below a pixel per tile the lights average out, so draw them twice to keep cities glowing
-      const passes = tpx < 1 ? 2 : 1;
       for (const claim of this.state.claims.values()) {
         if (claim.cx < vr.cx0 || claim.cx > vr.cx1 || claim.cy < vr.cy0 || claim.cy > vr.cy1) continue;
         const lights = this.overviewMap.lightsFor(claim.cx, claim.cy);
         if (!lights) continue;
         const lvl = this.nightAtChunk(claim.cx, claim.cy);
         if (lvl < 0.05) continue;
-        g.globalAlpha = lvl;
         const x0 = this.dx(claim.cx * CHUNK), x1 = this.dx((claim.cx + 1) * CHUNK);
         const y0 = this.dy(claim.cy * CHUNK), y1 = this.dy((claim.cy + 1) * CHUNK);
-        for (let k = 0; k < passes; k++) g.drawImage(lights, x0, y0, x1 - x0, y1 - y0);
-        // zoomed far out a plot is a few pixels: give lit cities a soft warm glow, like Earth at night
+        // zoomed far out a plot is a few pixels: a faint warm glow under the lights, like Earth at night
         const share = this.overviewMap.litShareOf(claim.cx, claim.cy);
         if (tpx < 0.6 && share > 0.01) {
-          const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, rad = Math.max(5 * this.dpr, (x1 - x0) * 1.3);
+          const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, rad = Math.max(4 * this.dpr, (x1 - x0) * 0.9);
           const grad = g.createRadialGradient(mx, my, 0, mx, my, rad);
-          grad.addColorStop(0, `rgba(255, 205, 120, ${Math.min(0.55, 0.15 + share * 2) * lvl})`);
-          grad.addColorStop(1, 'rgba(255, 205, 120, 0)');
+          grad.addColorStop(0, `rgba(255, 200, 120, ${Math.min(0.22, 0.05 + share) * lvl})`);
+          grad.addColorStop(1, 'rgba(255, 200, 120, 0)');
           g.globalAlpha = 1;
           g.fillStyle = grad;
           g.fillRect(mx - rad, my - rad, rad * 2, rad * 2);
-          g.globalAlpha = lvl;
         }
+        g.globalAlpha = lvl * NIGHT_MAP_LIGHTS;
+        g.drawImage(lights, x0, y0, x1 - x0, y1 - y0);
       }
       g.globalAlpha = 1;
       g.globalCompositeOperation = 'source-over';

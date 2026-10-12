@@ -4,14 +4,14 @@ import { CHUNK, OVERVIEW_PALETTE, OVERVIEW_SPECK, OvClass, decodeOverview, chunk
 
 /** Night lights per overview class: colour and the share of tiles that are lit (a deterministic pattern). */
 const LIGHTS: Partial<Record<OvClass, { rgb: [number, number, number]; share: number; alpha: number }>> = {
-  [OvClass.Res]: { rgb: [255, 214, 120], share: 0.45, alpha: 230 },
-  [OvClass.Com]: { rgb: [255, 246, 214], share: 0.7, alpha: 255 },
-  [OvClass.Ind]: { rgb: [255, 170, 80], share: 0.4, alpha: 230 },
-  [OvClass.Civic]: { rgb: [255, 250, 235], share: 0.6, alpha: 240 },
-  [OvClass.Special]: { rgb: [255, 230, 150], share: 0.6, alpha: 240 },
-  [OvClass.Power]: { rgb: [255, 150, 70], share: 0.3, alpha: 220 },
-  [OvClass.Road]: { rgb: [255, 200, 110], share: 0.2, alpha: 150 },
-  [OvClass.Traffic]: { rgb: [255, 220, 150], share: 0.5, alpha: 200 },
+  [OvClass.Res]: { rgb: [255, 200, 120], share: 0.25, alpha: 170 },
+  [OvClass.Com]: { rgb: [255, 225, 170], share: 0.35, alpha: 180 },
+  [OvClass.Ind]: { rgb: [255, 165, 85], share: 0.2, alpha: 160 },
+  [OvClass.Civic]: { rgb: [255, 220, 160], share: 0.3, alpha: 170 },
+  [OvClass.Special]: { rgb: [255, 215, 140], share: 0.3, alpha: 170 },
+  [OvClass.Power]: { rgb: [255, 150, 70], share: 0.15, alpha: 150 },
+  [OvClass.Road]: { rgb: [255, 190, 110], share: 0.08, alpha: 110 },
+  [OvClass.Traffic]: { rgb: [255, 205, 140], share: 0.2, alpha: 140 },
   [OvClass.Fire]: { rgb: [255, 120, 40], share: 1, alpha: 255 },
 };
 const lit = (x: number, y: number, share: number): boolean => ((((x * 2654435761) ^ (y * 2246822519)) >>> 0) % 1000) < share * 1000;
