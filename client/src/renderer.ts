@@ -22,8 +22,10 @@ import { NightLights, type NightImage } from './nightlights.ts';
 
 /** How much of the night shade the zoomed-in city gets: dim, never dark, so building stays easy at night. */
 const NIGHT_CITY_DIM = 0.8;
-/** How strong the city lights are on the world map at full night. */
+/** How strong the city lights are on the world map once they are on. */
 const NIGHT_MAP_LIGHTS = 0.8;
+/** Night level (0..1) at which a plot's lights switch on: halfway through dusk, the sun about 4° below the horizon. */
+const LIGHTS_ON = 0.5;
 import { OverviewMap, speckleTile } from './overviewmap.ts';
 import { WORLD_W as FLIGHT_WORLD_W } from '@globalcity/shared';
 
@@ -630,22 +632,20 @@ export class Renderer extends Emitter<RendererEvents> {
       }
       if (this.nightLights) {
         for (let cy = r.cy0; cy <= r.cy1; cy++) for (let cx = r.cx0; cx <= r.cx1; cx++) {
-          const lvl = this.nightAtChunk(cx, cy);
-          if (lvl < 0.05) continue;
+          if (!this.lightsOnAt(cx, cy)) continue;
           const tiles = this.map.getChunk(cx, cy);
           if (!tiles) continue;
           const x0 = this.dx(cx * CHUNK), x1 = this.dx((cx + 1) * CHUNK), y0 = this.dy(cy * CHUNK), y1 = this.dy((cy + 1) * CHUNK);
           if (x1 <= 0 || y1 <= 0 || x0 >= W || y0 >= H) continue;
           const im = this.nightLights.canvasFor(chunkKey(cx, cy), tiles, now);
-          if (im) this.drawNightImage(g, im, lvl, x0, y0, x1 - x0, y1 - y0);
+          if (im) this.drawNightImage(g, im, x0, y0, x1 - x0, y1 - y0);
         }
         for (const b of this.customs.within(Math.floor(v.x0), Math.floor(v.y0), Math.ceil(v.x1), Math.ceil(v.y1))) {
           const def = CUSTOM_BUILDINGS[b.kind];
-          const lvl = def ? this.nightAtChunk(Math.floor(b.x / CHUNK), Math.floor(b.y / CHUNK)) : 0;
-          if (lvl < 0.05 || !((this.map.get(b.x + 1, b.y + 1) ?? 0) & PWRBIT)) continue; // no power, no lights
+          if (!def || !this.lightsOnAt(Math.floor(b.x / CHUNK), Math.floor(b.y / CHUNK)) || !((this.map.get(b.x + 1, b.y + 1) ?? 0) & PWRBIT)) continue; // no power, no lights
           const lights = this.nightLights.forCustom(def.image);
           if (!lights) continue;
-          this.drawNightImage(g, lights, lvl, this.dx(b.x), this.dy(b.y), this.dx(b.x + b.w) - this.dx(b.x), this.dy(b.y + b.h) - this.dy(b.y));
+          this.drawNightImage(g, lights, this.dx(b.x), this.dy(b.y), this.dx(b.x + b.w) - this.dx(b.x), this.dy(b.y + b.h) - this.dy(b.y));
         }
         g.globalAlpha = 1;
       }
@@ -792,8 +792,7 @@ export class Renderer extends Emitter<RendererEvents> {
         if (claim.cx < vr.cx0 || claim.cx > vr.cx1 || claim.cy < vr.cy0 || claim.cy > vr.cy1) continue;
         const lights = this.overviewMap.lightsFor(claim.cx, claim.cy);
         if (!lights) continue;
-        const lvl = this.nightAtChunk(claim.cx, claim.cy);
-        if (lvl < 0.05) continue;
+        if (!this.lightsOnAt(claim.cx, claim.cy)) continue;
         const x0 = this.dx(claim.cx * CHUNK), x1 = this.dx((claim.cx + 1) * CHUNK);
         const y0 = this.dy(claim.cy * CHUNK), y1 = this.dy((claim.cy + 1) * CHUNK);
         // zoomed far out a plot is a few pixels: a faint warm glow under the lights, like Earth at night
@@ -801,13 +800,13 @@ export class Renderer extends Emitter<RendererEvents> {
         if (tpx < 0.6 && share > 0.01) {
           const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, rad = Math.max(4 * this.dpr, (x1 - x0) * 0.9);
           const grad = g.createRadialGradient(mx, my, 0, mx, my, rad);
-          grad.addColorStop(0, `rgba(255, 200, 120, ${Math.min(0.22, 0.05 + share) * lvl})`);
+          grad.addColorStop(0, `rgba(255, 200, 120, ${Math.min(0.22, 0.05 + share)})`);
           grad.addColorStop(1, 'rgba(255, 200, 120, 0)');
           g.globalAlpha = 1;
           g.fillStyle = grad;
           g.fillRect(mx - rad, my - rad, rad * 2, rad * 2);
         }
-        g.globalAlpha = lvl * NIGHT_MAP_LIGHTS;
+        g.globalAlpha = NIGHT_MAP_LIGHTS;
         g.drawImage(lights, x0, y0, x1 - x0, y1 - y0);
       }
       g.globalAlpha = 1;
@@ -908,9 +907,9 @@ export class Renderer extends Emitter<RendererEvents> {
   }
 
   /** True if chunk (cx,cy) is claimed by `ownerId` (used to merge adjacent plots of one city). */
-  /** Night lights at `lvl` darkness: the soft glow (light bleeding into the dark around the windows), then the crisp windows. */
-  private drawNightImage(g: CanvasRenderingContext2D, im: NightImage, lvl: number, x: number, y: number, w: number, h: number): void {
-    g.globalAlpha = lvl;
+  /** Night lights: the soft glow (light bleeding into the dark around the windows), then the crisp windows. */
+  private drawNightImage(g: CanvasRenderingContext2D, im: NightImage, x: number, y: number, w: number, h: number): void {
+    g.globalAlpha = 1;
     g.imageSmoothingEnabled = true;
     g.drawImage(im.glow, x, y, w, h);
     g.imageSmoothingEnabled = false;
@@ -921,6 +920,11 @@ export class Renderer extends Emitter<RendererEvents> {
   private nightAtChunk(cx: number, cy: number): number {
     const lat = 90 - ((cy + 0.5) * CHUNK / WORLD_H) * 180, lon = ((cx + 0.5) * CHUNK / WORLD_W) * 360 - 180;
     return this.night.levelAt(lat, lon);
+  }
+
+  /** Lights are on or off, never half: they all switch on together when plot (cx, cy) gets dark enough. */
+  private lightsOnAt(cx: number, cy: number): boolean {
+    return this.nightAtChunk(cx, cy) >= LIGHTS_ON;
   }
 
   private sameOwner(cx: number, cy: number, ownerId: string): boolean {
