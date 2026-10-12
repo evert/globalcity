@@ -1,6 +1,6 @@
 // Zoomed-out map view: terrain recoloured to the Micropolis tile palette with a static per-tile speckle,
 // and every claimed plot as a one-pixel-per-tile image of what is actually built there.
-import { CHUNK, OVERVIEW_PALETTE, OVERVIEW_SPECK, OvClass, decodeOverview, chunkKey } from '@globalcity/shared';
+import { CHUNK, OVERVIEW_PALETTE, OVERVIEW_SPECK, OvClass, OV_CLASS_MASK, OV_DARK, decodeOverview, chunkKey } from '@globalcity/shared';
 
 /** Night lights per overview class: colour and the share of tiles that are lit (a deterministic pattern). */
 const LIGHTS: Partial<Record<OvClass, { rgb: [number, number, number]; share: number; alpha: number }>> = {
@@ -62,7 +62,7 @@ export class OverviewMap {
       const img = g.createImageData(CHUNK, CHUNK);
       for (let i = 0; i < classes.length; i++) {
         const x = cx * CHUNK + (i % CHUNK), y = cy * CHUNK + Math.floor(i / CHUNK);
-        const k = classes[i];
+        const k = classes[i] & OV_CLASS_MASK;
         const [r, gg, b] = (speck(x, y) ? OVERVIEW_SPECK : OVERVIEW_PALETTE)[k] ?? OVERVIEW_PALETTE[0];
         img.data[i * 4] = r; img.data[i * 4 + 1] = gg; img.data[i * 4 + 2] = b; img.data[i * 4 + 3] = 255;
       }
@@ -75,7 +75,8 @@ export class OverviewMap {
       const li = lg.createImageData(CHUNK, CHUNK);
       let litTiles = 0;
       for (let i = 0; i < classes.length; i++) {
-        const L = LIGHTS[classes[i] as OvClass];
+        if (classes[i] & OV_DARK) continue; // no power, or nothing built yet
+        const L = LIGHTS[(classes[i] & OV_CLASS_MASK) as OvClass];
         if (!L) continue;
         const x = cx * CHUNK + (i % CHUNK), y = cy * CHUNK + Math.floor(i / CHUNK);
         if (!lit(x, y, L.share)) continue;

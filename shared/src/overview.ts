@@ -63,7 +63,21 @@ export function overviewClass(v: number): OvClass {
   return OvClass.Dirt;
 }
 
-/** Wire format of /overview.bin: u16 count, then per chunk u16 cx, u16 cy and CHUNK*CHUNK class bytes (LE). */
+/** Flag on a class byte: a building that stays dark at night (no power, or a zone with nothing built yet). */
+export const OV_DARK = 0x40;
+/** The class bits of an overview byte. */
+export const OV_CLASS_MASK = 0x3f;
+const LIT_CLASSES = new Set([OvClass.Res, OvClass.Com, OvClass.Ind, OvClass.Civic, OvClass.Power, OvClass.Special]);
+const isEmptyZone = (id: number): boolean =>
+  (id >= T.RESBASE && id < T.HOUSE) || (id >= T.COMBASE && id < T.COMBASE + 9) || (id >= T.INDBASE && id < T.INDBASE + 9);
+
+/** The overview byte for a tile: its class, plus OV_DARK for a building without power or an empty zone. */
+export function overviewByte(v: number): number {
+  const c = overviewClass(v);
+  return LIT_CLASSES.has(c) && (!(v & T.PWRBIT) || isEmptyZone(v & T.LOMASK)) ? c | OV_DARK : c;
+}
+
+/** Wire format of /overview.bin: u16 count, then per chunk u16 cx, u16 cy and CHUNK*CHUNK overview bytes (class, plus OV_DARK) (LE). */
 export const OVERVIEW_CHUNK_BYTES = 4 + CHUNK * CHUNK;
 
 export function decodeOverview(buf: ArrayBuffer): { cx: number; cy: number; classes: Uint8Array }[] {

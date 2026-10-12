@@ -16,7 +16,7 @@ import {
   PRESENCE_INTERVAL_MS, PRESENCE_MAX,
   encodeChunk, inWorld, clamp,
   type ClientMsg, type ServerMsg, type ToolId, type Presence,
-  overviewClass, OVERVIEW_CHUNK_BYTES, parseChunkKey,
+  overviewByte, OVERVIEW_CHUNK_BYTES, parseChunkKey,
   LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, STARTING_FUNDS, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT,
 } from '@globalcity/shared';
 import { World, chunkIndex, chunkCoords, type ChunkIndex } from './world.ts';
@@ -172,7 +172,7 @@ export class Net {
         const { cx, cy } = parseChunkKey(key);
         raw.writeUInt16LE(cx, o); raw.writeUInt16LE(cy, o + 2);
         const view = this.world.chunkView(cx, cy);
-        for (let i = 0; i < view.length; i++) raw[o + 4 + i] = overviewClass(view[i]);
+        for (let i = 0; i < view.length; i++) raw[o + 4 + i] = overviewByte(view[i]);
         o += OVERVIEW_CHUNK_BYTES;
       }
       this.overviewCache = { at: now, raw, gz: zlib.gzipSync(raw, { level: 6 }) };

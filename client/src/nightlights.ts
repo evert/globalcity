@@ -3,7 +3,7 @@
 // lights (each gets a faint halo), translucent ones a wash of light (no halo). Custom buildings have their own
 // lights image next to their art (<name>-night.png). Each plot in darkness gets a transparent lights image at the
 // art's own resolution, drawn over the dimmed city.
-import { CHUNK, LOMASK } from '@globalcity/shared';
+import { CHUNK, LOMASK, PWRBIT } from '@globalcity/shared';
 import type { SpriteSheet } from './assets.ts';
 import { versioned } from './assets.ts';
 
@@ -115,6 +115,7 @@ export class NightLights {
     g.clearRect(0, 0, canvas.width, canvas.height);
     const stamps: number[] = [];
     for (let i = 0; i < tiles.length; i++) {
+      if (!(tiles[i] & PWRBIT)) continue; // no power, no lights
       const id = tiles[i] & LOMASK;
       const lights = this.perTile[id];
       if (!lights) continue;

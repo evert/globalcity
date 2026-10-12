@@ -642,7 +642,7 @@ export class Renderer extends Emitter<RendererEvents> {
         for (const b of this.customs.within(Math.floor(v.x0), Math.floor(v.y0), Math.ceil(v.x1), Math.ceil(v.y1))) {
           const def = CUSTOM_BUILDINGS[b.kind];
           const lvl = def ? this.nightAtChunk(Math.floor(b.x / CHUNK), Math.floor(b.y / CHUNK)) : 0;
-          if (lvl < 0.05) continue;
+          if (lvl < 0.05 || !((this.map.get(b.x + 1, b.y + 1) ?? 0) & PWRBIT)) continue; // no power, no lights
           const lights = this.nightLights.forCustom(def.image);
           if (!lights) continue;
           this.drawNightImage(g, lights, lvl, this.dx(b.x), this.dy(b.y), this.dx(b.x + b.w) - this.dx(b.x), this.dy(b.y + b.h) - this.dy(b.y));
