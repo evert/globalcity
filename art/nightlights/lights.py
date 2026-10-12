@@ -38,12 +38,12 @@ def runway_edges():
     for y in list(range(4, 11, 3)) + list(range(28, 91, 4)): out += [(70, y), (82, y)]  # the north-south one
     return out
 
-# Approved in review: round 1 (as detected), rounds 2 to 5
+# Approved in review: round 1 (as detected), rounds 2 to 6: all 70
 APPROVED = {'H01', 'H02', 'H03', 'H04', 'H06', 'R14', 'I01', 'I05',
             'C01', 'C02', 'C03', 'C11', 'C17', 'FIRE', 'GC', 'H05', 'H07', 'H08', 'H09', 'H10', 'H11', 'H12', 'HOS', 'I03', 'I04',
             'I06', 'NUC', 'PORT', 'R01', 'R02', 'R03', 'R04', 'R05', 'R06', 'R08', 'R12', 'R13', 'R16', 'SCH', 'STAD', 'STAD2', 'UNI',
             'C06', 'C07', 'C08', 'C09', 'C10', 'C12', 'C19', 'C20', 'CHU', 'COAL', 'I02', 'I07', 'R07', 'R10', 'R11', 'R15',
-            'AIR', 'C04', 'C05', 'C13', 'C16', 'HALL', 'R09', 'C15', 'C18', 'POL'}
+            'AIR', 'C04', 'C05', 'C13', 'C16', 'HALL', 'R09', 'C15', 'C18', 'POL', 'C14', 'I08'}
 
 EDITS = {
     # houses: no window dots in the art, so the windows are placed by hand on the walls
