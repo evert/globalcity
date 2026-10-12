@@ -18,6 +18,7 @@ import { FlightLayer, ShipLayer } from './flights.ts';
 import { OverlayLayer } from './overlays.ts';
 import { CustomLayer } from './custom.ts';
 import { NightLayer } from './night.ts';
+import { NightLights } from './nightlights.ts';
 
 /** How much of the night shade the zoomed-in city gets: dim, never dark, so building stays easy at night. */
 const NIGHT_CITY_DIM = 0.8;
@@ -131,6 +132,8 @@ export class Renderer extends Emitter<RendererEvents> {
   readonly overviewMap = new OverviewMap();
   /** real-time day and night (the actual sun over the actual Earth) */
   readonly night = new NightLayer();
+  /** lit windows for the zoomed-in view at night (derived from the tile art once the sheet loads) */
+  private nightLights: NightLights | null = null;
   private speckle: CanvasPattern | null = null;
   private flightTimer: ReturnType<typeof setTimeout> | null = null;
   /** transient marker (pulsing red ring) around a tile, e.g. after clicking a fire toast */
@@ -168,6 +171,7 @@ export class Renderer extends Emitter<RendererEvents> {
       }
       return out;
     };
+    try { this.nightLights = new NightLights(sheet); } catch { this.nightLights = null; } // the sheet is loaded before the renderer exists
     this.customs.onChange = () => this.invalidate();
     // day and night move with the real sun: check once a minute and redraw when the shade changed
     if (this.animated) setInterval(() => { if (this.night.update()) this.invalidate(); }, 60_000);
@@ -608,7 +612,7 @@ export class Renderer extends Emitter<RendererEvents> {
     if (customAnimMs < Infinity && this.animated && !this.customAnimTimer) {
       this.customAnimTimer = setTimeout(() => { this.customAnimTimer = null; this.invalidate(); }, customAnimMs);
     }
-    // 1b. night: the real-time shade over the city (dimmed, never dark)
+    // 1b. night: the real-time shade over the city (dimmed, never dark), then the lit windows of plots in the dark
     this.night.update();
     {
       const v = this.viewRect();
@@ -621,6 +625,29 @@ export class Renderer extends Emitter<RendererEvents> {
           this.dx(x0w), this.dy(y0w), this.dx(x1w) - this.dx(x0w), this.dy(y1w) - this.dy(y0w));
         g.globalAlpha = 1;
         g.imageSmoothingEnabled = false;
+      }
+      if (this.nightLights) {
+        for (let cy = r.cy0; cy <= r.cy1; cy++) for (let cx = r.cx0; cx <= r.cx1; cx++) {
+          const lvl = this.nightAtChunk(cx, cy);
+          if (lvl < 0.05) continue;
+          const tiles = this.map.getChunk(cx, cy);
+          if (!tiles) continue;
+          const x0 = this.dx(cx * CHUNK), x1 = this.dx((cx + 1) * CHUNK), y0 = this.dy(cy * CHUNK), y1 = this.dy((cy + 1) * CHUNK);
+          if (x1 <= 0 || y1 <= 0 || x0 >= W || y0 >= H) continue;
+          g.globalAlpha = lvl;
+          g.drawImage(this.nightLights.canvasFor(chunkKey(cx, cy), tiles, now), x0, y0, x1 - x0, y1 - y0);
+        }
+        for (const b of this.customs.within(Math.floor(v.x0), Math.floor(v.y0), Math.ceil(v.x1), Math.ceil(v.y1))) {
+          const img = this.customs.ready(b.kind);
+          const lvl = img ? this.nightAtChunk(Math.floor(b.x / CHUNK), Math.floor(b.y / CHUNK)) : 0;
+          if (!img || lvl < 0.05) continue;
+          const def = CUSTOM_BUILDINGS[b.kind];
+          const lights = this.nightLights.forCustom(img, def?.frames ? img.naturalWidth / def.frames : img.naturalWidth);
+          if (!lights) continue;
+          g.globalAlpha = lvl;
+          g.drawImage(lights, this.dx(b.x), this.dy(b.y), this.dx(b.x + b.w) - this.dx(b.x), this.dy(b.y + b.h) - this.dy(b.y));
+        }
+        g.globalAlpha = 1;
       }
     }
     // 1a. map overlay: dim the city, then one pixel per tile from the overlay layer
@@ -1006,6 +1033,7 @@ export class Renderer extends Emitter<RendererEvents> {
     if (this.map.dirty.size === 0) return;
     const dirty = this.map.takeDirty();
     for (const [key, idxs] of dirty) {
+      this.nightLights?.markDirty(key);
       const cc = this.chunkCanvases.get(key);
       if (!cc) continue;
       if (idxs.length && idxs[0] === DIRTY_ALL) { this.chunkCanvases.delete(key); continue; }
