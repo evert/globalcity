@@ -1,0 +1,238 @@
+{
+ "AIR": {
+  "text": "terminal should be fully lit",
+  "approved": false
+ },
+ "C01": {
+  "text": "",
+  "approved": true
+ },
+ "C02": {
+  "text": "",
+  "approved": true
+ },
+ "C03": {
+  "text": "",
+  "approved": true
+ },
+ "C04": {
+  "text": "remove roof lights. also remove all lights on the left side of the building",
+  "approved": false
+ },
+ "C05": {
+  "text": "left side of left building should have more lights. also we got a big flooded area in the bottom middle between the two towers that shouldn't be there",
+  "approved": false
+ },
+ "C06": {
+  "text": "there's some lights extending from the front wall of the red building. remove the last 2 lights in the row",
+  "approved": false
+ },
+ "C07": {
+  "text": "blue building should have more lgihts",
+  "approved": false
+ },
+ "C08": {
+  "text": "redo these lights, there's a lot of misses",
+  "approved": false
+ },
+ "C09": {
+  "text": "this looks good. lets also light all left side lights",
+  "approved": false
+ },
+ "C10": {
+  "text": "remove the lowest slide on the right bottom",
+  "approved": false
+ },
+ "C11": {
+  "text": "",
+  "approved": true
+ },
+ "C12": {
+  "text": "add some lights to the left side of the blue buuding. remove lights from the circle area",
+  "approved": false
+ },
+ "C13": {
+  "text": "add some lights to the very bottom front area of the building",
+  "approved": false
+ },
+ "C14": {
+  "text": "add lights to the front of the tower",
+  "approved": false
+ },
+ "C15": {
+  "text": "add lights to the left side of the building",
+  "approved": false
+ },
+ "C16": {
+  "text": "remove parking lot lights",
+  "approved": false
+ },
+ "C18": {
+  "text": "add lights to the bottom right building",
+  "approved": false
+ },
+ "C19": {
+  "text": "remove roof lights",
+  "approved": false
+ },
+ "C20": {
+  "text": "actually just remove all lights from this one",
+  "approved": false
+ },
+ "CHU": {
+  "text": "do another pass of the left side . the center thing is a wooden door and shouldnt have a light",
+  "approved": false
+ },
+ "COAL": {
+  "text": "remove more roof lights",
+  "approved": true
+ },
+ "FIRE": {
+  "text": "",
+  "approved": true
+ },
+ "GC": {
+  "text": "",
+  "approved": true
+ },
+ "H05": {
+  "text": "",
+  "approved": true
+ },
+ "H07": {
+  "text": "",
+  "approved": true
+ },
+ "H08": {
+  "text": "",
+  "approved": true
+ },
+ "H09": {
+  "text": "",
+  "approved": true
+ },
+ "H10": {
+  "text": "",
+  "approved": true
+ },
+ "H11": {
+  "text": "",
+  "approved": true
+ },
+ "H12": {
+  "text": "",
+  "approved": true
+ },
+ "HALL": {
+  "text": "the front of this building isn't windows, it's pillars. so just do teh dots on the building and light them all",
+  "approved": false
+ },
+ "HOS": {
+  "text": "",
+  "approved": true
+ },
+ "I02": {
+  "text": "do another pass on the left building, there's some lights there that are on the floor",
+  "approved": false
+ },
+ "I03": {
+  "text": "",
+  "approved": true
+ },
+ "I04": {
+  "text": "",
+  "approved": true
+ },
+ "I06": {
+  "text": "",
+  "approved": true
+ },
+ "I07": {
+  "text": "remove roof lights on the bottom left buioding and bottom left area is a parking lot",
+  "approved": false
+ },
+ "I08": {
+  "text": "remove all roof lights. add some lights to the front of the building",
+  "approved": false
+ },
+ "POL": {
+  "text": "this one is a mess",
+  "approved": false
+ },
+ "PORT": {
+  "text": "",
+  "approved": true
+ },
+ "R01": {
+  "text": "",
+  "approved": true
+ },
+ "R02": {
+  "text": "",
+  "approved": true
+ },
+ "R03": {
+  "text": "",
+  "approved": true
+ },
+ "R04": {
+  "text": "",
+  "approved": true
+ },
+ "R05": {
+  "text": "",
+  "approved": true
+ },
+ "R06": {
+  "text": "",
+  "approved": true
+ },
+ "R07": {
+  "text": "need lights on the left side",
+  "approved": false
+ },
+ "R08": {
+  "text": "",
+  "approved": true
+ },
+ "R09": {
+  "text": "green building needs lights",
+  "approved": false
+ },
+ "R10": {
+  "text": "add more lights to the left side of both buildings",
+  "approved": false
+ },
+ "R11": {
+  "text": "reduce teh number of lights and there's still roof lights on the bottom right building",
+  "approved": false
+ },
+ "R12": {
+  "text": "",
+  "approved": true
+ },
+ "R13": {
+  "text": "",
+  "approved": true
+ },
+ "R15": {
+  "text": "the green center thing shouldn't have lights, i tink that's the building of the shadow. also neither roofs should have lights",
+  "approved": false
+ },
+ "SCH": {
+  "text": "",
+  "approved": true
+ },
+ "STAD": {
+  "text": "",
+  "approved": true
+ },
+ "STAD2": {
+  "text": "",
+  "approved": true
+ },
+ "UNI": {
+  "text": "",
+  "approved": true
+ }
+}

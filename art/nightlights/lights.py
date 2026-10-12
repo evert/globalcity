@@ -13,6 +13,7 @@
 #   ('win', x0, y0, x1, y1, cols, s)  like pix, but a run of such pixels side by side is one window, lit or not as a whole
 #   ('vwin', x0, y0, x1, y1, cols, s) the same with windows running down instead of across
 #   ('keep', x0, y0, x1, y1)          drop lights outside the rectangle
+#   ('dots', x0, y0, x1, y1, cols)    light the pixels of those colours that stand alone (no such neighbour left or right)
 #   ('add', [(x, y), ...])            light these pixels
 #   ('row', x0, x1, y, step)          light every `step`th pixel from x0 to x1 on row y
 #   ('wash', x0, y0, x1, y1, a)       a wash of light over the rectangle, alpha a (0..255)
@@ -36,8 +37,10 @@ def runway_edges():
     for y in list(range(4, 11, 3)) + list(range(28, 91, 4)): out += [(70, y), (82, y)]  # the north-south one
     return out
 
-# Approved as detected (no edits needed)
-APPROVED = {'H01', 'H02', 'H03', 'H04', 'H06', 'R14', 'I01', 'I05'}
+# Approved in review: round 1 (as detected), round 2
+APPROVED = {'H01', 'H02', 'H03', 'H04', 'H06', 'R14', 'I01', 'I05',
+            'C01', 'C02', 'C03', 'C11', 'C17', 'FIRE', 'GC', 'H05', 'H07', 'H08', 'H09', 'H10', 'H11', 'H12', 'HOS', 'I03', 'I04',
+            'I06', 'NUC', 'PORT', 'R01', 'R02', 'R03', 'R04', 'R05', 'R06', 'R08', 'R12', 'R13', 'R16', 'SCH', 'STAD', 'STAD2', 'UNI'}
 
 EDITS = {
     # houses: no window dots in the art, so the windows are placed by hand on the walls
@@ -56,50 +59,52 @@ EDITS = {
     'R05': [('none',), ('row', 4, 4, 8, 1), ('add', [(4, 12), (4, 16), (4, 20), (4, 24), (4, 28), (4, 32), (4, 36), (4, 40)]),
             ('row', 7, 19, 42, 3), ('row', 32, 42, 26, 3), ('add', [(26, 8), (26, 11)])],
     'R06': [('clear', 17, 18, 27, 28), ('pix', 33, 40, 44, 44, {RED}, 1)],
-    'R07': [('none',), ('pix', 18, 20, 41, 24, {TAN}, LIT), ('pix', 0, 37, 13, 43, {TAN}, LIT)],
+    'R07': [('none',), ('pix', 18, 20, 41, 24, {TAN}, LIT), ('pix', 0, 37, 13, 43, {TAN}, LIT), ('pix', 3, 8, 9, 44, {BLACK}, 1)],
     'R08': [('pix', 3, 4, 13, 37, {DGREY}, 0.6)],
     'R09': [('add', [(4, 7), (4, 11), (4, 15), (4, 19), (4, 23), (4, 27)]), ('row', 7, 15, 13, 3), ('row', 6, 14, 29, 3),
-            ('win', 16, 9, 26, 17, {BLACK}, 1)],
+            ('win', 16, 9, 26, 17, {BLACK}, 1), ('pix', 30, 5, 33, 24, {DGREEN}, 0.8), ('row', 33, 42, 26, 2)],
     'R10': [('clear', 17, 3, 45, 10), ('clear', 33, 15, 45, 19), ('clear', 33, 29, 47, 47),
-            ('row', 10, 30, 40, 3), ('row', 11, 29, 42, 3)],
-    'R11': [('none',), ('pix', 8, 37, 30, 42, {DGREY}, 0.5), ('pix', 2, 2, 8, 44, {GREY}, 0.5),
-            ('add', [(41, 31), (41, 33), (41, 35)]), ('row', 34, 41, 37, 2), ('row', 35, 42, 13, 2)],
+            ('row', 10, 30, 40, 3), ('row', 11, 29, 42, 3), ('pix', 5, 6, 8, 44, {BLUE}, 0.6), ('pix', 28, 14, 32, 24, {TAN}, 1)],
+    'R11': [('none',), ('pix', 8, 37, 30, 42, {DGREY}, 0.25), ('pix', 2, 2, 8, 44, {GREY}, 0.25), ('row', 34, 41, 37, 2), ('row', 35, 42, 13, 2)],
     'R12': [('share', 0.9)],
     'R13': [('clear', 20, 3, 41, 10), ('clear', 20, 16, 26, 20), ('clear', 33, 29, 38, 34),
             ('row', 20, 40, 12, 3), ('add', [(7, 6), (7, 9), (7, 12), (7, 38), (7, 41), (32, 38), (32, 41)]), ('row', 10, 30, 44, 3)],
-    'R15': [('none',), ('pix', 0, 0, 47, 47, {DGREY}, 0.5)],
+    'R15': [('none',), ('pix', 0, 0, 47, 47, {DGREY}, 0.5), ('clear', 17, 0, 28, 15), ('clear', 34, 18, 47, 33), ('clear', 8, 24, 22, 36)],
     'C01': [('none',)],
     'C02': [('none',)],
     'C03': [('clear', 8, 3, 44, 30), ('pix', 3, 4, 7, 32, {BLACK}, 1), ('row', 18, 28, 15, 3)],
-    'C04': [('share', 1), ('pix', 8, 35, 44, 44, {BLACK}, 1), ('row', 12, 42, 38, 3), ('row', 10, 42, 41, 3)],
-    'C05': [('share', 1), ('pix', 4, 35, 46, 44, {BLACK}, 0.9)],
-    'C06': [('none',), ('row', 5, 15, 21, 2), ('row', 19, 35, 44, 2), ('colour', NEON_RED), ('pix', 33, 14, 45, 19, {ORANGE}, 1)],
-    'C07': [('clear', 24, 30, 47, 47), ('clear', 0, 39, 23, 47), ('pix', 9, 22, 23, 38, {WHITE_}, 1)],
-    'C08': [('pix', 2, 4, 8, 44, {DGREY}, 0.6), ('pix', 17, 2, 25, 33, {DGREY}, 0.6), ('pix', 18, 21, 44, 32, {BLACK}, 0.8),
-            ('pix', 26, 33, 33, 42, {DGREY}, 0.6)],
-    'C09': [('pix', 10, 28, 47, 43, {BLACK}, 1)],
-    'C10': [('pix', 3, 1, 44, 42, {WHITE_}, 0.9)],
+    'C04': [('share', 1), ('pix', 8, 35, 44, 44, {BLACK}, 1), ('row', 12, 42, 38, 3), ('row', 10, 42, 41, 3), ('keep', 16, 35, 47, 47)],
+    'C05': [('share', 1), ('pix', 4, 35, 46, 44, {BLACK}, 0.9), ('clear', 23, 26, 29, 40), ('pix', 3, 3, 12, 42, {BLUE}, 0.3)],
+    'C06': [('none',), ('row', 5, 15, 21, 2), ('row', 19, 31, 44, 2), ('colour', NEON_RED), ('pix', 33, 14, 45, 19, {ORANGE}, 1)],
+    'C07': [('clear', 24, 30, 47, 47), ('clear', 0, 39, 23, 47), ('pix', 9, 22, 23, 38, {WHITE_}, 1), ('row', 23, 43, 16, 2), ('pix', 21, 5, 24, 15, {BLUE}, 1)],
+    'C08': [('none',), ('pix', 3, 8, 6, 37, {DGREY}, 1), ('pix', 18, 9, 24, 21, {DGREY}, 1), ('pix', 3, 38, 16, 42, {DGREY}, 1),
+            ('pix', 28, 38, 40, 42, {DGREY}, 1), ('pix', 23, 22, 37, 31, {BLACK}, 1)],
+    'C09': [('pix', 10, 28, 47, 43, {BLACK}, 1), ('pix', 6, 1, 20, 40, {WHITE_}, 1)],
+    'C10': [('pix', 3, 1, 44, 42, {WHITE_}, 0.9), ('clear', 35, 39, 37, 41)],
     'C11': [('clear', 4, 17, 47, 47)],
-    'C12': [('share', 1), ('pix', 4, 15, 32, 19, {BLACK}, 1), ('row', 31, 44, 42, 2), ('row', 12, 17, 33, 2)],
-    'C13': [('share', 0.9)],
-    'C14': [('pix', 15, 5, 28, 31, {LGREY}, LIT)],
-    'C15': [('share', 0.9), ('pix', 36, 26, 45, 43, {GREY}, 0.6)],
-    'C16': [('none',), ('row', 22, 42, 10, 3), ('win', 12, 11, 46, 27, {RED, BLUE}, 1)],
+    'C12': [('share', 1), ('pix', 4, 15, 32, 19, {BLACK}, 1), ('row', 31, 44, 42, 2), ('row', 12, 17, 33, 2), ('clear', 9, 30, 19, 37),
+            ('pix', 28, 17, 32, 42, {BLACK}, 1), ('add', [(30, y) for y in range(22, 41, 4)])],
+    'C13': [('share', 0.9), ('row', 7, 41, 42, 3)],
+    'C14': [('pix', 15, 5, 28, 31, {LGREY}, LIT), ('pix', 8, 10, 15, 36, {LGREY}, 0.5)],
+    'C15': [('share', 0.9), ('pix', 36, 26, 45, 43, {GREY}, 0.6), ('pix', 5, 12, 22, 42, {GREY}, 0.4)],
+    'C16': [('none',), ('win', 12, 11, 46, 27, {RED, BLUE}, 1)],
     'C17': [('none',)],
-    'C18': [('none',), ('vwin', 4, 4, 12, 36, {BLACK}, 0.6), ('win', 6, 36, 44, 45, {BLACK}, 0.7)],
-    'C19': [('keep', 8, 30, 20, 37)],
-    'C20': [('clear', 5, 2, 24, 20), ('pix', 7, 3, 21, 19, {DGREY}, 0.85), ('clear', 10, 21, 30, 47)],
-    'I02': [('pix', 27, 12, 36, 40, {BLACK}, 1), ('pix', 37, 12, 45, 40, {DGREY}, 1), ('win', 3, 23, 24, 26, {BLACK}, 1), ('row', 5, 23, 28, 3)],
+    'C18': [('none',), ('vwin', 4, 4, 12, 36, {BLACK}, 0.6), ('win', 6, 36, 44, 45, {BLACK}, 0.7), ('win', 28, 34, 44, 46, {BLACK}, 0.9), ('row', 31, 42, 37, 3)],
+    'C19': [('none',), ('pix', 8, 41, 30, 43, {BLACK}, 1)],
+    'C20': [('none',)],
+    'I02': [('pix', 27, 12, 36, 40, {BLACK}, 1), ('pix', 37, 12, 45, 40, {DGREY}, 1), ('win', 3, 23, 24, 26, {BLACK}, 1)],
     'I03': [('none',), ('pix', 1, 15, 3, 21, {BLACK}, 1), ('pix', 7, 20, 13, 22, {BLACK}, 1)],
     'I04': [('clear', 5, 0, 47, 40)],
     'I06': [('none',)],
-    'I07': [('clear', 5, 2, 40, 22), ('clear', 30, 27, 42, 35)],
-    'I08': [('clear', 5, 2, 45, 34)],
+    'I07': [('clear', 5, 2, 40, 22), ('clear', 30, 27, 42, 35), ('clear', 0, 26, 28, 47)],
+    'I08': [('none',), ('pix', 4, 37, 46, 44, {BLACK}, 1), ('row', 10, 38, 41, 4)],
     'PORT': [('none',), ('row', 17, 45, 38, 3)],
-    'COAL': [('clear', 7, 0, 40, 43)],
+    'COAL': [('clear', 7, 0, 40, 43), ('clear', 7, 44, 40, 54)],
     'NUC': [('clear', 16, 0, 63, 46)],
     'FIRE': [('pix', 3, 6, 12, 44, {TAN}, 0.6), ('pix', 10, 39, 42, 43, {TAN}, 0.6)],
-    'POL': [('pix', 2, 6, 17, 30, {BLUE}, 0.5)],
+    'POL': [('none',), ('pix', 2, 10, 7, 10, {BLUE}, 1), ('pix', 2, 14, 7, 14, {BLUE}, 1), ('pix', 2, 18, 7, 18, {BLUE}, 1), ('pix', 2, 22, 7, 22, {BLUE}, 1),
+            ('vwin', 11, 10, 13, 20, {BLACK}, 1), ('pix', 15, 12, 18, 12, {BLUE}, 1), ('pix', 15, 17, 18, 17, {BLUE}, 1), ('pix', 15, 22, 18, 22, {BLUE}, 1),
+            ('row', 19, 37, 24, 3), ('row', 20, 35, 26, 3)],
     'STAD': [('none',)],
     'STAD2': [('clear', 27, 0, 63, 63), ('colour', FLOOD), ('wash', 32, 19, 51, 44, 90),
               ('add', [(31, 6), (32, 6), (31, 7), (32, 7), (53, 6), (54, 6), (53, 7), (54, 7),
@@ -107,10 +112,11 @@ EDITS = {
     'AIR': [('none',), ('colour', RED_L), ('pix', 0, 0, 95, 95, {RED}, 1), ('colour', RUNWAY), ('add', runway_edges()),
             ('row', 8, 90, 18, 6), ('colour', GREEN_L), ('add', [(4, y) for y in range(13, 24, 2)] + [(x, 2) for x in range(71, 82, 2)]),
             ('colour', TAXI), ('add', [(87, y) for y in range(56, 77, 3)] + [(x, 25) for x in range(8, 66, 6)]),
-            ('colour', WHITE), ('row', 4, 36, 57, 2), ('add', [(37, y) for y in range(59, 80, 3)]), ('pix', 38, 36, 64, 52, {BLACK}, 0.4)],
+            ('colour', WHITE), ('pix', 4, 36, 58, 92, {WHITE_}, 1), ('pix', 3, 55, 38, 58, {BLUE}, 1), ('pix', 35, 58, 38, 82, {LBLUE}, 1),
+            ('pix', 38, 36, 64, 52, {BLACK}, 0.4)],
     'HOS': [('win', 8, 31, 34, 39, {DGREY}, 0.7)],
-    'CHU': [('none',), ('pix', 8, 8, 11, 32, {BLACK}, 1), ('win', 11, 34, 27, 38, {BLACK}, 1), ('win', 35, 34, 38, 38, {BLACK}, 1)],
-    'HALL': [('none',), ('pix', 24, 33, 42, 39, {WHITE_}, 0.85), ('pix', 19, 30, 27, 30, {BLACK}, 1), ('add', [(23, 33), (46, 30)])],
+    'CHU': [('none',), ('pix', 7, 9, 10, 33, {BLACK, GREY}, 1), ('win', 11, 34, 18, 38, {BLACK}, 1), ('win', 35, 34, 38, 38, {BLACK}, 1)],
+    'HALL': [('none',), ('dots', 14, 10, 50, 43, {BLACK})],
     'SCH': [('none',)],
     'UNI': [('clear', 44, 6, 52, 19), ('clear', 36, 38, 44, 46)],
     'GC': [('none',), ('colour', HALL_GLOW), ('pixwash', 38, 16, 64, 23, {BLUE, LBLUE}, 110),
@@ -174,6 +180,11 @@ def render(code, day, colour, base, n):
         elif op == 'keep':
             _, x0, y0, x1, y1 = e
             lit = {(x, y): v for (x, y), v in lit.items() if x0 <= x <= x1 and y0 <= y <= y1}
+        elif op == 'dots':
+            _, x0, y0, x1, y1, cols = e
+            for y in range(y0, y1 + 1):
+                for x in range(x0, x1 + 1):
+                    if pix(p, x, y) in cols and pix(p, x - 1, y) not in cols and pix(p, x + 1, y) not in cols: lit[(x, y)] = (col, 255)
         elif op == 'add':
             for xy in e[1]: lit[tuple(xy)] = (col, 255)
         elif op == 'row':

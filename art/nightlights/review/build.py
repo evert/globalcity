@@ -1,5 +1,5 @@
 # Builds the night lights review page: every building's day art, its night look as the game draws it, and the
-# authored lights. Usage: build.py out.html [round]  (comments of earlier rounds are passed in notes.json if present)
+# authored lights. Usage: build.py out.html [round]  (shows last round's comments from round<N-1>.json)
 import base64, io, json, math, os, sys
 from PIL import Image
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -37,7 +37,10 @@ def compose(day, lit):
 def b64(im):
     buf = io.BytesIO(); im.save(buf, 'PNG', optimize=True); return base64.b64encode(buf.getvalue()).decode()
 
-prev = json.load(open(os.path.join(HERE, 'notes.json'))) if os.path.exists(os.path.join(HERE, 'notes.json')) else {}
+rnd = sys.argv[2] if len(sys.argv) > 2 else '2'
+# last round's comments: round<N-1>.json, {code: text} or {code: {text, approved}}
+pf = os.path.join(HERE, f'round{int(rnd) - 1}.json')
+prev = {k: (v if isinstance(v, str) else v['text']) for k, v in json.load(open(pf)).items()} if os.path.exists(pf) else {}
 items = []
 for (code, name, group, base, n, colour) in BUILDINGS:
     items.append((code, name, group, f'{n}×{n}'))
@@ -49,7 +52,6 @@ for (code, name, group, size) in items:
     d, nt = compose(day, lit)
     out.append(dict(code=code, name=name, group=group, size=size, lights=sum(1 for v in lit.values() if v[1] == 255),
                     approved=code in L.APPROVED, prev=prev.get(code, ''), day=b64(d), night=b64(nt)))
-rnd = sys.argv[2] if len(sys.argv) > 2 else '2'
 t = open(os.path.join(HERE, 'template.html')).read()
 html = t.replace('__DATA__', json.dumps(out).replace('</', '<\\/')).replace('__ROUND__', rnd)
 open(sys.argv[1], 'w').write(html)
