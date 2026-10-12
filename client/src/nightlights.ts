@@ -7,6 +7,8 @@ import { CHUNK, LOMASK } from '@globalcity/shared';
 import type { SpriteSheet } from './assets.ts';
 
 const CACHE_MAX = 24;
+/** the glow is the lights shrunk by this much and stretched back with smoothing: a cheap blur that works everywhere */
+const GLOW_SHRINK = 4;
 const REBUILD_MS = 2000;
 /** share of windows lit */
 const LIT = 0.7;
@@ -33,6 +35,17 @@ const GROUND = new Set(['cc7f66', '997f4c', '00e600', '007f00'].map(hex));
 /** the walls windows are set in (greys, blues, red brick) */
 const WALL = new Set(['7f7f7f', '3f3f3f', 'bfbfbf', '0000e6', '6666e6', 'ff0000'].map(hex));
 
+/** Soft glow image for a lights image: shrunk (averaging the lights over a few pixels), drawn back smoothed. */
+function glowOf(lights: HTMLCanvasElement, into?: HTMLCanvasElement): HTMLCanvasElement {
+  const c = into ?? document.createElement('canvas');
+  c.width = Math.max(1, Math.ceil(lights.width / GLOW_SHRINK)); c.height = Math.max(1, Math.ceil(lights.height / GLOW_SHRINK));
+  const g = c.getContext('2d')!;
+  g.clearRect(0, 0, c.width, c.height);
+  g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+  g.drawImage(lights, 0, 0, c.width, c.height);
+  return c;
+}
+
 const hash = (a: number, b: number): number => ((((a * 2654435761) ^ (b * 2246822519)) >>> 0) % 1000) / 1000;
 
 /**
@@ -54,12 +67,15 @@ function findWindows(d: Uint8ClampedArray, iw: number, ox: number, oy: number, w
   return out;
 }
 
+/** A lights image (one pixel per art pixel) and its soft glow (smaller: draw it stretched, smoothed). */
+export interface NightImage { canvas: HTMLCanvasElement; glow: HTMLCanvasElement }
+
 export class NightLights {
   /** per tile id: lit window offsets (x | y << 4 | colour << 8), or undefined when the tile has none */
   private perTile: (Uint16Array | undefined)[] = [];
   private readonly T: number;
-  private cache = new Map<string, { canvas: HTMLCanvasElement; builtAt: number; stale: boolean; lastUse: number }>();
-  private customs = new Map<HTMLImageElement, HTMLCanvasElement | null>();
+  private cache = new Map<string, { canvas: HTMLCanvasElement; glow: HTMLCanvasElement; builtAt: number; stale: boolean; lastUse: number }>();
+  private customs = new Map<HTMLImageElement, NightImage | null>();
   private uses = 0;
 
   constructor(sheet: SpriteSheet) {
@@ -89,9 +105,9 @@ export class NightLights {
   markDirty(key: string): void { const e = this.cache.get(key); if (e) e.stale = true; }
 
   /** Lights image for a chunk (one pixel per art pixel), built or refreshed as needed. */
-  canvasFor(key: string, tiles: Uint16Array, now: number): HTMLCanvasElement {
+  canvasFor(key: string, tiles: Uint16Array, now: number): NightImage {
     let e = this.cache.get(key);
-    if (e && !(e.stale && now - e.builtAt >= REBUILD_MS)) { e.lastUse = ++this.uses; return e.canvas; }
+    if (e && !(e.stale && now - e.builtAt >= REBUILD_MS)) { e.lastUse = ++this.uses; return e; }
     const T = this.T;
     const canvas = e?.canvas ?? document.createElement('canvas');
     canvas.width = canvas.height = CHUNK * T;
@@ -106,20 +122,20 @@ export class NightLights {
         for (const l of lights) g.fillRect(tx * T + (l & 15), ty * T + ((l >> 4) & 15), 1, 1);
       }
     }
-    e = { canvas, builtAt: now, stale: false, lastUse: ++this.uses };
+    e = { canvas, glow: glowOf(canvas, e?.glow), builtAt: now, stale: false, lastUse: ++this.uses };
     this.cache.set(key, e);
     if (this.cache.size > CACHE_MAX) {
       let oldest: string | null = null, min = Infinity;
       for (const [k, v] of this.cache) if (v.lastUse < min) { min = v.lastUse; oldest = k; }
       if (oldest) this.cache.delete(oldest);
     }
-    return canvas;
+    return e;
   }
 
   /** Lights image for a custom building's art (its first frame, `fw` pixels wide), or null when it has no windows. */
-  forCustom(img: HTMLImageElement, fw: number): HTMLCanvasElement | null {
+  forCustom(img: HTMLImageElement, fw: number): NightImage | null {
     if (this.customs.has(img)) return this.customs.get(img)!;
-    let out: HTMLCanvasElement | null = null;
+    let out: NightImage | null = null;
     try {
       const h = img.naturalHeight;
       const c = document.createElement('canvas');
@@ -134,7 +150,7 @@ export class NightLights {
         const x = k & 0xffff, y = k >> 16;
         if (hash(x * 4096 + y, 11) < LIT) { g.fillRect(x, y, 1, 1); n++; }
       }
-      out = n ? c : null;
+      out = n ? { canvas: c, glow: glowOf(c) } : null;
     } catch { out = null; }
     this.customs.set(img, out);
     return out;
