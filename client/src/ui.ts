@@ -8,6 +8,7 @@ import type { Minimap, SpriteSheet } from './assets.ts';
 import { drawTile } from './assets.ts';
 import type { Net } from './net.ts';
 import type { Renderer } from './renderer.ts';
+import { NIGHT_REFRESH_MS } from './night.ts';
 import { isFireTile, withAlpha } from './renderer.ts';
 import type { AppState } from './state.ts';
 
@@ -460,7 +461,7 @@ export class UI {
     this.state.on('me', () => { this.refreshName(); this.refreshClaimButtons(); this.refreshLeaderboard(); this.miniDirty = true; this.scheduleMini(); });
     this.state.on('city', () => { this.refreshName(); this.refreshWelcome(); });
     this.state.on('leaderboard', () => this.refreshLeaderboard());
-    setInterval(() => { this.miniDirty = true; this.scheduleMini(); }, 60_000); // the corner map's night shade moves with the sun
+    setInterval(() => { this.miniDirty = true; this.scheduleMini(); }, NIGHT_REFRESH_MS); // the corner map's night shade moves with the sun
     this.state.on('time', () => this.refreshTime());
     this.state.on('tool', () => this.refreshTools());
     this.state.on('claims', () => { this.refreshClaimButtons(); this.refreshWelcome(); this.miniDirty = true; this.scheduleMini(); this.refreshWorldPop(); this.refreshLeaderboard(); });

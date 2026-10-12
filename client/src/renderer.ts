@@ -17,7 +17,7 @@ import type { SpriteEngine } from './sprites.ts';
 import { FlightLayer, ShipLayer } from './flights.ts';
 import { OverlayLayer } from './overlays.ts';
 import { CustomLayer } from './custom.ts';
-import { NightLayer } from './night.ts';
+import { NightLayer, NIGHT_REFRESH_MS } from './night.ts';
 import { NightLights, type NightImage } from './nightlights.ts';
 
 /** How much of the night shade the zoomed-in city gets: dim, never dark, so building stays easy at night. */
@@ -171,10 +171,10 @@ export class Renderer extends Emitter<RendererEvents> {
       }
       return out;
     };
-    try { this.nightLights = new NightLights(sheet); } catch { this.nightLights = null; } // the sheet is loaded before the renderer exists
+    try { this.nightLights = new NightLights(sheet); this.nightLights.onReady = () => this.invalidate(); } catch { this.nightLights = null; }
     this.customs.onChange = () => this.invalidate();
     // day and night move with the real sun: check once a minute and redraw when the shade changed
-    if (this.animated) setInterval(() => { if (this.night.update()) this.invalidate(); }, 60_000);
+    if (this.animated) setInterval(() => { if (this.night.update()) this.invalidate(); }, NIGHT_REFRESH_MS);
     this.customs.load();
     this.overlay.isOwn = (cx, cy) => this.state.ownsChunk(cx, cy);
     map.on('tiles', () => this.invalidate());
@@ -634,14 +634,14 @@ export class Renderer extends Emitter<RendererEvents> {
           if (!tiles) continue;
           const x0 = this.dx(cx * CHUNK), x1 = this.dx((cx + 1) * CHUNK), y0 = this.dy(cy * CHUNK), y1 = this.dy((cy + 1) * CHUNK);
           if (x1 <= 0 || y1 <= 0 || x0 >= W || y0 >= H) continue;
-          this.drawNightImage(g, this.nightLights.canvasFor(chunkKey(cx, cy), tiles, now), lvl, x0, y0, x1 - x0, y1 - y0);
+          const im = this.nightLights.canvasFor(chunkKey(cx, cy), tiles, now);
+          if (im) this.drawNightImage(g, im, lvl, x0, y0, x1 - x0, y1 - y0);
         }
         for (const b of this.customs.within(Math.floor(v.x0), Math.floor(v.y0), Math.ceil(v.x1), Math.ceil(v.y1))) {
-          const img = this.customs.ready(b.kind);
-          const lvl = img ? this.nightAtChunk(Math.floor(b.x / CHUNK), Math.floor(b.y / CHUNK)) : 0;
-          if (!img || lvl < 0.05) continue;
           const def = CUSTOM_BUILDINGS[b.kind];
-          const lights = this.nightLights.forCustom(img, def?.frames ? img.naturalWidth / def.frames : img.naturalWidth);
+          const lvl = def ? this.nightAtChunk(Math.floor(b.x / CHUNK), Math.floor(b.y / CHUNK)) : 0;
+          if (lvl < 0.05) continue;
+          const lights = this.nightLights.forCustom(def.image);
           if (!lights) continue;
           this.drawNightImage(g, lights, lvl, this.dx(b.x), this.dy(b.y), this.dx(b.x + b.w) - this.dx(b.x), this.dy(b.y + b.h) - this.dy(b.y));
         }

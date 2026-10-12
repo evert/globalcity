@@ -1,0 +1,170 @@
+<title>GlobalCity Night Windows</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen&family=Public+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a contact sheet of building cards, each a day / night pair, with a sticky control bar */
+:root {
+  --bg: #eef0f4; --panel: #ffffff; --fg: #1b1f2a; --muted: #5e6577; --line: #d6dae3;
+  --accent: #2f45c8; --lamp: #d98a00; --ok: #23824a;
+  --display: 'Silkscreen', ui-monospace, monospace;
+  --body: 'Public Sans', system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0c0f1c; --panel: #151a2c; --fg: #e8eaf2; --muted: #9aa1b8; --line: #283050;
+  --accent: #8fa0ff; --lamp: #ffd27a; --ok: #6fd69a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0c0f1c; --panel: #151a2c; --fg: #e8eaf2; --muted: #9aa1b8; --line: #283050;
+  --accent: #8fa0ff; --lamp: #ffd27a; --ok: #6fd69a; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); line-height: 1.45; }
+.wrap { padding-inline: 16px; padding-block: 24px 48px; max-width: 1400px; margin: 0 auto; display: grid; gap: 20px; }
+header { display: grid; gap: 6px; }
+h1 { font-family: var(--display); font-weight: 400; font-size: 1.7rem; margin: 0; letter-spacing: .02em; text-wrap: balance; }
+.lede { margin: 0; color: var(--muted); max-width: 70ch; }
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 2; background: var(--bg); padding-block: 10px;
+  display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; border-bottom: 1px solid var(--line); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+button { font: 600 .82rem var(--body); color: var(--fg); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 999px; padding: 5px 12px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--panel); }
+.spacer { flex: 1; }
+.legend { display: flex; gap: 12px; font-size: .8rem; color: var(--muted); align-items: center; }
+.sw { display: inline-block; width: 10px; height: 10px; border: 2px solid; margin-right: 4px; vertical-align: -1px; }
+.sw.lit { border-color: #ffbe00; background: #ffe678; } .sw.dark { border-color: #00c8ff; background: #000; }
+.grid { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px; display: grid; gap: 10px; min-width: 0; max-width: 100%; }
+.card.noted { border-color: var(--lamp); box-shadow: 0 0 0 1px var(--lamp); }
+.head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.code { font-family: var(--display); font-size: 1.15rem; color: var(--accent); }
+.name { font-weight: 600; }
+.meta { font: .78rem var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.pics { display: flex; gap: 8px; flex-wrap: wrap; }
+figure { margin: 0; display: grid; gap: 4px; min-width: 0; }
+figcaption { font: 500 .7rem var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+figure img { image-rendering: pixelated; display: block; max-width: 100%; height: auto; border-radius: 2px; }
+.note { display: grid; gap: 4px; }
+.actions { display: flex; gap: 8px; align-items: center; }
+.approve[aria-pressed="true"] { background: var(--ok); border-color: var(--ok); color: var(--panel); }
+.card.ok { border-color: var(--ok); }
+.badge { font: 600 .68rem var(--mono); text-transform: uppercase; letter-spacing: .08em; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--ok); color: var(--ok); }
+.prev { font-size: .82rem; color: var(--muted); margin: 0; max-width: 60ch; }
+.prev b { font: 500 .7rem var(--mono); text-transform: uppercase; letter-spacing: .08em; margin-right: 6px; }
+.note label { font: 500 .7rem var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+.note textarea { width: 100%; box-sizing: border-box; min-height: 3.4em; resize: vertical; font: .85rem/1.4 var(--body); color: var(--fg);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px; }
+.note textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.state { text-transform: none; letter-spacing: 0; }
+.copied { font-size: .8rem; color: var(--muted); }
+.empty { color: var(--muted); }
+@media (prefers-reduced-motion: no-preference) { button { transition: background .12s, border-color .12s; } }
+</style>
+<div class="wrap">
+  <header>
+    <h1>Night windows · round __ROUND__</h1>
+    <p class="lede">Every building at full night as the game draws it, next to its day art. Under each one is what you said last round. Press Approve on the ones that look right, so they drop off the list; buildings left without a comment count as approved too. Comments save as you type, and Claude reads them straight from this page.</p>
+  </header>
+  <div class="bar">
+    <div class="chips" id="groups" role="group" aria-label="Building group"></div>
+    <span class="spacer"></span>
+    <span class="copied" id="copied" aria-live="polite"></span>
+    <button id="copy">Copy all comments (<span id="nflag">0</span>)</button>
+  </div>
+  <textarea id="fallback" hidden readonly rows="4" style="width:100%"></textarea>
+  <div class="grid" id="grid"></div>
+</div>
+<script id="data" type="application/json">__DATA__</script>
+<script>
+const items = JSON.parse(document.getElementById('data').textContent);
+const ROUND = '__ROUND__';
+const COLL = 'round' + ROUND;
+const LOCAL = 'night-review-notes-' + ROUND;
+/** code -> comment text, and code -> approved this round; from the shared store when it's available, else this browser */
+let notes = {}, ok = {};
+try { const s = JSON.parse(localStorage.getItem(LOCAL) || '{}') || {}; notes = s.notes || {}; ok = s.ok || {}; } catch { notes = {}; ok = {}; }
+const saveLocal = () => { try { localStorage.setItem(LOCAL, JSON.stringify({ notes, ok })); } catch {} };
+const approved = (i) => i.approved || !!ok[i.code];
+/** Write this building's comment and approval to the shared store. */
+async function save(i, st) {
+  if (!db) { st.textContent = 'Saved in this browser'; return; }
+  try { await db.doc(COLL + '/' + i.code).set({ code: i.code, name: i.name, text: notes[i.code] || '', approved: !!ok[i.code], updatedAt: Date.now() }); st.textContent = 'Saved'; }
+  catch (e) { st.textContent = 'Saved in this browser only (' + (e && e.code || 'error') + ')'; }
+}
+let db = null;
+let group = 'To review';
+const groups = ['To review', 'Approved', 'All', 'With comments', ...new Set(items.map((i) => i.group))];
+const gEl = document.getElementById('groups');
+for (const g of groups) {
+  const b = document.createElement('button'); b.textContent = g; b.dataset.g = g; b.id = 'g-' + g.replace(/\s/g, '-');
+  b.onclick = () => { group = g; render(); }; gEl.append(b);
+}
+const fig = (src, label, big) => `<figure><figcaption>${label}</figcaption><img src="data:image/png;base64,${src}" alt="${label}"${big ? ' style="width:128px"' : ''}></figure>`;
+const has = (code) => !!(notes[code] && notes[code].trim());
+const count = () => { document.getElementById('nflag').textContent = items.filter((i) => has(i.code)).length; };
+const timers = {};
+function render() {
+  for (const b of gEl.children) b.setAttribute('aria-pressed', String(b.dataset.g === group));
+  count();
+  const grid = document.getElementById('grid'); grid.innerHTML = '';
+  const list = items.filter((i) => group === 'All' || (group === 'To review' ? !approved(i) : group === 'Approved' ? approved(i) : group === 'With comments' ? has(i.code) : i.group === group));
+  const left = items.filter((i) => !approved(i)).length;
+  document.getElementById('g-To-review').textContent = `To review (${left})`;
+  if (!list.length) { grid.innerHTML = `<p class="empty">${group === 'To review' ? 'All done. Every building is approved or commented on.' : 'Nothing here.'}</p>`; return; }
+  for (const i of list) {
+    const c = document.createElement('article'); c.className = 'card' + (has(i.code) ? ' noted' : '') + (ok[i.code] ? ' ok' : ''); c.id = i.code;
+    const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    c.innerHTML = `<div class="head"><span class="code">${i.code}</span><span class="name">${i.name}</span>${i.approved ? '<span class="badge">Approved</span>' : ''}</div>
+      <div class="meta">${i.size} · ${i.lights} lights</div>
+      <div class="pics">${fig(i.day, 'Day', i.size === '1×1')}${fig(i.night, 'Night', i.size === '1×1')}</div>
+      ${i.prev ? `<p class="prev"><b>Last round</b>${esc(i.prev)}</p>` : ''}
+      <div class="note"><label for="note-${i.code}">Comment <span class="state" aria-live="polite"></span></label>
+      <textarea id="note-${i.code}" rows="2" placeholder="What looks off?"></textarea></div>
+      ${i.approved ? '' : `<div class="actions"><button class="approve" id="ok-${i.code}" aria-pressed="${!!ok[i.code]}">${ok[i.code] ? 'Approved · undo' : 'Approve'}</button></div>`}`;
+    const ta = c.querySelector('textarea'), st = c.querySelector('.state'), ab = c.querySelector('.approve');
+    if (ab) ab.onclick = () => {
+      if (ok[i.code]) delete ok[i.code]; else ok[i.code] = true;
+      saveLocal(); save(i, st);
+      if (group === 'To review' && ok[i.code]) render();
+      else { ab.setAttribute('aria-pressed', String(!!ok[i.code])); ab.textContent = ok[i.code] ? 'Approved · undo' : 'Approve'; c.classList.toggle('ok', !!ok[i.code]);
+        document.getElementById('g-To-review').textContent = `To review (${items.filter((x) => !approved(x)).length})`; }
+    };
+    ta.value = notes[i.code] || '';
+    ta.oninput = () => {
+      notes[i.code] = ta.value; saveLocal(); count(); c.classList.toggle('noted', has(i.code));
+      st.textContent = 'Saving…';
+      clearTimeout(timers[i.code]);
+      timers[i.code] = setTimeout(() => save(i, st), 700);
+    };
+    grid.append(c);
+  }
+}
+document.getElementById('copy').onclick = () => {
+  const text = items.filter((i) => has(i.code)).map((i) => `${i.code} (${i.name}): ${notes[i.code].trim()}`).join('\n') || 'No comments';
+  const out = document.getElementById('copied'), fb = document.getElementById('fallback');
+  navigator.clipboard.writeText(text).then(() => { out.textContent = 'Copied'; fb.hidden = true; })
+    .catch(() => { fb.value = text; fb.hidden = false; fb.select(); out.textContent = 'Select and copy the text below'; });
+};
+render();
+// shared store: load everyone's comments once, then keep this view in sync
+(async () => {
+  try {
+    db = await window.claude?.use?.('db') ?? null;
+    if (!db) return;
+    db.collection(COLL).onSnapshot((snap) => {
+      let changed = false;
+      for (const d of snap.docs) {
+        const v = d.data();
+        if (!v || typeof v.text !== 'string') continue;
+        if (!!v.approved !== !!ok[d.id]) { if (v.approved) ok[d.id] = true; else delete ok[d.id]; changed = true; }
+        const ta = document.getElementById('note-' + d.id);
+        if (ta && document.activeElement === ta) continue; // don't overwrite what's being typed
+        notes[d.id] = v.text;
+        if (ta) { ta.value = v.text; ta.closest('.card').classList.toggle('noted', has(d.id)); }
+      }
+      saveLocal(); count();
+      if (changed && !(document.activeElement && document.activeElement.tagName === 'TEXTAREA')) render();
+    });
+  } catch { db = null; }
+})();
+</script>
