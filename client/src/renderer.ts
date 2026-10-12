@@ -22,9 +22,6 @@ import { NightLights, type NightImage } from './nightlights.ts';
 
 /** How much of the night shade the zoomed-in city gets: dim, never dark, so building stays easy at night. */
 const NIGHT_CITY_DIM = 0.8;
-/** strength of the glow around lit windows (passes of the shrunk-and-stretched lights, added) */
-const NIGHT_GLOW = 1;
-const NIGHT_GLOW_PASSES = 2;
 import { OverviewMap, speckleTile } from './overviewmap.ts';
 import { WORLD_W as FLIGHT_WORLD_W } from '@globalcity/shared';
 
@@ -912,13 +909,10 @@ export class Renderer extends Emitter<RendererEvents> {
   /** True if chunk (cx,cy) is claimed by `ownerId` (used to merge adjacent plots of one city). */
   /** Night lights at `lvl` darkness: the soft glow (light bleeding into the dark around the windows), then the crisp windows. */
   private drawNightImage(g: CanvasRenderingContext2D, im: NightImage, lvl: number, x: number, y: number, w: number, h: number): void {
-    g.globalCompositeOperation = 'lighter';
-    g.imageSmoothingEnabled = true;
-    g.globalAlpha = Math.min(1, lvl * NIGHT_GLOW);
-    for (let k = 0; k < NIGHT_GLOW_PASSES; k++) g.drawImage(im.glow, x, y, w, h);
-    g.globalCompositeOperation = 'source-over';
-    g.imageSmoothingEnabled = false;
     g.globalAlpha = lvl;
+    g.imageSmoothingEnabled = true;
+    g.drawImage(im.glow, x, y, w, h);
+    g.imageSmoothingEnabled = false;
     g.drawImage(im.canvas, x, y, w, h);
   }
 

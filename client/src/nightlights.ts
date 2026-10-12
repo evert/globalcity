@@ -2,13 +2,11 @@
 // the windows are the single dots set in a wall (a dot whose left and right neighbours are the same wall colour,
 // not part of a line, checker or hatch), so the lights follow the real window rows of every building. A fixed
 // share of them is lit, the same for everyone. Each plot in darkness gets a transparent lights image at the art's
-// own resolution, drawn over the dimmed city; custom buildings get one lights image per kind.
+// own resolution, drawn over the dimmed city, with a faint halo around every window; custom buildings get one lights image per kind.
 import { CHUNK, LOMASK } from '@globalcity/shared';
 import type { SpriteSheet } from './assets.ts';
 
-const CACHE_MAX = 24;
-/** the glow is the lights shrunk by this much and stretched back with smoothing: a cheap blur that works everywhere */
-const GLOW_SHRINK = 4;
+const CACHE_MAX = 16;
 const REBUILD_MS = 2000;
 /** share of windows lit */
 const LIT = 0.7;
@@ -35,14 +33,38 @@ const GROUND = new Set(['cc7f66', '997f4c', '00e600', '007f00'].map(hex));
 /** the walls windows are set in (greys, blues, red brick) */
 const WALL = new Set(['7f7f7f', '3f3f3f', 'bfbfbf', '0000e6', '6666e6', 'ff0000'].map(hex));
 
-/** Soft glow image for a lights image: shrunk (averaging the lights over a few pixels), drawn back smoothed. */
-function glowOf(lights: HTMLCanvasElement, into?: HTMLCanvasElement): HTMLCanvasElement {
+/** radius (art pixels) and peak strength of the soft halo around every lit window */
+const HALO_R = 3;
+const HALO_ALPHA = 0.22;
+let halos: HTMLCanvasElement[] | null = null;
+/** One small soft halo per light colour, stamped around each window: every window gets the same bleed. */
+function haloSprites(): HTMLCanvasElement[] {
+  if (halos) return halos;
+  halos = COLOURS.map((col) => {
+    const c = document.createElement('canvas');
+    c.width = c.height = HALO_R * 2 + 1;
+    const g = c.getContext('2d')!;
+    const r = parseInt(col.slice(1, 3), 16), gr = parseInt(col.slice(3, 5), 16), b = parseInt(col.slice(5, 7), 16);
+    const grad = g.createRadialGradient(HALO_R + 0.5, HALO_R + 0.5, 0, HALO_R + 0.5, HALO_R + 0.5, HALO_R + 0.5);
+    grad.addColorStop(0, `rgba(${r},${gr},${b},${HALO_ALPHA})`);
+    grad.addColorStop(1, `rgba(${r},${gr},${b},0)`);
+    g.fillStyle = grad;
+    g.fillRect(0, 0, c.width, c.height);
+    return c;
+  });
+  return halos;
+}
+
+/** Glow image (w x h) with a halo around each light (packed x | y << 16, colour); overlapping halos don't add up. */
+function glowOf(w: number, h: number, lights: [number, number, number][], into?: HTMLCanvasElement): HTMLCanvasElement {
   const c = into ?? document.createElement('canvas');
-  c.width = Math.max(1, Math.ceil(lights.width / GLOW_SHRINK)); c.height = Math.max(1, Math.ceil(lights.height / GLOW_SHRINK));
+  c.width = w; c.height = h;
   const g = c.getContext('2d')!;
-  g.clearRect(0, 0, c.width, c.height);
-  g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
-  g.drawImage(lights, 0, 0, c.width, c.height);
+  g.clearRect(0, 0, w, h);
+  g.globalCompositeOperation = 'lighten';
+  const sprites = haloSprites();
+  for (const [x, y, col] of lights) g.drawImage(sprites[col], x - HALO_R, y - HALO_R);
+  g.globalCompositeOperation = 'source-over';
   return c;
 }
 
@@ -67,7 +89,7 @@ function findWindows(d: Uint8ClampedArray, iw: number, ox: number, oy: number, w
   return out;
 }
 
-/** A lights image (one pixel per art pixel) and its soft glow (smaller: draw it stretched, smoothed). */
+/** A lights image (one pixel per art pixel) and its soft glow (same size). */
 export interface NightImage { canvas: HTMLCanvasElement; glow: HTMLCanvasElement }
 
 export class NightLights {
@@ -113,16 +135,21 @@ export class NightLights {
     canvas.width = canvas.height = CHUNK * T;
     const g = canvas.getContext('2d')!;
     g.clearRect(0, 0, canvas.width, canvas.height);
+    const all: [number, number, number][] = [];
     for (let col = 0; col < COLOURS.length; col++) {
       g.fillStyle = COLOURS[col];
       for (let i = 0; i < tiles.length; i++) {
         const lights = this.perTile[tiles[i] & LOMASK];
         if (!lights || (lights[0] >> 8) !== col) continue;
         const tx = i % CHUNK, ty = (i - tx) / CHUNK;
-        for (const l of lights) g.fillRect(tx * T + (l & 15), ty * T + ((l >> 4) & 15), 1, 1);
+        for (const l of lights) {
+          const x = tx * T + (l & 15), y = ty * T + ((l >> 4) & 15);
+          g.fillRect(x, y, 1, 1);
+          all.push([x, y, col]);
+        }
       }
     }
-    e = { canvas, glow: glowOf(canvas, e?.glow), builtAt: now, stale: false, lastUse: ++this.uses };
+    e = { canvas, glow: glowOf(canvas.width, canvas.height, all, e?.glow), builtAt: now, stale: false, lastUse: ++this.uses };
     this.cache.set(key, e);
     if (this.cache.size > CACHE_MAX) {
       let oldest: string | null = null, min = Infinity;
@@ -145,12 +172,12 @@ export class NightLights {
       const wins = findWindows(g.getImageData(0, 0, fw, h).data, fw, 0, 0, fw, h, (col) => col >= 0 && !GROUND.has(col));
       g.clearRect(0, 0, fw, h);
       g.fillStyle = COLOURS[CIVIC];
-      let n = 0;
+      const lit: [number, number, number][] = [];
       for (const k of wins) {
         const x = k & 0xffff, y = k >> 16;
-        if (hash(x * 4096 + y, 11) < LIT) { g.fillRect(x, y, 1, 1); n++; }
+        if (hash(x * 4096 + y, 11) < LIT) { g.fillRect(x, y, 1, 1); lit.push([x, y, CIVIC]); }
       }
-      out = n ? { canvas: c, glow: glowOf(c) } : null;
+      out = lit.length ? { canvas: c, glow: glowOf(fw, h, lit) } : null;
     } catch { out = null; }
     this.customs.set(img, out);
     return out;
