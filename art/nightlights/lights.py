@@ -38,12 +38,12 @@ def runway_edges():
     for y in list(range(4, 11, 3)) + list(range(28, 91, 4)): out += [(70, y), (82, y)]  # the north-south one
     return out
 
-# Approved in review: round 1 (as detected), rounds 2, 3 and 4
+# Approved in review: round 1 (as detected), rounds 2 to 5
 APPROVED = {'H01', 'H02', 'H03', 'H04', 'H06', 'R14', 'I01', 'I05',
             'C01', 'C02', 'C03', 'C11', 'C17', 'FIRE', 'GC', 'H05', 'H07', 'H08', 'H09', 'H10', 'H11', 'H12', 'HOS', 'I03', 'I04',
             'I06', 'NUC', 'PORT', 'R01', 'R02', 'R03', 'R04', 'R05', 'R06', 'R08', 'R12', 'R13', 'R16', 'SCH', 'STAD', 'STAD2', 'UNI',
             'C06', 'C07', 'C08', 'C09', 'C10', 'C12', 'C19', 'C20', 'CHU', 'COAL', 'I02', 'I07', 'R07', 'R10', 'R11', 'R15',
-            'AIR', 'C04', 'C05', 'C13', 'C16', 'HALL', 'R09'}
+            'AIR', 'C04', 'C05', 'C13', 'C16', 'HALL', 'R09', 'C15', 'C18', 'POL'}
 
 EDITS = {
     # houses: no window dots in the art, so the windows are placed by hand on the walls
@@ -89,7 +89,7 @@ EDITS = {
     'C12': [('share', 1), ('pix', 4, 15, 32, 19, {BLACK}, 1), ('row', 31, 44, 42, 2), ('row', 12, 17, 33, 2), ('clear', 9, 30, 19, 37),
             ('pix', 28, 17, 32, 42, {BLACK}, 1), ('add', [(30, y) for y in range(22, 41, 4)])],
     'C13': [('share', 0.9), ('row', 7, 41, 42, 3), ('onlyon', 0, 40, 47, 47, {BLUE}), ('clear', 39, 41, 43, 43)],
-    'C14': [('pix', 15, 5, 28, 31, {LGREY}, 1)],
+    'C14': [('pix', 15, 5, 28, 31, {LGREY}, 1), ('dots', 20, 19, 44, 31, {DGREY})],
     'C15': [('none',), ('dots', 23, 26, 43, 43, {GREY, BLACK}), ('dots', 8, 37, 22, 43, {GREY, BLACK})],
     'C16': [('none',)],
     'C17': [('none',)],
@@ -102,7 +102,7 @@ EDITS = {
     'I04': [('clear', 5, 0, 47, 40)],
     'I06': [('none',)],
     'I07': [('clear', 5, 2, 40, 22), ('clear', 30, 27, 42, 35), ('clear', 0, 26, 28, 47)],
-    'I08': [('none',), ('pix', 4, 37, 46, 44, {BLACK}, 1), ('row', 10, 38, 41, 4), ('clear', 0, 0, 47, 39), ('clear', 0, 0, 19, 47)],
+    'I08': [('none',), ('pix', 4, 37, 46, 44, {BLACK}, 1), ('row', 10, 38, 41, 4), ('clear', 0, 0, 47, 39), ('clear', 24, 0, 47, 47)],
     'PORT': [('none',), ('row', 17, 45, 38, 3)],
     'COAL': [('clear', 7, 0, 40, 43), ('clear', 7, 44, 40, 54)],
     'NUC': [('clear', 16, 0, 63, 46)],
