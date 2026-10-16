@@ -637,7 +637,7 @@ export class Renderer extends Emitter<RendererEvents> {
           if (!tiles) continue;
           const x0 = this.dx(cx * CHUNK), x1 = this.dx((cx + 1) * CHUNK), y0 = this.dy(cy * CHUNK), y1 = this.dy((cy + 1) * CHUNK);
           if (x1 <= 0 || y1 <= 0 || x0 >= W || y0 >= H) continue;
-          const im = this.nightLights.canvasFor(chunkKey(cx, cy), tiles, now);
+          const im = this.nightLights.canvasFor(chunkKey(cx, cy), tiles, now, this.frame);
           if (im) this.drawNightImage(g, im, x0, y0, x1 - x0, y1 - y0);
         }
         for (const b of this.customs.within(Math.floor(v.x0), Math.floor(v.y0), Math.ceil(v.x1), Math.ceil(v.y1))) {

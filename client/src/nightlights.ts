@@ -7,6 +7,7 @@ import { CHUNK, LOMASK, PWRBIT } from '@globalcity/shared';
 import type { SpriteSheet } from './assets.ts';
 import { versioned } from './assets.ts';
 
+/** lit plots kept beyond the ones on screen (plots on screen are never evicted, so a big view can't thrash) */
 const CACHE_MAX = 16;
 const REBUILD_MS = 2000;
 
@@ -70,9 +71,11 @@ export class NightLights {
   private perTile: (number[] | undefined)[] = [];
   private readonly T: number;
   private cols = 1;
-  private cache = new Map<string, { canvas: HTMLCanvasElement; glow: HTMLCanvasElement; builtAt: number; stale: boolean; lastUse: number }>();
+  /** per tile id: its halos as one small image (tile plus HALO_R all round), made on first use */
+  private tileGlows: (HTMLCanvasElement | undefined)[] = [];
+  /** per plot: which lit tiles it has (`sig`) and their image, or null when nothing in it is lit */
+  private cache = new Map<string, { sig: number; im: NightImage | null; builtAt: number; stale: boolean; lastFrame: number }>();
   private customs = new Map<string, NightImage | null | 'loading'>();
-  private uses = 0;
   /** called when lights art finishes loading, so the view can redraw */
   onReady: () => void = () => {};
 
@@ -102,35 +105,72 @@ export class NightLights {
   /** The chunk's tiles changed: rebuild its lights soon (throttled). */
   markDirty(key: string): void { const e = this.cache.get(key); if (e) e.stale = true; }
 
-  /** Lights image for a chunk (one pixel per art pixel), built or refreshed as needed; null before the art loads. */
-  canvasFor(key: string, tiles: Uint16Array, now: number): NightImage | null {
-    const sheet = this.sheet;
-    if (!sheet) return null;
+  /** Lights image for a chunk (one pixel per art pixel), built or refreshed as needed; null before the art loads
+   *  or when nothing in the chunk is lit. `frame` is the renderer's frame number: chunks used this frame stay cached. */
+  canvasFor(key: string, tiles: Uint16Array, now: number, frame: number): NightImage | null {
+    if (!this.sheet) return null;
     let e = this.cache.get(key);
-    if (e && !(e.stale && now - e.builtAt >= REBUILD_MS)) { e.lastUse = ++this.uses; return e; }
-    const T = this.T, cols = this.cols;
-    const canvas = e?.canvas ?? document.createElement('canvas');
-    canvas.width = canvas.height = CHUNK * T;
-    const g = canvas.getContext('2d')!;
+    if (e && !(e.stale && now - e.builtAt >= REBUILD_MS)) { e.lastFrame = frame; return e.im; }
+    // only lit, powered tiles matter: skip the redraw when they are the same as last time (most tile changes are traffic)
+    const sig = this.signature(tiles);
+    if (e && e.sig === sig) { e.stale = false; e.builtAt = now; e.lastFrame = frame; return e.im; }
+    const im = sig === 0 ? null : this.draw(tiles, e?.im ?? null);
+    e = { sig, im, builtAt: now, stale: false, lastFrame: frame };
+    this.cache.set(key, e);
+    this.evict(frame);
+    return im;
+  }
+
+  /** Hash of the chunk's lit, powered tiles (position and id); 0 when there are none. */
+  private signature(tiles: Uint16Array): number {
+    let h = 0;
+    for (let i = 0; i < tiles.length; i++) {
+      const t = tiles[i];
+      if (!(t & PWRBIT) || !this.perTile[t & LOMASK]) continue;
+      h = Math.imul(h ^ ((i << 10) | (t & LOMASK)), 0x9e3779b1) ^ (h >>> 15);
+      if (h === 0) h = 1;
+    }
+    return h;
+  }
+
+  /** Draw a chunk's lights (into `reuse` when given), and its glow from each lit tile's ready-made halos. */
+  private draw(tiles: Uint16Array, reuse: NightImage | null): NightImage {
+    const sheet = this.sheet!, T = this.T, cols = this.cols;
+    const canvas = reuse?.canvas ?? document.createElement('canvas');
+    const glow = reuse?.glow ?? document.createElement('canvas');
+    canvas.width = canvas.height = glow.width = glow.height = CHUNK * T;
+    const g = canvas.getContext('2d')!, gg = glow.getContext('2d')!;
     g.clearRect(0, 0, canvas.width, canvas.height);
-    const stamps: number[] = [];
+    gg.clearRect(0, 0, glow.width, glow.height);
+    gg.globalCompositeOperation = 'lighten'; // overlapping halos don't add up
     for (let i = 0; i < tiles.length; i++) {
       if (!(tiles[i] & PWRBIT)) continue; // no power, no lights
       const id = tiles[i] & LOMASK;
-      const lights = this.perTile[id];
-      if (!lights) continue;
+      if (!this.perTile[id]) continue;
       const tx = i % CHUNK, ty = (i - tx) / CHUNK;
       g.drawImage(sheet, (id % cols) * T, Math.floor(id / cols) * T, T, T, tx * T, ty * T, T, T);
-      for (let k = 0; k < lights.length; k += 3) stamps.push(tx * T + lights[k], ty * T + lights[k + 1], lights[k + 2]);
+      gg.drawImage(this.tileGlow(id), tx * T - HALO_R, ty * T - HALO_R);
     }
-    e = { canvas, glow: glowOf(canvas.width, canvas.height, stamps, e?.glow), builtAt: now, stale: false, lastUse: ++this.uses };
-    this.cache.set(key, e);
-    if (this.cache.size > CACHE_MAX) {
-      let oldest: string | null = null, min = Infinity;
-      for (const [k, v] of this.cache) if (v.lastUse < min) { min = v.lastUse; oldest = k; }
-      if (oldest) this.cache.delete(oldest);
+    gg.globalCompositeOperation = 'source-over';
+    return { canvas, glow };
+  }
+
+  private tileGlow(id: number): HTMLCanvasElement {
+    let c = this.tileGlows[id];
+    if (!c) {
+      const s = this.perTile[id]!.slice();
+      for (let k = 0; k < s.length; k += 3) { s[k] += HALO_R; s[k + 1] += HALO_R; }
+      c = this.tileGlows[id] = glowOf(this.T + 2 * HALO_R, this.T + 2 * HALO_R, s);
     }
-    return e;
+    return c;
+  }
+
+  /** Drop the least recently used lit chunks beyond CACHE_MAX, never one drawn this frame; forget old unlit ones. */
+  private evict(frame: number): void {
+    const lit = [...this.cache].filter(([, v]) => v.im && v.lastFrame !== frame).sort((a, b) => a[1].lastFrame - b[1].lastFrame);
+    let over = [...this.cache.values()].filter((v) => v.im).length - CACHE_MAX;
+    for (const [k] of lit) { if (over-- <= 0) break; this.cache.delete(k); }
+    if (this.cache.size > 4096) for (const [k, v] of this.cache) if (!v.im && v.lastFrame !== frame) this.cache.delete(k);
   }
 
   /** Lights image for a custom building (its art path, e.g. /assets/buildings/university.png), or null when it has none. */
