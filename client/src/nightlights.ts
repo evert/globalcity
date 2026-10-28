@@ -9,7 +9,6 @@ import { versioned } from './assets.ts';
 
 /** lit plots kept beyond the ones on screen (plots on screen are never evicted, so a big view can't thrash) */
 const CACHE_MAX = 16;
-const REBUILD_MS = 2000;
 
 /** radius (art pixels) and peak strength of the soft halo around every light */
 const HALO_R = 3;
@@ -74,7 +73,7 @@ export class NightLights {
   /** per tile id: its halos as one small image (tile plus HALO_R all round), made on first use */
   private tileGlows: (HTMLCanvasElement | undefined)[] = [];
   /** per plot: which lit tiles it has (`sig`) and their image, or null when nothing in it is lit */
-  private cache = new Map<string, { sig: number; im: NightImage | null; builtAt: number; stale: boolean; lastFrame: number }>();
+  private cache = new Map<string, { sig: number; im: NightImage | null; stale: boolean; lastFrame: number }>();
   private customs = new Map<string, NightImage | null | 'loading'>();
   /** called when lights art finishes loading, so the view can redraw */
   onReady: () => void = () => {};
@@ -102,20 +101,20 @@ export class NightLights {
     }).catch(() => { /* no lights sheet: the city just dims at night */ });
   }
 
-  /** The chunk's tiles changed: rebuild its lights soon (throttled). */
+  /** The chunk's tiles changed: check its lights on the next frame (a cheap signature; most changes are traffic). */
   markDirty(key: string): void { const e = this.cache.get(key); if (e) e.stale = true; }
 
   /** Lights image for a chunk (one pixel per art pixel), built or refreshed as needed; null before the art loads
    *  or when nothing in the chunk is lit. `frame` is the renderer's frame number: chunks used this frame stay cached. */
-  canvasFor(key: string, tiles: Uint16Array, now: number, frame: number): NightImage | null {
+  canvasFor(key: string, tiles: Uint16Array, frame: number): NightImage | null {
     if (!this.sheet) return null;
     let e = this.cache.get(key);
-    if (e && !(e.stale && now - e.builtAt >= REBUILD_MS)) { e.lastFrame = frame; return e.im; }
+    if (e && !e.stale) { e.lastFrame = frame; return e.im; }
     // only lit, powered tiles matter: skip the redraw when they are the same as last time (most tile changes are traffic)
     const sig = this.signature(tiles);
-    if (e && e.sig === sig) { e.stale = false; e.builtAt = now; e.lastFrame = frame; return e.im; }
+    if (e && e.sig === sig) { e.stale = false; e.lastFrame = frame; return e.im; }
     const im = sig === 0 ? null : this.draw(tiles, e?.im ?? null);
-    e = { sig, im, builtAt: now, stale: false, lastFrame: frame };
+    e = { sig, im, stale: false, lastFrame: frame };
     this.cache.set(key, e);
     this.evict(frame);
     return im;
