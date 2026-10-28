@@ -788,7 +788,7 @@ export class UI {
     if (!b) { this.budgetTable.replaceChildren(); return; }
     // columns: the last completed years, then the year so far (3 on a desktop, 2 on a phone)
     const past = window.matchMedia('(max-width: 760px)').matches ? 1 : 2;
-    const cols: { y: BudgetYear; head: string }[] = [...b.years.slice(-past).map((y) => ({ y, head: String(y.year) })), { y: b.current, head: `${b.current.year} so far` }];
+    const cols: { y: BudgetYear; head: string }[] = [...b.years.slice(-past).map((y) => ({ y, head: String(y.year) })), { y: b.current, head: `${this.state.time.year} so far` }]; // the clock's year: a city without land never gets its book stamped
     const money = (n: number, sign: 1 | -1 = 1): HTMLElement => {
       const v = n * sign;
       return el('td', { class: `num ${v < 0 ? 'bad' : v > 0 ? 'good' : 'muted'}`, text: n === 0 ? '—' : `${v < 0 ? '−' : '+'}${fmtMoney(Math.abs(v))}` });
