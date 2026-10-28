@@ -208,7 +208,7 @@ export class UI {
       el('div', { class: 'stat', title: 'Funds' }, el('span', { class: 'ico' }, '💵'), this.funds),
       el('div', { class: 'stat', title: 'Population' }, el('span', { class: 'ico' }, '👥'), this.pop),
       el('div', { class: 'stat', title: 'Date' }, el('span', { class: 'ico' }, '📅'), this.date),
-      el('div', { class: 'stat', title: 'Players online' }, el('span', { class: 'ico' }, '●'), this.online),
+      el('div', { class: 'stat', title: 'Players online' }, el('span', { class: 'ico online-dot' }, '●'), this.online),
       el('div', { class: 'stat world-pop', title: 'World population: every city on the planet combined' }, el('span', { class: 'ico' }, '🌍'), this.worldPop),
       this.plotsStat,
       this.claimBtn, this.findBtn, this.cityBtn, this.worldBtn, this.msBtn, this.budgetBtn, this.lbBtn, this.lifelineBtn, this.abandonBtn, this.monumentBtn, this.fireBtn,
@@ -472,7 +472,8 @@ export class UI {
     this.state.on('time', () => this.refreshTime());
     this.state.on('tool', () => this.refreshTools());
     this.state.on('claims', () => { this.refreshClaimButtons(); this.refreshWelcome(); this.miniDirty = true; this.scheduleMini(); this.refreshWorldPop(); this.refreshLeaderboard(); });
-    this.state.on('connection', (v) => { this.offline.classList.toggle('hidden', v); if (v) this.status.textContent = 'Online'; this.status.classList.toggle('bad', !v); });
+    // The status label only shows while not connected ("Connecting…", "Reconnecting…"): online is the normal state.
+    this.state.on('connection', (v) => { this.offline.classList.toggle('hidden', v); this.status.classList.toggle('hidden', v); this.status.classList.toggle('bad', !v); });
     this.net.on('status', (s) => { this.status.textContent = s; this.offline.textContent = s; });
     this.renderer.on('camera', () => { this.hideQuery(); this.miniDirty = true; this.scheduleMini(); });
     this.renderer.on('settle', () => this.refreshClaimButtons());
