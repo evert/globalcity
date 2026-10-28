@@ -6,7 +6,8 @@ set -euo pipefail
 TARGET=node05; RESTART=0
 for a in "$@"; do case "$a" in --restart) RESTART=1 ;; *) TARGET="$a" ;; esac; done
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
-ssh "$TARGET" 'sudo mkdir -p /opt/globalcity && sudo chown -R "$USER" /opt/globalcity'
+# Hand the code (not data/: the running server saves there every 10 s) to the ssh user for the rsync.
+ssh "$TARGET" 'sudo mkdir -p /opt/globalcity && sudo chown "$USER" /opt/globalcity && for d in /opt/globalcity/* /opt/globalcity/.[!.]*; do [ -e "$d" ] && [ "$(basename "$d")" != data ] && sudo chown -R "$USER" "$d"; done; true'
 rsync -az --delete \
   --exclude node_modules --exclude dist --exclude data --exclude .git \
   "$HERE/" "$TARGET:/opt/globalcity/"
