@@ -1,7 +1,7 @@
 // DOM overlay: top bar, toolbar, RCI, toasts, query popover, welcome/about panels, minimap widget.
 import type { BudgetYear, ClaimInfo, Demand, LeaderboardEntry, MonumentEntry, QueryInfo, ToolId } from '@globalcity/shared';
 import { OVERLAY_INFO, OVERLAY_MODES, type OverlayMode } from './overlays.ts';
-import { TAX_RATE, budgetTotals, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, STARTING_FUNDS, LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, LIFELINE_REPAY_SHARE, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT, LOMASK, FIRESTBASE, POLICESTBASE, CITYHALLBASE, LASTCITYHALL, chunkKey, shipCargo, flightLoad } from '@globalcity/shared';
+import { budgetTotals, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, STARTING_FUNDS, LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, LIFELINE_REPAY_SHARE, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT, LOMASK, FIRESTBASE, POLICESTBASE, CITYHALLBASE, LASTCITYHALL, chunkKey, shipCargo, flightLoad } from '@globalcity/shared';
 import { CHUNK, claimCost, MILESTONE_BUILDINGS, MILESTONE_ORDER, isMilestoneTool, nextMilestone, type MilestoneBuilding, MAX_CHUNKS_PER_PLAYER, POWER_PRICE_PER_UNIT, TOOLS, TOOL_ORDER, PLANT_OUTPUT, CUSTOM_BUILDINGS, GRAND_CENTRAL, WORLD_H, WORLD_W, chunkOf, lonLatToTile } from '@globalcity/shared';
 import type { Actions } from './actions.ts';
 import type { Minimap, SpriteSheet } from './assets.ts';
@@ -772,7 +772,6 @@ export class UI {
       close,
       el('h2', { text: '💰 Budget' }),
       this.budgetTable,
-      el('p', { class: 'muted small', text: `Taxes (${TAX_RATE}%) are collected every month on residents and jobs. Upkeep is charged monthly on everything standing. Nothing is earned or charged while you are away.` }),
     );
     this.root.append(this.budgetPanel);
   }
