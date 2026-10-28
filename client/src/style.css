@@ -176,6 +176,7 @@ a { color: var(--accent); }
 #query { position: fixed; padding: 8px 10px; min-width: 180px; font-size: 12px; pointer-events: none; }
 #query .qname { font-weight: 700; margin-bottom: 4px; }
 #query .qrow { color: var(--muted); }
+#query .qactions { margin-top: 6px; pointer-events: auto; }
 
 /* minimap */
 #miniwrap { position: fixed; right: 8px; bottom: 8px; padding: 3px; line-height: 0; }
@@ -188,6 +189,7 @@ a { color: var(--accent); }
 @media (max-width: 760px) {
   #topbar { height: auto; flex-wrap: wrap; padding: 4px 8px; gap: 6px 10px; font-size: 12px; }
   #topbar .brand { display: none; }
+  #topbar .btn.city { display: none; } /* the city is renamed from its city hall instead */
   #toolbar { top: auto; bottom: 8px; left: 8px; right: 8px; flex-direction: row; overflow-x: auto; max-height: none; }
   #touchbar { bottom: auto; top: var(--overlay-top, 120px); flex-wrap: wrap; justify-content: center; }
   .tool { grid-template-columns: 28px; grid-template-rows: auto; padding: 3px; }

@@ -1,7 +1,7 @@
 // DOM overlay: top bar, toolbar, RCI, toasts, query popover, welcome/about panels, minimap widget.
 import type { ClaimInfo, Demand, LeaderboardEntry, MonumentEntry, QueryInfo, ToolId } from '@globalcity/shared';
 import { OVERLAY_INFO, OVERLAY_MODES, type OverlayMode } from './overlays.ts';
-import { TAX_RATE, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, STARTING_FUNDS, LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, LIFELINE_REPAY_SHARE, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT, LOMASK, FIRESTBASE, POLICESTBASE, chunkKey, shipCargo, flightLoad } from '@globalcity/shared';
+import { TAX_RATE, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, STARTING_FUNDS, LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, LIFELINE_REPAY_SHARE, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT, LOMASK, FIRESTBASE, POLICESTBASE, CITYHALLBASE, LASTCITYHALL, chunkKey, shipCargo, flightLoad } from '@globalcity/shared';
 import { CHUNK, claimCost, MILESTONE_BUILDINGS, MILESTONE_ORDER, isMilestoneTool, nextMilestone, type MilestoneBuilding, MAX_CHUNKS_PER_PLAYER, POWER_PRICE_PER_UNIT, TOOLS, TOOL_ORDER, PLANT_OUTPUT, CUSTOM_BUILDINGS, GRAND_CENTRAL, WORLD_H, WORLD_W, chunkOf, lonLatToTile } from '@globalcity/shared';
 import type { Actions } from './actions.ts';
 import type { Minimap, SpriteSheet } from './assets.ts';
@@ -935,7 +935,8 @@ export class UI {
         const city = this.state.cityName;
         if (city) {
           this.foundedToastShown = true;
-          this.toast(`You founded ${city}! (click the name in the top bar to rename)`, 'success', 7000);
+          const hint = this.cityNameBtn.offsetParent === null ? 'tap your city hall to rename it, once you have one' : 'click the name in the top bar to rename';
+          this.toast(`You founded ${city}! (${hint})`, 'success', 7000);
         } else if (!this.welcome.classList.contains('hidden')) {
           this.toast('Plot claimed — happy building!', 'success');
         }
@@ -1288,6 +1289,11 @@ export class UI {
       ...(info.zonePop !== undefined ? [el('div', { class: 'qrow', text: `${info.zoneKind === 'com' || info.zoneKind === 'ind' ? 'Jobs' : 'Residents'}: ${info.zonePop.toLocaleString('en-US')}` })] : []),
     );
     if (info.owner) (q.firstElementChild as HTMLElement).style.color = info.owner.color;
+    if (id >= CITYHALLBASE && id <= LASTCITYHALL && info.owner && info.owner.id === this.state.me?.id) {
+      const rename = el('button', { class: 'btn', type: 'button' }, '✎ Rename city');
+      rename.onclick = () => { this.hideQuery(); this.promptRenameCity(); };
+      q.append(el('div', { class: 'qrow qactions' }, rename));
+    }
     this.placeQuery();
   }
 
