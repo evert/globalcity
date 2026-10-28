@@ -46,6 +46,8 @@ a { color: var(--accent); }
 #topbar .stat .val { font-weight: 600; }
 #topbar .spacer { flex: 1; }
 #topbar .stat .ico.online-dot { color: var(--good); }
+#topbar .stat.clickable { cursor: pointer; }
+#topbar .stat.clickable:hover .val { text-decoration: underline; }
 #topbar .status { color: var(--muted); font-size: 11px; }
 #topbar .status.bad { color: var(--bad); animation: pulse 1.2s infinite; }
 #topbar .btn.city { font-weight: 700; color: var(--fg); max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
@@ -190,6 +192,7 @@ a { color: var(--accent); }
   #topbar { height: auto; flex-wrap: wrap; padding: 4px 8px; gap: 6px 10px; font-size: 12px; }
   #topbar .brand { display: none; }
   #topbar .btn.city { display: none; } /* the city is renamed from its city hall instead */
+  #budgetBtn { display: none; } /* the cash stat opens the budget on phones */
   #toolbar { top: auto; bottom: 8px; left: 8px; right: 8px; flex-direction: row; overflow-x: auto; max-height: none; }
   #touchbar { bottom: auto; top: var(--overlay-top, 120px); flex-wrap: wrap; justify-content: center; }
   .tool { grid-template-columns: 28px; grid-template-rows: auto; padding: 3px; }

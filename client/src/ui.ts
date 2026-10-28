@@ -201,9 +201,11 @@ export class UI {
     discordBtn.title = 'Join the GlobalCity Discord: chat with other mayors, report bugs, suggest features';
     const aboutBtn = el('button', { class: 'btn ghost round', id: 'aboutBtn', title: 'About & attribution' }, 'ⓘ');
     aboutBtn.onclick = () => this.toggle(this.about);
+    const fundsStat = el('div', { class: 'stat clickable', id: 'fundsStat', title: 'Funds — click for the budget' }, el('span', { class: 'ico' }, '💵'), this.funds);
+    fundsStat.onclick = () => this.toggleBudget();
     const bar = el('div', { id: 'topbar' },
       el('div', { class: 'brand' }, 'GlobalCity'),
-      el('div', { class: 'stat', title: 'Funds' }, el('span', { class: 'ico' }, '💵'), this.funds),
+      fundsStat,
       el('div', { class: 'stat', title: 'Population' }, el('span', { class: 'ico' }, '👥'), this.pop),
       el('div', { class: 'stat', title: 'Date' }, el('span', { class: 'ico' }, '📅'), this.date),
       el('div', { class: 'stat', title: 'Players online' }, el('span', { class: 'ico online-dot' }, '●'), this.online),
