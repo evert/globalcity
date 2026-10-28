@@ -30,7 +30,7 @@ and `twa-manifest.json`, then run the script.
 3. Keep **Play App Signing** on (the default). Google then re-signs the app with its own key, so the site must
    also trust that key: in the Play Console open *Test and release → App integrity → App signing*, copy the
    "App signing key certificate" SHA-256 fingerprint, and add it to the `sha256_cert_fingerprints` list in
-   `client/public/.well-known/assetlinks.json` (keep the upload key's fingerprint there too). Deploy the site.
+   `client/public/.well-known/assetlinks.json` (keep the upload key's fingerprint there too; done 28 Oct 2026). Deploy the site.
    Without this, the Play Store version shows a browser address bar at the top.
 4. Fill in the store listing: description, screenshots, the 512 px icon (`store_icon.png`), the privacy policy
    URL (https://globalcity.evertpot.com/privacy.html, from `client/public/privacy.html`), the content rating questionnaire and the data safety form.
