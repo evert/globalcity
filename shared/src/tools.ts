@@ -103,7 +103,7 @@ export const MILESTONE_BUILDINGS: Record<MilestoneBuilding, MilestoneDef> = {
   cityhall: { name: 'City hall', tool: 'cityhall', pop: 75_000, max: 1, centres: [T.CITYHALL],
     benefits: ['+10% tax income', 'Crime 40% lower across the city', 'One per city', 'Needs power'] },
   windfarm: { name: 'Wind farm', tool: 'windfarm', pop: 150_000, centres: [T.WINDFARM],
-    benefits: [`${WIND_POWER} zones of clean power`, 'No pollution, quiet: neighbours don\'t mind', 'Low upkeep ($50 a year)'] },
+    benefits: [`${WIND_POWER} zones of clean power`, 'No pollution, quiet: neighbours don\'t mind', '$50 a year to run'] },
   school: { name: 'Elementary school', tool: 'school', pop: 50_000, centres: [T.SCHOOL],
     benefits: ['Lots within 8 tiles gain land value', 'Needs power'] },
   seaport: { name: 'Seaport', tool: 'seaport', pop: 100_000, centres: [T.PORT],
