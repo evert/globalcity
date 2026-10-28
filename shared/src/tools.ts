@@ -95,7 +95,7 @@ export const PLANT_OUTPUT: Partial<Record<ToolId, number>> = { coal: COAL_POWER,
 TOOLS.coal.tradeoff = `Cheap power for ${COAL_POWER} zones, but its smog drags down land value for a dozen tiles around.`;
 TOOLS.nuclear.tradeoff = `Clean power for ${NUCLEAR_POWER.toLocaleString('en-US')} zones, if you can find the $${TOOLS.nuclear.cost.toLocaleString('en-US')} up front.`;
 TOOLS.windfarm.tradeoff = `Clean and cheap to run, but a few turbines power only ${WIND_POWER} zones, so a wind-powered city needs to dedicate lots of land.`;
-TOOLS.offshore.tradeoff = `${OFFSHORE_POWER} zones of clean power on water you could not build on anyway, at over twice the price of turbines on land.`;
+TOOLS.offshore.tradeoff = `${OFFSHORE_POWER} zones of clean power: more expensive than turbines on land, but doesn't take up usable land!`;
 
 // ---- Milestones ----
 // Special buildings unlock when the city's peak population reaches their threshold; unlocks are permanent.
