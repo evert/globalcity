@@ -33,8 +33,7 @@ and `twa-manifest.json`, then run the script.
    `client/public/.well-known/assetlinks.json` (keep the upload key's fingerprint there too). Deploy the site.
    Without this, the Play Store version shows a browser address bar at the top.
 4. Fill in the store listing: description, screenshots, the 512 px icon (`store_icon.png`), the privacy policy
-   URL (https://globalcity.evertpot.com/privacy.html; the markdown source is `PRIVACY.md` at the repo root, keep
-   both in step), the content rating questionnaire and the data safety form.
+   URL (https://globalcity.evertpot.com/privacy.html, from `client/public/privacy.html`), the content rating questionnaire and the data safety form.
 
 Check the site/app link at any time:
 https://digitalassetlinks.googleapis.com/v1/assetlinks:check?source.web.site=https://globalcity.evertpot.com&relation=delegate_permission/common.handle_all_urls&target.android_app.package_name=com.evertpot.globalcity&target.android_app.certificate.sha256_fingerprint=F8:F3:E8:0B:D2:02:61:72:A8:84:10:47:FC:31:A5:C0:14:BF:7C:6C:09:17:9A:BF:9E:1E:91:8D:9E:17:79:D6
