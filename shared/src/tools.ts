@@ -1,4 +1,5 @@
 import * as T from './tiles.ts';
+import { UPKEEP_WIND } from './constants.ts';
 
 export type ToolId =
   | 'query' | 'bulldozer' | 'road' | 'rail' | 'wire' | 'park'
@@ -46,7 +47,7 @@ export const TOOLS: Record<ToolId, ToolDef> = {
   airport:     { id: 'airport',     name: 'Airport',           cost: 10000, size: 6, base: T.AIRPORTBASE,  hotkey: 'j', icon: T.AIRPORT },
   cityhall:    { id: 'cityhall',    name: 'City hall',         cost: 6000,  size: 4, base: T.CITYHALLBASE, hotkey: 'u', icon: T.CITYHALL },
   school:      { id: 'school',      name: 'Elementary school', cost: 1500,  size: 3, base: T.SCHOOLBASE,   hotkey: 'e', icon: T.SCHOOL },
-  windfarm:    { id: 'windfarm',    name: 'Wind farm',         cost: 4000,  size: 4, base: T.WINDBASE,     hotkey: 'z', icon: T.WINDFARM },
+  windfarm:    { id: 'windfarm',    name: 'Wind farm',         cost: 1600,  size: 4, base: T.WINDBASE,     hotkey: 'z', icon: T.WINDFARM },
   offshore:    { id: 'offshore',    name: 'Offshore wind farm', cost: 8000, size: 4, base: T.OFFSHOREBASE, hotkey: 'x', icon: T.OFFSHORE },
   university:  { id: 'university',  name: 'University',        cost: 8000,  size: 5, w: 5, h: 4, custom: 'university', hotkey: 'y', icon: T.CUSTOMCENTRE },
   grandcentral: { id: 'grandcentral', name: 'Grand Central',    cost: 25000, size: 6, w: 6, h: 3, custom: 'grandcentral', hot: { x: 2, y: 2 }, hotkey: 'k', icon: T.CUSTOMCENTRE },
@@ -84,7 +85,7 @@ export function footprintOrigin(tool: ToolDef, x: number, y: number): { x0: numb
 // plants are smaller and there are clean alternatives.)
 export const COAL_POWER = 400;
 export const NUCLEAR_POWER = 1200;
-export const WIND_POWER = 100;
+export const WIND_POWER = 40; // a handful of turbines, not a whole farm: wind's price is land, you need many of them
 export const OFFSHORE_POWER = 150;
 /** Zones each power plant tool supplies, for labels. */
 export const PLANT_OUTPUT: Partial<Record<ToolId, number>> = { coal: COAL_POWER, nuclear: NUCLEAR_POWER, windfarm: WIND_POWER, offshore: OFFSHORE_POWER };
@@ -103,7 +104,7 @@ export const MILESTONE_BUILDINGS: Record<MilestoneBuilding, MilestoneDef> = {
   cityhall: { name: 'City hall', tool: 'cityhall', pop: 75_000, max: 1, centres: [T.CITYHALL],
     benefits: ['+10% tax income', 'Crime 40% lower across the city', 'One per city', 'Needs power'] },
   windfarm: { name: 'Wind farm', tool: 'windfarm', pop: 150_000, centres: [T.WINDFARM],
-    benefits: [`${WIND_POWER} zones of clean power`, 'No pollution, quiet: neighbours don\'t mind', '$50 a year to run'] },
+    benefits: [`${WIND_POWER} zones of clean power: a few turbines, so a city runs on many of them`, 'No pollution, quiet: neighbours don\'t mind', `$${UPKEEP_WIND} a year to run`] },
   school: { name: 'Elementary school', tool: 'school', pop: 50_000, centres: [T.SCHOOL],
     benefits: ['Lots within 8 tiles gain land value', 'Needs power'] },
   seaport: { name: 'Seaport', tool: 'seaport', pop: 100_000, centres: [T.PORT],
