@@ -68,6 +68,19 @@ export interface PlayerStats {
   // Lifeline
   debt: number; // lifeline still owed
   lifelineAvailable: boolean; // the city may take a lifeline now
+  // Budget (absent from old servers)
+  taxRate?: number; // percent, TAX_RATE_MIN..TAX_RATE_MAX
+  budget?: Budget;
+}
+
+/** The budget screen: what the city earns and pays per game year. All $ per year, rounded. */
+export interface Budget {
+  /** tax income at the current rate and population (what a whole year at today's size would bring) */
+  taxes: number;
+  /** yearly upkeep of what stands now */
+  upkeep: { roads: number; rail: number; power: number; services: number };
+  /** what the last full game year actually brought and cost (net = taxes - upkeep + power - repaid, the "last year" figure) */
+  lastYear: { taxes: number; upkeep: number; power: number; repaid: number; net: number };
 }
 
 export interface LeaderboardEntry {
@@ -138,6 +151,7 @@ export type ClientMsg =
   | { t: 'lifeline' } // take the emergency lifeline loan
   | { t: 'monument' } // retire my city (over MONUMENT_MIN_POP) as a monument and start over
   | { t: 'abandon' } // give up my broke city (owes a lifeline, under ABANDON_MAX_FUNDS): plots released, ruins crumble, start over
+  | { t: 'taxRate'; rate: number } // set my city's tax rate, percent TAX_RATE_MIN..TAX_RATE_MAX
   | { t: 'ping' };
 
 // ---------- server -> client (JSON) ----------

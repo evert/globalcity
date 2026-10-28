@@ -2,7 +2,7 @@
 
 import crypto from 'node:crypto';
 import {
-  STARTING_FUNDS, claimCost, CHUNKS_X, CHUNKS_Y, CHUNK, MAX_CHUNKS_PER_PLAYER,
+  TAX_RATE, STARTING_FUNDS, claimCost, CHUNKS_X, CHUNKS_Y, CHUNK, MAX_CHUNKS_PER_PLAYER,
   chunkKey, parseChunkKey, colorForId,
   type PlayerStats, type PlayerPublic, type ClaimInfo, type GameTime, START_YEAR,
   MILESTONE_BUILDINGS, milestoneUnlocksFor, nextMilestone,
@@ -44,7 +44,16 @@ export interface PlayerRecord {
   /** fractional tax accumulator and running total for the current game year */
   incomeAcc: number;
   yearIncome: number;
+  /** tax rate in percent; absent = TAX_RATE (the default) */
+  taxRate?: number;
+  /** what the current game year has brought and cost so far (the budget screen's "last year" at new year) */
+  yearBook?: YearBook;
 }
+
+export interface YearBook { taxes: number; upkeep: number; power: number; repaid: number }
+export const emptyYearBook = (): YearBook => ({ taxes: 0, upkeep: 0, power: 0, repaid: 0 });
+/** The city's tax rate, percent. */
+export const taxRateOf = (p: PlayerRecord): number => p.taxRate ?? TAX_RATE;
 
 export interface StateFile {
   version: 1;
@@ -90,6 +99,7 @@ export function emptyStats(funds: number): PlayerStats {
     crime: 0, policeStations: 0, specials: { stadium: 0, seaport: 0, airport: 0 }, traffic: 0,
     peakPop: 0, nextMilestone: MILESTONE_BUILDINGS.cityhall.pop, unlocked: [], built: {}, cityHall: 0,
     debt: 0, lifelineAvailable: false,
+    taxRate: TAX_RATE, budget: { taxes: 0, upkeep: { roads: 0, rail: 0, power: 0, services: 0 }, lastYear: { taxes: 0, upkeep: 0, power: 0, repaid: 0, net: 0 } },
   };
 }
 
@@ -326,6 +336,8 @@ export class Players {
     p.active = false;
     p.incomeAcc = 0;
     p.yearIncome = 0;
+    delete p.taxRate;
+    delete p.yearBook;
     p.stats = emptyStats(STARTING_FUNDS);
     this.dirty = true;
   }
@@ -448,6 +460,8 @@ export class Players {
       stats.specials = { ...emptyStats(0).specials, ...(raw.stats?.specials ?? {}) };
       stats.unlocked = Array.isArray(raw.stats?.unlocked) ? raw.stats.unlocked : [];
       stats.built = { ...(raw.stats?.built ?? {}) };
+      stats.taxRate = typeof legacy.taxRate === 'number' ? legacy.taxRate : TAX_RATE;
+      if (!raw.stats?.budget) stats.budget = emptyStats(0).budget;
       const p: PlayerRecord = {
         ...raw,
         cityName: typeof legacy.cityName === 'string' ? legacy.cityName : '',

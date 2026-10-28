@@ -6,7 +6,7 @@
 // (coal/industrial smoke, stadium games, airport radar, nuclear swirl; the client cycles ANIMBIT tiles).
 
 import {
-  WORLD_W, WORLD_H, CHUNK, DEMAND_SMOOTHING, TAX_RATE, TAX_MULT, COAL_POWER, NUCLEAR_POWER, POWER_PRICE_PER_UNIT,
+  WORLD_W, WORLD_H, CHUNK, DEMAND_SMOOTHING, TAX_MULT, taxDemand, COAL_POWER, NUCLEAR_POWER, POWER_PRICE_PER_UNIT,
   UPKEEP_ROAD, UPKEEP_RAIL, UPKEEP_STATION, UPKEEP_COAL, UPKEEP_NUCLEAR, CITY_FREEZE_MS,
   POLICESTATION,
   FIRE_SPREAD_P, FIRE_BURNOUT_P, FIRE_BURNOUT_P_COVERED, FIRE_STATION_RANGE, FIRE_OUTBREAK_BASE_P, FIRE_OWNER_ONLINE_MS, FIRE_PREVENTED_P,
@@ -37,7 +37,7 @@ import {
 import { type World, chunkIndex, chunkCoords, type ChunkIndex } from './world.ts';
 import type { AirportInfo, PortInfo } from '@globalcity/shared';
 import type { Players, PlayerRecord } from './players.ts';
-import { unlockedOf, refreshMilestoneStats, applyMonthlyNet } from './players.ts';
+import { unlockedOf, refreshMilestoneStats, applyMonthlyNet, taxRateOf, emptyYearBook } from './players.ts';
 import { ShippingPlanner } from './shipping.ts';
 import { zoneKind, isPlantCenter, countHouses, plopZone, findZoneCenter, isBuildingTile, clearFootprint } from './zones.ts';
 import { fixZone, waterNear, SEAPORT_WATER_RANGE } from './tools.ts';
@@ -123,7 +123,9 @@ interface TradeBook {
 
 interface CityCounters {
   R: number; C: number; I: number; zones: number; rci: number; plants: number; supply: number; demand: number;
-  stations: number; upkeep: number; resZones: number; civic: number;
+  stations: number; resZones: number; civic: number;
+  /** yearly upkeep of what stands, by budget line */
+  upkeep: { roads: number; rail: number; power: number; services: number };
   police: number; stadium: number; seaport: number; airport: number; roads: number;
   /** milestone buildings standing (powered or not), and powered city halls */
   /** milestone buildings standing by id (powered or not), and powered city halls */
@@ -668,6 +670,8 @@ export class Sim {
         if (whole !== 0) {
           const settled = applyMonthlyNet(p, whole);
           p.yearIncome += settled.net;
+          const book = (p.yearBook ??= emptyYearBook());
+          book.power += whole; book.repaid += settled.repaid;
           if (settled.cleared) this.toasts.push({ playerId: p.id, kind: 'success', msg: 'Lifeline repaid in full. Well done, mayor!' });
         }
         p.stats.powerTradeNet = Math.round(net);
@@ -785,7 +789,7 @@ export class Sim {
   private cityStep(p: PlayerRecord, power: PowerScan, newYear: boolean): void {
     const tiles = this.world.tiles;
     const c: CityCounters = {
-      R: 0, C: 0, I: 0, zones: 0, rci: 0, plants: 0, supply: 0, demand: 0, stations: 0, upkeep: 0, resZones: 0, civic: 0,
+      R: 0, C: 0, I: 0, zones: 0, rci: 0, plants: 0, supply: 0, demand: 0, stations: 0, upkeep: { roads: 0, rail: 0, power: 0, services: 0 }, resZones: 0, civic: 0,
       police: 0, stadium: 0, seaport: 0, airport: 0, roads: 0, built: zeroBuilt(), hall: 0, university: 0,
     };
     const demand = p.stats.demand;
@@ -798,22 +802,22 @@ export class Sim {
       const v = tiles[i];
       if ((v & ZONEBIT) === 0) {
         // yearly upkeep for infrastructure (roads, rail); charged monthly below
-        if (isRoad(v)) { c.upkeep += UPKEEP_ROAD; c.roads++; }
-        else if (isRail(v)) c.upkeep += UPKEEP_RAIL;
+        if (isRoad(v)) { c.upkeep.roads += UPKEEP_ROAD; c.roads++; }
+        else if (isRail(v)) c.upkeep.rail += UPKEEP_RAIL;
         return;
       }
       const kind = zoneKind(v);
       const powered = (v & PWRBIT) !== 0;
-      if (kind === 'coal') { c.plants++; c.supply += COAL_POWER; c.upkeep += UPKEEP_COAL; this.animateCoal(x, y, powered); return; }
-      if (kind === 'nuclear') { c.plants++; c.supply += NUCLEAR_POWER; c.upkeep += UPKEEP_NUCLEAR; this.animateNuclear(x, y, powered); return; }
-      if (kind === 'wind') { c.plants++; c.supply += WIND_POWER; c.upkeep += UPKEEP_WIND; c.built.windfarm = (c.built.windfarm ?? 0) + 1; return; }
-      if (kind === 'offshore') { c.plants++; c.supply += OFFSHORE_POWER; c.upkeep += UPKEEP_OFFSHORE; c.built.offshore = (c.built.offshore ?? 0) + 1; return; }
+      if (kind === 'coal') { c.plants++; c.supply += COAL_POWER; c.upkeep.power += UPKEEP_COAL; this.animateCoal(x, y, powered); return; }
+      if (kind === 'nuclear') { c.plants++; c.supply += NUCLEAR_POWER; c.upkeep.power += UPKEEP_NUCLEAR; this.animateNuclear(x, y, powered); return; }
+      if (kind === 'wind') { c.plants++; c.supply += WIND_POWER; c.upkeep.power += UPKEEP_WIND; c.built.windfarm = (c.built.windfarm ?? 0) + 1; return; }
+      if (kind === 'offshore') { c.plants++; c.supply += OFFSHORE_POWER; c.upkeep.power += UPKEEP_OFFSHORE; c.built.offshore = (c.built.offshore ?? 0) + 1; return; }
       c.zones++;
       if (power.grid.has(i)) c.demand++;
       if (kind === 'other') {
         const id = v & LOMASK;
         if (id === HOSPITAL || id === CHURCH) c.civic++;
-        if (id === FIRESTATION || id === POLICESTATION) c.upkeep += UPKEEP_STATION;
+        if (id === FIRESTATION || id === POLICESTATION) c.upkeep.services += UPKEEP_STATION;
         if (id === FIRESTATION && powered) { c.stations++; this.stations.push(i); }
         if (id === POLICESTATION && powered) {
           c.police++; this.nextPolice.push(i);
@@ -821,13 +825,13 @@ export class Sim {
         }
         const mb = id === CUSTOMCENTRE ? this.world.buildings.at(x, y)?.kind : milestoneForCentre(id);
         if (mb && mb in c.built) c.built[mb]++;
-        if (mb === 'university') { c.upkeep += UPKEEP_UNIVERSITY; if (powered) { c.university++; this.nextUniversities.push(i); this.nextUniCities.add(p.id); } }
-        if (mb === 'grandcentral') { c.upkeep += UPKEEP_GRANDCENTRAL; if (powered) { this.nextGrandCentrals.push(i); this.nextGcCities.add(p.id); } }
-        if (id === SCHOOL) { c.upkeep += UPKEEP_SCHOOL; if (powered) this.nextSchools.push(i); }
+        if (mb === 'university') { c.upkeep.services += UPKEEP_UNIVERSITY; if (powered) { c.university++; this.nextUniversities.push(i); this.nextUniCities.add(p.id); } }
+        if (mb === 'grandcentral') { c.upkeep.services += UPKEEP_GRANDCENTRAL; if (powered) { this.nextGrandCentrals.push(i); this.nextGcCities.add(p.id); } }
+        if (id === SCHOOL) { c.upkeep.services += UPKEEP_SCHOOL; if (powered) this.nextSchools.push(i); }
         if (id === STADIUM || id === FULLSTADIUM) { if (powered) c.stadium++; this.animateStadium(x, y, v); }
         else if (id === PORT) { if (powered && waterNear(this.world, x - 1, y - 1, 4, SEAPORT_WATER_RANGE)) { c.seaport++; this.seaportsNext.push({ x, y, ownerId: p.id }); } }
         else if (id === AIRPORT) { if (powered) { c.airport++; this.airportsNext.push({ x, y, ownerId: p.id }); } this.animateAirport(x, y, powered); }
-        else if (id === CITYHALL) { c.upkeep += UPKEEP_CITYHALL; if (powered) c.hall++; }
+        else if (id === CITYHALL) { c.upkeep.services += UPKEEP_CITYHALL; if (powered) c.hall++; }
         return;
       }
       c.rci++;
@@ -852,6 +856,9 @@ export class Sim {
     if (c.C < 4 && c.R > 0) cd = Math.max(cd, 0.2);
     let id = clamp((c.R / 8 - c.I * 2 + 4) / 16, -1, 1);
     if (c.I < 6) id = Math.max(id, 0.3);
+    // The tax rate (Micropolis tax table): 7% is neutral, cheaper attracts, dearer repels, all three alike.
+    const taxRate = taxRateOf(p), tax = taxDemand(taxRate);
+    r += tax; cd += tax; id += tax;
     // Neighbours' jobs and shoppers, and rail links (commercial, half of it residential).
     // Special buildings (powered; one of each counts): a stadium draws residents, a seaport near water
     // attracts industry, an airport attracts commerce.
@@ -870,19 +877,30 @@ export class Sim {
 
     // 4. Budget: monthly share of yearly taxes minus yearly upkeep, through a fractional accumulator.
     //    (Only running cities get here: a city whose mayor is away is frozen, see tick().)
-    const budgetScale = 1;
-    const taxes = ((c.R + jobs) * TAX_RATE / 12) * TAX_MULT * (c.hall > 0 ? 1 + CITYHALL_TAX_BONUS : 1);
-    p.incomeAcc += (taxes - c.upkeep / 12) * budgetScale;
+    const yearlyTaxes = (c.R + jobs) * taxRate * TAX_MULT * (c.hall > 0 ? 1 + CITYHALL_TAX_BONUS : 1);
+    const yearlyUpkeep = c.upkeep.roads + c.upkeep.rail + c.upkeep.power + c.upkeep.services;
+    const book = (p.yearBook ??= emptyYearBook());
+    book.taxes += yearlyTaxes / 12;
+    book.upkeep += yearlyUpkeep / 12;
+    p.incomeAcc += (yearlyTaxes - yearlyUpkeep) / 12;
     const delta = p.incomeAcc >= 0 ? Math.floor(p.incomeAcc) : -Math.floor(-p.incomeAcc);
     if (delta !== 0) {
       p.incomeAcc -= delta;
-      const { net, cleared } = applyMonthlyNet(p, delta); // repays any lifeline from surplus months
+      const { net, repaid, cleared } = applyMonthlyNet(p, delta); // repays any lifeline from surplus months
       if (cleared) this.toasts.push({ playerId: p.id, kind: 'success', msg: 'Lifeline repaid in full. Well done, mayor!' });
       p.yearIncome += net;
+      book.repaid += repaid;
     }
     if (newYear) {
       p.stats.lastIncome = p.yearIncome;
       p.yearIncome = 0;
+      p.stats.budget = {
+        ...p.stats.budget!,
+        // net from the rounded lines so the table adds up (the sidebar's "last year" is the exact funds change, which may differ by $1)
+        lastYear: { taxes: Math.round(book.taxes), upkeep: Math.round(book.upkeep), power: Math.round(book.power), repaid: Math.round(book.repaid),
+          net: Math.round(book.taxes) - Math.round(book.upkeep) + Math.round(book.power) - Math.round(book.repaid) },
+      };
+      p.yearBook = emptyYearBook();
     }
 
     // 5. Stats.
@@ -894,6 +912,12 @@ export class Sim {
     s.powerDemand = c.demand;
     s.demand = newDemand;
     s.chunks = p.chunks.length;
+    s.taxRate = taxRate;
+    s.budget = {
+      taxes: Math.round(yearlyTaxes),
+      upkeep: { roads: c.upkeep.roads, rail: c.upkeep.rail, power: c.upkeep.power, services: c.upkeep.services },
+      lastYear: s.budget?.lastYear ?? { taxes: 0, upkeep: 0, power: 0, repaid: 0, net: 0 },
+    };
     s.fireStations = c.stations;
     s.policeStations = c.police;
     s.specials = { stadium: c.stadium, seaport: c.seaport, airport: connected ? c.airport : 0 };

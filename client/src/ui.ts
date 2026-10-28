@@ -1,7 +1,7 @@
 // DOM overlay: top bar, toolbar, RCI, toasts, query popover, welcome/about panels, minimap widget.
 import type { ClaimInfo, Demand, LeaderboardEntry, MonumentEntry, QueryInfo, ToolId } from '@globalcity/shared';
 import { OVERLAY_INFO, OVERLAY_MODES, type OverlayMode } from './overlays.ts';
-import { MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, STARTING_FUNDS, LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, LIFELINE_REPAY_SHARE, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT, LOMASK, FIRESTBASE, POLICESTBASE, chunkKey, shipCargo, flightLoad } from '@globalcity/shared';
+import { TAX_RATE, TAX_RATE_MIN, TAX_RATE_MAX, TAX_MULT, CITYHALL_TAX_BONUS, taxDemand, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, STARTING_FUNDS, LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, LIFELINE_REPAY_SHARE, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT, LOMASK, FIRESTBASE, POLICESTBASE, chunkKey, shipCargo, flightLoad } from '@globalcity/shared';
 import { CHUNK, claimCost, MILESTONE_BUILDINGS, MILESTONE_ORDER, isMilestoneTool, nextMilestone, type MilestoneBuilding, MAX_CHUNKS_PER_PLAYER, POWER_PRICE_PER_UNIT, TOOLS, TOOL_ORDER, PLANT_OUTPUT, CUSTOM_BUILDINGS, GRAND_CENTRAL, WORLD_H, WORLD_W, chunkOf, lonLatToTile } from '@globalcity/shared';
 import type { Actions } from './actions.ts';
 import type { Minimap, SpriteSheet } from './assets.ts';
@@ -113,6 +113,9 @@ export class UI {
   private lifelineBtn!: HTMLButtonElement; private lifelinePanel!: HTMLElement;
   private monumentBtn!: HTMLButtonElement; private monumentPanel!: HTMLElement; private monumentCity!: HTMLElement;
   private abandonBtn!: HTMLButtonElement; private abandonPanel!: HTMLElement; private abandonCity!: HTMLElement;
+  private budgetBtn!: HTMLButtonElement; private budgetPanel!: HTMLElement; private taxSlider!: HTMLInputElement; private taxLabel!: HTMLElement; private taxEffect!: HTMLElement; private budgetTable!: HTMLElement;
+  /** slider position while the mayor is dragging it (not yet confirmed by the server), else null */
+  private taxPending: number | null = null;
   private milestones!: HTMLElement; private msRows!: HTMLElement; private msBtn!: HTMLButtonElement;
   private leaderboard!: HTMLElement; private lbRows!: HTMLElement; private lbMe!: HTMLElement; private lbBtn!: HTMLButtonElement;
   /** the Top cities panel has two pages: the ranking and the monuments */
@@ -149,6 +152,7 @@ export class UI {
     this.buildLifeline();
     this.buildMonument();
     this.buildAbandon();
+    this.buildBudget();
     this.buildMinimap();
     this.root.append(this.toasts, this.query, this.touchBar, this.banners);
     this.bind();
@@ -181,6 +185,8 @@ export class UI {
     this.worldBtn.onclick = () => this.renderer.showWorld();
     this.msBtn = el('button', { class: 'btn', id: 'msBtn', title: 'Milestones: special buildings your city unlocks as it grows' }, '🏛 Milestones');
     this.msBtn.onclick = () => this.toggleMilestones();
+    this.budgetBtn = el('button', { class: 'btn hidden', id: 'budgetBtn', title: 'Budget: set the tax rate, see what your city earns and pays' }, '💰 Budget');
+    this.budgetBtn.onclick = () => this.toggleBudget();
     this.lbBtn = el('button', { class: 'btn', id: 'lbBtn', title: 'Leaderboard: the most populous cities on the planet' }, '🏆 Top cities');
     this.lbBtn.onclick = () => this.toggleLeaderboard();
     this.lifelineBtn = el('button', { class: 'btn lifeline hidden', id: 'lifelineBtn', title: 'Your city is nearly broke: an emergency loan is available' }, '🛟 Lifeline');
@@ -205,7 +211,7 @@ export class UI {
       el('div', { class: 'stat', title: 'Players online' }, el('span', { class: 'ico' }, '●'), this.online),
       el('div', { class: 'stat world-pop', title: 'World population: every city on the planet combined' }, el('span', { class: 'ico' }, '🌍'), this.worldPop),
       this.plotsStat,
-      this.claimBtn, this.findBtn, this.cityBtn, this.worldBtn, this.msBtn, this.lbBtn, this.lifelineBtn, this.abandonBtn, this.monumentBtn, this.fireBtn,
+      this.claimBtn, this.findBtn, this.cityBtn, this.worldBtn, this.msBtn, this.budgetBtn, this.lbBtn, this.lifelineBtn, this.abandonBtn, this.monumentBtn, this.fireBtn,
       el('div', { class: 'spacer' }),
       this.status, this.cityNameBtn, this.nameBtn, discordBtn, aboutBtn,
     );
@@ -357,7 +363,8 @@ export class UI {
     this.trafficText = el('div', { class: 'traffic hidden', id: 'traffic', title: TRAFFIC_HELP }, el('span', { text: '🚗 ' }), this.trafficWord, el('span', { class: 'meter' }, this.trafficFill));
     this.tradeText = el('div', { class: 'trade hidden', id: 'powerTrade', title: POWER_TRADE_HELP });
     this.neighbourText = el('div', { class: 'neighbours hidden', id: 'neighbours', title: NEIGHBOUR_HELP });
-    this.budgetText = el('div', { class: 'budget', id: 'budget', title: 'Net budget over the last game year: taxes on your population minus upkeep for roads, rail, stations and power plants. The economy idles while you are away.' });
+    this.budgetText = el('div', { class: 'budget', id: 'budget', title: 'Net budget over the last game year: taxes on your population minus upkeep for roads, rail, stations and power plants. Click for the budget screen.' });
+    this.budgetText.onclick = () => this.toggleBudget();
     const box = el('div', { id: 'rci', class: 'panel', title: 'Residential / Commercial / Industrial demand' },
       el('div', { class: 'rci-bars' }, r.wrap, c.wrap, i.wrap),
       el('div', { class: 'power-line' }, this.powerText),
@@ -510,6 +517,9 @@ export class UI {
     if (!s?.lifelineAvailable) this.lifelinePanel?.classList.add('hidden');
     this.budgetText.classList.toggle('bad', net < 0);
     this.budgetText.classList.toggle('hidden', !s);
+    this.budgetBtn.classList.toggle('hidden', this.state.ownedChunkCount() === 0);
+    if (this.state.ownedChunkCount() === 0) this.budgetPanel?.classList.add('hidden');
+    this.refreshBudget();
     const neighbours = s?.neighbours ?? 0, railLinks = s?.railLinks ?? 0;
     this.neighbourText.textContent = `🤝 ${neighbours} ${neighbours === 1 ? 'neighbour' : 'neighbours'} · 🚆 ${railLinks} ${railLinks === 1 ? 'rail link' : 'rail links'}`;
     this.neighbourText.classList.toggle('hidden', neighbours <= 0 && railLinks <= 0);
@@ -666,7 +676,7 @@ export class UI {
   }
   private toggleAbandon(): void {
     if (!this.abandonPanel.classList.contains('hidden')) { this.hide(this.abandonPanel); return; }
-    this.hide(this.milestones); this.hide(this.leaderboard); this.hide(this.about); this.hide(this.lifelinePanel); this.hide(this.monumentPanel);
+    this.hide(this.milestones); this.hide(this.leaderboard); this.hide(this.about); this.hide(this.lifelinePanel); this.hide(this.monumentPanel); this.hide(this.budgetPanel);
     const s = this.state.stats, city = this.state.cityName || 'Your city';
     this.abandonCity.textContent = `${city} has run out of money and still owes ${fmtMoney(s?.debt ?? 0)} on its lifeline. If it can't recover, you can leave it behind and found a new city.`;
     this.abandonPanel.classList.remove('hidden');
@@ -674,7 +684,7 @@ export class UI {
 
   private toggleMonument(): void {
     if (!this.monumentPanel.classList.contains('hidden')) { this.hide(this.monumentPanel); return; }
-    this.hide(this.milestones); this.hide(this.leaderboard); this.hide(this.about); this.hide(this.lifelinePanel);
+    this.hide(this.milestones); this.hide(this.leaderboard); this.hide(this.about); this.hide(this.lifelinePanel); this.hide(this.budgetPanel);
     const s = this.state.stats, city = this.state.cityName || 'Your city';
     this.monumentCity.textContent = `${city} has ${(s?.population ?? 0).toLocaleString('en-US')} people. You can retire it as a monument: a lasting record of what you built, while you start a new city somewhere else.`;
     this.monumentPanel.classList.remove('hidden');
@@ -682,7 +692,7 @@ export class UI {
 
   private toggleLifeline(): void {
     if (!this.lifelinePanel.classList.contains('hidden')) { this.hide(this.lifelinePanel); return; }
-    this.hide(this.milestones); this.hide(this.leaderboard); this.hide(this.about);
+    this.hide(this.milestones); this.hide(this.leaderboard); this.hide(this.about); this.hide(this.budgetPanel);
     this.lifelinePanel.classList.remove('hidden');
   }
 
@@ -752,6 +762,88 @@ export class UI {
     this.renderer.invalidate();
   }
 
+  // ---------- budget ----------
+  private buildBudget(): void {
+    const close = el('button', { class: 'btn ghost round close', title: 'Close' }, '×');
+    close.onclick = () => this.hide(this.budgetPanel);
+    this.taxSlider = el('input', { type: 'range', id: 'taxSlider', min: String(TAX_RATE_MIN), max: String(TAX_RATE_MAX), step: '1', value: String(TAX_RATE) });
+    this.taxSlider.oninput = () => { this.taxPending = Number(this.taxSlider.value); this.refreshBudget(); };
+    this.taxSlider.onchange = () => {
+      const rate = Number(this.taxSlider.value);
+      if (rate !== (this.state.stats?.taxRate ?? TAX_RATE)) this.actions.setTaxRate(rate); else this.taxPending = null;
+      this.refreshBudget();
+    };
+    this.taxLabel = el('span', { class: 'tax-val' });
+    this.taxEffect = el('div', { class: 'tax-effect muted' });
+    this.budgetTable = el('table', { class: 'budget-table' });
+    this.budgetPanel = el('div', { id: 'budgetPanel', class: 'panel card hidden' },
+      close,
+      el('h2', { text: '💰 Budget' }),
+      el('div', { class: 'tax-row' }, el('label', { for: 'taxSlider', text: 'Tax rate' }), this.taxSlider, this.taxLabel),
+      this.taxEffect,
+      this.budgetTable,
+      el('p', { class: 'muted small', text: `Taxes are collected every month on residents and jobs; ${TAX_RATE}% is neutral for demand, a lower rate attracts people and businesses, a higher one drives them away. Upkeep is charged monthly on everything standing. Nothing is earned or charged while you are away.` }),
+    );
+    this.root.append(this.budgetPanel);
+  }
+  toggleBudget(): void {
+    if (!this.budgetPanel.classList.contains('hidden')) { this.hide(this.budgetPanel); return; }
+    this.hide(this.about); this.hide(this.leaderboard); this.hide(this.milestones); this.hide(this.lifelinePanel); this.hide(this.monumentPanel); this.hide(this.abandonPanel);
+    this.taxPending = null;
+    this.budgetPanel.classList.remove('hidden');
+    this.refreshBudget();
+  }
+  /** Yearly tax income at a rate, from the same figures the server uses (for the slider preview). */
+  private taxesAt(rate: number): number {
+    const s = this.state.stats;
+    if (!s) return 0;
+    const jobs = ((s.comPop ?? 0) + (s.indPop ?? 0)) * 8;
+    return Math.round(((s.resPop ?? 0) + jobs) * rate * TAX_MULT * ((s.cityHall ?? 0) > 0 ? 1 + CITYHALL_TAX_BONUS : 1));
+  }
+  private refreshBudget(): void {
+    if (!this.budgetPanel || this.budgetPanel.classList.contains('hidden')) return;
+    const s = this.state.stats;
+    const serverRate = s?.taxRate ?? TAX_RATE;
+    if (this.taxPending !== null && this.taxPending === serverRate) this.taxPending = null; // the server caught up
+    const rate = this.taxPending ?? serverRate;
+    if (this.taxPending === null && document.activeElement !== this.taxSlider) this.taxSlider.value = String(serverRate);
+    this.taxLabel.textContent = `${rate}%`;
+    const d = taxDemand(rate);
+    this.taxEffect.textContent = d === 0 ? `Demand: neutral (the ${TAX_RATE}% default)` : `Demand: ${d > 0 ? '+' : '−'}${Math.abs(d).toFixed(2)} on R, C and I${d < 0 ? ' — people and businesses stay away' : ' — people and businesses move in'}`;
+    this.taxEffect.classList.toggle('bad', d < 0);
+    this.taxEffect.classList.toggle('good', d > 0);
+
+    const b = s?.budget ?? { taxes: 0, upkeep: { roads: 0, rail: 0, power: 0, services: 0 }, lastYear: { taxes: 0, upkeep: 0, power: 0, repaid: 0, net: 0 } };
+    const taxes = rate === serverRate ? b.taxes : this.taxesAt(rate);
+    const upkeep = b.upkeep.roads + b.upkeep.rail + b.upkeep.power + b.upkeep.services;
+    const power = (s?.powerTradeNet ?? 0) * 12; // last month's trade, as a yearly figure
+    const before = taxes - upkeep + power;
+    const debt = s?.debt ?? 0;
+    const repaid = debt > 0 ? Math.min(debt, Math.max(0, Math.round(before * LIFELINE_REPAY_SHARE))) : 0;
+    const net = before - repaid;
+    const ly = b.lastYear;
+    const money = (n: number, sign: 1 | -1 = 1): HTMLElement => {
+      const v = n * sign;
+      return el('td', { class: `num ${v < 0 ? 'bad' : v > 0 ? 'good' : 'muted'}`, text: n === 0 ? '—' : `${v < 0 ? '−' : '+'}${fmtMoney(Math.abs(v))}` });
+    };
+    const row = (cls: string, label: string, now: number, last: number | null, sign: 1 | -1 = 1): HTMLElement =>
+      el('tr', { class: cls }, el('td', { text: label }), money(now, sign), last === null ? el('td', { class: 'num muted', text: '' }) : money(last, sign));
+    const rows = [
+      el('tr', { class: 'head' }, el('th', { text: '' }), el('th', { text: `Per year, at ${rate}%` }), el('th', { text: 'Last year' })),
+      row('income', 'Taxes', taxes, ly.taxes),
+      row('sub', 'Upkeep', upkeep, ly.upkeep, -1),
+      row('detail', 'Roads', b.upkeep.roads, null, -1),
+      row('detail', 'Rail', b.upkeep.rail, null, -1),
+      row('detail', 'Power plants', b.upkeep.power, null, -1),
+      row('detail', 'Services', b.upkeep.services, null, -1),
+    ];
+    if (power !== 0 || ly.power !== 0) rows.push(row('income', 'Power trade', power, ly.power));
+    if (repaid !== 0 || ly.repaid !== 0 || debt > 0) rows.push(row('sub', 'Lifeline repayment', repaid, ly.repaid, -1));
+    rows.push(row('total', 'Net', net, ly.net));
+    this.budgetTable.replaceChildren(...rows);
+    this.budgetTable.title = 'Services: fire and police stations, schools, the university, city hall and Grand Central. Power trade: last month, as a yearly figure.';
+  }
+
   // ---------- milestones ----------
   private buildMilestones(): void {
     const close = el('button', { class: 'btn ghost round close', title: 'Close' }, '×');
@@ -767,7 +859,7 @@ export class UI {
   }
   toggleMilestones(): void {
     if (!this.milestones.classList.contains('hidden')) { this.hide(this.milestones); return; }
-    this.hide(this.about); this.hide(this.leaderboard);
+    this.hide(this.about); this.hide(this.leaderboard); this.hide(this.budgetPanel);
     this.milestones.classList.remove('hidden');
     this.refreshMilestones();
   }

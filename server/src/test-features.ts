@@ -6,7 +6,7 @@
 
 import WebSocket from 'ws';
 import {
-  DEFAULT_PORT, CHUNK, TICK_MS, LOMASK, FIRE, LASTFIRE, RUBBLE, LASTRUBBLE,
+  DEFAULT_PORT, CHUNK, TICK_MS, TAX_RATE, TAX_MULT, CITYHALL_TAX_BONUS, LOMASK, FIRE, LASTFIRE, RUBBLE, LASTRUBBLE,
   lonLatToTile, chunkOf, chunkKey, decodeChunk, isWater,
   type ClientMsg, type ServerMsg, type PlayerStats, type LeaderboardEntry,
 } from '@globalcity/shared';
@@ -239,6 +239,33 @@ async function main(): Promise<void> {
   if (!lb.me || lb.me.rank < 1 || lb.me.population <= 0) fail('me missing/wrong');
   for (let k = 1; k < lb.entries.length; k++) if (lb.entries[k - 1].population < lb.entries[k].population) fail('leaderboard not sorted');
   console.log('leaderboard OK');
+
+  // ---- (b2) tax rate and budget ----
+  console.log('tax rate...');
+  /** yearly taxes the server should report for a stats message (same formula as the sim) */
+  const expectTaxes = (st: NonNullable<typeof A.stats>): number =>
+    Math.round((st.resPop + (st.comPop + st.indPop) * 8) * (st.taxRate ?? -1) * TAX_MULT * (st.cityHall > 0 ? 1 + CITYHALL_TAX_BONUS : 1));
+  if ((A.stats?.taxRate ?? -1) !== TAX_RATE) fail(`A tax rate ${A.stats?.taxRate} != default ${TAX_RATE}`);
+  await waitFor(() => (A.stats?.budget?.taxes ?? 0) > 0, 'A has tax income at the default rate', ticks(4));
+  const bud = A.stats!.budget!;
+  console.log(`A at ${TAX_RATE}%: taxes $${bud.taxes}/yr, upkeep roads $${bud.upkeep.roads} rail $${bud.upkeep.rail} power $${bud.upkeep.power} services $${bud.upkeep.services}`);
+  if (bud.upkeep.power <= 0 || bud.upkeep.roads <= 0) fail('A built a plant and roads: expected power and road upkeep');
+  if (bud.taxes !== expectTaxes(A.stats!)) fail(`A taxes $${bud.taxes} != formula $${expectTaxes(A.stats!)}`);
+  A.send({ t: 'taxRate', rate: 25 }); // out of range: ignored
+  A.send({ t: 'taxRate', rate: 0 });
+  await waitFor(() => A.stats?.taxRate === 0 && A.stats.budget?.taxes === 0, 'A at 0%: no tax income', ticks(4));
+  const demandAt0 = A.stats!.demand;
+  A.send({ t: 'taxRate', rate: 20 });
+  await waitFor(() => A.stats?.taxRate === 20 && A.stats.budget !== undefined, 'A at 20%', ticks(4));
+  await sleep(ticks(12)); // demand eases towards its target over a few months
+  if (A.stats!.budget!.taxes !== expectTaxes(A.stats!)) fail(`A taxes at 20% $${A.stats!.budget!.taxes} != formula $${expectTaxes(A.stats!)}`);
+  console.log(`A at 20%: taxes $${A.stats!.budget!.taxes}/yr (R ${A.stats!.resPop}, jobs ${(A.stats!.comPop + A.stats!.indPop) * 8})`);
+  const demandAt20 = A.stats!.demand;
+  console.log(`demand at 0%: R ${demandAt0.r} C ${demandAt0.c} I ${demandAt0.i}; at 20%: R ${demandAt20.r} C ${demandAt20.c} I ${demandAt20.i}`);
+  if (!(demandAt20.r < demandAt0.r && demandAt20.c < demandAt0.c && demandAt20.i < demandAt0.i)) fail('20% tax should lower R, C and I demand below the 0% figures');
+  A.send({ t: 'taxRate', rate: TAX_RATE });
+  await waitFor(() => A.stats?.taxRate === TAX_RATE, 'A back at the default rate', ticks(4));
+  console.log('tax rate OK');
 
   // ---- (c) fire ----
   const fx = BX + 6, fy = Y + 1; // centre of B's middle residential zone

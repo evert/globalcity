@@ -23,7 +23,23 @@ export function claimCost(owned: number): number {
 }
 export const MIN_LAND_TILES_TO_CLAIM = 64;
 export const MAX_CHUNKS_PER_PLAYER = 10; // a city is at most this many plots // a chunk needs at least this much land to be claimable
-export const TAX_RATE = 7; // percent, SimCity classic default
+export const TAX_RATE = 7; // percent, SimCity classic default (a new city's rate)
+export const TAX_RATE_MIN = 0;
+export const TAX_RATE_MAX = 20;
+/**
+ * Micropolis's tax table (setValves): how much the tax rate pushes R/C/I demand, per percent 0..20.
+ * 7% is neutral; lower rates attract people, higher rates drive them away. Micropolis adds the table
+ * value to ratios that run -2000..2000 and integrates them into the valves, so a sustained high rate
+ * sinks demand to the floor. Our demand is a direct -1..1 figure, so the table is scaled by
+ * TAX_DEMAND_SCALE: 0% gives +0.2, 10% -0.07, 15% -0.3 and 20% -0.6.
+ */
+export const TAX_DEMAND_TABLE = [200, 150, 120, 100, 80, 50, 30, 0, -10, -40, -70, -100, -150, -200, -250, -300, -350, -400, -450, -500, -600] as const;
+export const TAX_DEMAND_SCALE = 1 / 1000;
+/** Demand added to each of R, C and I at a tax rate (percent, clamped to the table). */
+export function taxDemand(rate: number): number {
+  const r = Math.max(TAX_RATE_MIN, Math.min(TAX_RATE_MAX, Math.round(rate)));
+  return Math.round(TAX_DEMAND_TABLE[r] * TAX_DEMAND_SCALE * 1000) / 1000;
+}
 // Budget. The clock runs 24/7 (one game year every 24 real seconds), so income is scaled hard:
 // a mid-size city nets roughly $20-30k per real hour while its mayor is online.
 export const TAX_MULT = 0.1; // multiplier on the SimCity tax formula

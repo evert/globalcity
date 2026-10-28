@@ -17,10 +17,10 @@ import {
   encodeChunk, inWorld, clamp,
   type ClientMsg, type ServerMsg, type ToolId, type Presence,
   overviewByte, OVERVIEW_CHUNK_BYTES, parseChunkKey,
-  LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, STARTING_FUNDS, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT,
+  TAX_RATE_MIN, TAX_RATE_MAX, LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, STARTING_FUNDS, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT,
 } from '@globalcity/shared';
 import { World, chunkIndex, chunkCoords, type ChunkIndex } from './world.ts';
-import { Players, NAMES_LOCKED_MSG, sanitizeName, sanitizeCityName, refreshMilestoneStats, refreshLifeline, type PlayerRecord } from './players.ts';
+import { Players, NAMES_LOCKED_MSG, sanitizeName, sanitizeCityName, refreshMilestoneStats, refreshLifeline, taxRateOf, type PlayerRecord } from './players.ts';
 import { Sim, type TickResult } from './sim.ts';
 import { applyBuild, queryTile } from './tools.ts';
 import { Leaderboard } from './leaderboard.ts';
@@ -369,6 +369,15 @@ export class Net {
         this.toast(client, `You are now ${name}`, 'success');
         break;
       }
+      case 'taxRate': {
+        if (p.chunks.length === 0) { this.toast(client, 'Claim a plot first', 'error'); break; }
+        const was = taxRateOf(p);
+        p.taxRate = msg.rate; p.stats.taxRate = msg.rate;
+        this.players.dirty = true;
+        if (msg.rate !== was) log(`${p.name} (${p.cityName}) set the tax rate to ${msg.rate}% (was ${was}%)`);
+        this.sendStatsIfChanged(client);
+        break;
+      }
       case 'lifeline': {
         refreshLifeline(p);
         if (!p.stats.lifelineAvailable) {
@@ -661,6 +670,7 @@ function parseClientMsg(raw: unknown): ClientMsg | null {
     }
     case 'leaderboard': return { t: 'leaderboard' };
     case 'lifeline': return { t: 'lifeline' };
+    case 'taxRate': return isInt(m.rate) && m.rate >= TAX_RATE_MIN && m.rate <= TAX_RATE_MAX ? { t: 'taxRate', rate: m.rate } : null;
     case 'monument': return { t: 'monument' };
     case 'abandon': return { t: 'abandon' };
     case 'ping': return { t: 'ping' };

@@ -53,6 +53,9 @@ export class Actions {
   /** Give up my broke city and start over (the server checks funds and the lifeline). */
   abandon(): boolean { return this.net.send({ t: 'abandon' }); }
 
+  /** Set my city's tax rate, percent (the server clamps and echoes it in the next stats). */
+  setTaxRate(rate: number): boolean { return this.net.send({ t: 'taxRate', rate: Math.round(rate) }); }
+
   rename(name: string): boolean {
     name = name.trim().slice(0, 24);
     if (!name) return false;
