@@ -1,7 +1,7 @@
 // DOM overlay: top bar, toolbar, RCI, toasts, query popover, welcome/about panels, minimap widget.
 import type { ClaimInfo, Demand, LeaderboardEntry, MonumentEntry, QueryInfo, ToolId } from '@globalcity/shared';
 import { OVERLAY_INFO, OVERLAY_MODES, type OverlayMode } from './overlays.ts';
-import { TAX_RATE, TAX_RATE_MIN, TAX_RATE_MAX, TAX_MULT, CITYHALL_TAX_BONUS, taxDemand, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, STARTING_FUNDS, LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, LIFELINE_REPAY_SHARE, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT, LOMASK, FIRESTBASE, POLICESTBASE, chunkKey, shipCargo, flightLoad } from '@globalcity/shared';
+import { TAX_RATE, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, STARTING_FUNDS, LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, LIFELINE_REPAY_SHARE, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT, LOMASK, FIRESTBASE, POLICESTBASE, chunkKey, shipCargo, flightLoad } from '@globalcity/shared';
 import { CHUNK, claimCost, MILESTONE_BUILDINGS, MILESTONE_ORDER, isMilestoneTool, nextMilestone, type MilestoneBuilding, MAX_CHUNKS_PER_PLAYER, POWER_PRICE_PER_UNIT, TOOLS, TOOL_ORDER, PLANT_OUTPUT, CUSTOM_BUILDINGS, GRAND_CENTRAL, WORLD_H, WORLD_W, chunkOf, lonLatToTile } from '@globalcity/shared';
 import type { Actions } from './actions.ts';
 import type { Minimap, SpriteSheet } from './assets.ts';
@@ -113,9 +113,7 @@ export class UI {
   private lifelineBtn!: HTMLButtonElement; private lifelinePanel!: HTMLElement;
   private monumentBtn!: HTMLButtonElement; private monumentPanel!: HTMLElement; private monumentCity!: HTMLElement;
   private abandonBtn!: HTMLButtonElement; private abandonPanel!: HTMLElement; private abandonCity!: HTMLElement;
-  private budgetBtn!: HTMLButtonElement; private budgetPanel!: HTMLElement; private taxSlider!: HTMLInputElement; private taxLabel!: HTMLElement; private taxEffect!: HTMLElement; private budgetTable!: HTMLElement;
-  /** slider position while the mayor is dragging it (not yet confirmed by the server), else null */
-  private taxPending: number | null = null;
+  private budgetBtn!: HTMLButtonElement; private budgetPanel!: HTMLElement; private budgetTable!: HTMLElement;
   private milestones!: HTMLElement; private msRows!: HTMLElement; private msBtn!: HTMLButtonElement;
   private leaderboard!: HTMLElement; private lbRows!: HTMLElement; private lbMe!: HTMLElement; private lbBtn!: HTMLButtonElement;
   /** the Top cities panel has two pages: the ranking and the monuments */
@@ -185,7 +183,7 @@ export class UI {
     this.worldBtn.onclick = () => this.renderer.showWorld();
     this.msBtn = el('button', { class: 'btn', id: 'msBtn', title: 'Milestones: special buildings your city unlocks as it grows' }, '🏛 Milestones');
     this.msBtn.onclick = () => this.toggleMilestones();
-    this.budgetBtn = el('button', { class: 'btn hidden', id: 'budgetBtn', title: 'Budget: set the tax rate, see what your city earns and pays' }, '💰 Budget');
+    this.budgetBtn = el('button', { class: 'btn hidden', id: 'budgetBtn', title: 'Budget: what your city earns and pays' }, '💰 Budget');
     this.budgetBtn.onclick = () => this.toggleBudget();
     this.lbBtn = el('button', { class: 'btn', id: 'lbBtn', title: 'Leaderboard: the most populous cities on the planet' }, '🏆 Top cities');
     this.lbBtn.onclick = () => this.toggleLeaderboard();
@@ -767,58 +765,28 @@ export class UI {
   private buildBudget(): void {
     const close = el('button', { class: 'btn ghost round close', title: 'Close' }, '×');
     close.onclick = () => this.hide(this.budgetPanel);
-    this.taxSlider = el('input', { type: 'range', id: 'taxSlider', min: String(TAX_RATE_MIN), max: String(TAX_RATE_MAX), step: '1', value: String(TAX_RATE) });
-    this.taxSlider.oninput = () => { this.taxPending = Number(this.taxSlider.value); this.refreshBudget(); };
-    this.taxSlider.onchange = () => {
-      const rate = Number(this.taxSlider.value);
-      if (rate !== (this.state.stats?.taxRate ?? TAX_RATE)) this.actions.setTaxRate(rate); else this.taxPending = null;
-      this.refreshBudget();
-    };
-    this.taxLabel = el('span', { class: 'tax-val' });
-    this.taxEffect = el('div', { class: 'tax-effect muted' });
     this.budgetTable = el('table', { class: 'budget-table' });
     this.budgetPanel = el('div', { id: 'budgetPanel', class: 'panel card hidden' },
       close,
       el('h2', { text: '💰 Budget' }),
-      el('div', { class: 'tax-row' }, el('label', { for: 'taxSlider', text: 'Tax rate' }), this.taxSlider, this.taxLabel),
-      this.taxEffect,
       this.budgetTable,
-      el('p', { class: 'muted small', text: `Taxes are collected every month on residents and jobs; ${TAX_RATE}% is neutral for demand, a lower rate attracts people and businesses, a higher one drives them away. Upkeep is charged monthly on everything standing. Nothing is earned or charged while you are away.` }),
+      el('p', { class: 'muted small', text: `Taxes (${TAX_RATE}%) are collected every month on residents and jobs. Upkeep is charged monthly on everything standing. Nothing is earned or charged while you are away.` }),
     );
     this.root.append(this.budgetPanel);
   }
   toggleBudget(): void {
     if (!this.budgetPanel.classList.contains('hidden')) { this.hide(this.budgetPanel); return; }
     this.hide(this.about); this.hide(this.leaderboard); this.hide(this.milestones); this.hide(this.lifelinePanel); this.hide(this.monumentPanel); this.hide(this.abandonPanel);
-    this.taxPending = null;
     this.budgetPanel.classList.remove('hidden');
     this.refreshBudget();
-  }
-  /** Yearly tax income at a rate, from the same figures the server uses (for the slider preview). */
-  private taxesAt(rate: number): number {
-    const s = this.state.stats;
-    if (!s) return 0;
-    const jobs = ((s.comPop ?? 0) + (s.indPop ?? 0)) * 8;
-    return Math.round(((s.resPop ?? 0) + jobs) * rate * TAX_MULT * ((s.cityHall ?? 0) > 0 ? 1 + CITYHALL_TAX_BONUS : 1));
   }
   private refreshBudget(): void {
     if (!this.budgetPanel || this.budgetPanel.classList.contains('hidden')) return;
     const s = this.state.stats;
-    const serverRate = s?.taxRate ?? TAX_RATE;
-    if (this.taxPending !== null && this.taxPending === serverRate) this.taxPending = null; // the server caught up
-    const rate = this.taxPending ?? serverRate;
-    if (this.taxPending === null && document.activeElement !== this.taxSlider) this.taxSlider.value = String(serverRate);
-    this.taxLabel.textContent = `${rate}%`;
-    const d = taxDemand(rate);
-    this.taxEffect.textContent = d === 0 ? `Demand: neutral (the ${TAX_RATE}% default)` : `Demand: ${d > 0 ? '+' : '−'}${Math.abs(d).toFixed(2)} on R, C and I${d < 0 ? ' — people and businesses stay away' : ' — people and businesses move in'}`;
-    this.taxEffect.classList.toggle('bad', d < 0);
-    this.taxEffect.classList.toggle('good', d > 0);
-
     const b = s?.budget ?? { taxes: 0, upkeep: { roads: 0, rail: 0, power: 0, services: 0 }, lastYear: { taxes: 0, upkeep: 0, power: 0, repaid: 0, net: 0 } };
-    const taxes = rate === serverRate ? b.taxes : this.taxesAt(rate);
     const upkeep = b.upkeep.roads + b.upkeep.rail + b.upkeep.power + b.upkeep.services;
     const power = (s?.powerTradeNet ?? 0) * 12; // last month's trade, as a yearly figure
-    const before = taxes - upkeep + power;
+    const before = b.taxes - upkeep + power;
     const debt = s?.debt ?? 0;
     const repaid = debt > 0 ? Math.min(debt, Math.max(0, Math.round(before * LIFELINE_REPAY_SHARE))) : 0;
     const net = before - repaid;
@@ -830,8 +798,8 @@ export class UI {
     const row = (cls: string, label: string, now: number, last: number | null, sign: 1 | -1 = 1): HTMLElement =>
       el('tr', { class: cls }, el('td', { text: label }), money(now, sign), last === null ? el('td', { class: 'num muted', text: '' }) : money(last, sign));
     const rows = [
-      el('tr', { class: 'head' }, el('th', { text: '' }), el('th', { text: `Per year, at ${rate}%` }), el('th', { text: 'Last year' })),
-      row('income', 'Taxes', taxes, ly.taxes),
+      el('tr', { class: 'head' }, el('th', { text: '' }), el('th', { text: 'Per year, now' }), el('th', { text: 'Last year' })),
+      row('income', 'Taxes', b.taxes, ly.taxes),
       row('sub', 'Upkeep', upkeep, ly.upkeep, -1),
       row('detail', 'Roads', b.upkeep.roads, null, -1),
       row('detail', 'Rail', b.upkeep.rail, null, -1),

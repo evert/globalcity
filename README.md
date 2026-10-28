@@ -73,10 +73,8 @@ tiles from coal/nuclear plants, R/C/I zones that need power and a nearby road to
 density levels mapped to the original building tiles, a simple land-value heuristic, an
 RCI demand model with an external market so new towns can start, and yearly taxes.
 
-The budget screen (💰 Budget) sets the tax rate, 0-20% like the original (7% is the default). Taxes
-on residents and jobs are collected monthly; the rate also moves demand through Micropolis's tax
-table, so a cheap city attracts people and businesses and an expensive one drives them away. The
-screen itemises yearly upkeep (roads, rail, power plants, services), power trade and lifeline
+The budget screen (💰 Budget) itemises yearly tax income (a flat `TAX_RATE` on residents and jobs,
+collected monthly), upkeep (roads, rail, power plants, services), power trade and lifeline
 repayments, next to what the last full game year actually brought in.
 
 Power grids cross city borders: wires connect to a neighbour's grid, and a city whose plants

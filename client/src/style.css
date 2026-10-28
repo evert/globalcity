@@ -260,13 +260,6 @@ a { color: var(--accent); }
 
 /* budget screen */
 #budgetPanel { width: min(480px, calc(100vw - 32px)); }
-#budgetPanel .tax-row { display: flex; align-items: center; gap: 10px; margin: 6px 0 2px; }
-#budgetPanel .tax-row label { flex: none; font-weight: 600; }
-#budgetPanel .tax-row input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
-#budgetPanel .tax-val { flex: none; width: 3.2em; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
-#budgetPanel .tax-effect { font-size: 12px; margin: 0 0 10px; min-height: 1.4em; }
-#budgetPanel .tax-effect.bad { color: var(--bad); }
-#budgetPanel .tax-effect.good { color: var(--good); }
 .budget-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; margin-bottom: 10px; }
 .budget-table th { text-align: right; font-weight: 600; color: var(--muted); font-size: 11px; padding: 2px 6px; border-bottom: 1px solid var(--panel-border); }
 .budget-table th:first-child { text-align: left; }

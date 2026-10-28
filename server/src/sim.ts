@@ -6,7 +6,7 @@
 // (coal/industrial smoke, stadium games, airport radar, nuclear swirl; the client cycles ANIMBIT tiles).
 
 import {
-  WORLD_W, WORLD_H, CHUNK, DEMAND_SMOOTHING, TAX_MULT, taxDemand, COAL_POWER, NUCLEAR_POWER, POWER_PRICE_PER_UNIT,
+  WORLD_W, WORLD_H, CHUNK, DEMAND_SMOOTHING, TAX_RATE, TAX_MULT, COAL_POWER, NUCLEAR_POWER, POWER_PRICE_PER_UNIT,
   UPKEEP_ROAD, UPKEEP_RAIL, UPKEEP_STATION, UPKEEP_COAL, UPKEEP_NUCLEAR, CITY_FREEZE_MS,
   POLICESTATION,
   FIRE_SPREAD_P, FIRE_BURNOUT_P, FIRE_BURNOUT_P_COVERED, FIRE_STATION_RANGE, FIRE_OUTBREAK_BASE_P, FIRE_OWNER_ONLINE_MS, FIRE_PREVENTED_P,
@@ -37,7 +37,7 @@ import {
 import { type World, chunkIndex, chunkCoords, type ChunkIndex } from './world.ts';
 import type { AirportInfo, PortInfo } from '@globalcity/shared';
 import type { Players, PlayerRecord } from './players.ts';
-import { unlockedOf, refreshMilestoneStats, applyMonthlyNet, taxRateOf, emptyYearBook } from './players.ts';
+import { unlockedOf, refreshMilestoneStats, applyMonthlyNet, emptyYearBook } from './players.ts';
 import { ShippingPlanner } from './shipping.ts';
 import { zoneKind, isPlantCenter, countHouses, plopZone, findZoneCenter, isBuildingTile, clearFootprint } from './zones.ts';
 import { fixZone, waterNear, SEAPORT_WATER_RANGE } from './tools.ts';
@@ -856,9 +856,6 @@ export class Sim {
     if (c.C < 4 && c.R > 0) cd = Math.max(cd, 0.2);
     let id = clamp((c.R / 8 - c.I * 2 + 4) / 16, -1, 1);
     if (c.I < 6) id = Math.max(id, 0.3);
-    // The tax rate (Micropolis tax table): 7% is neutral, cheaper attracts, dearer repels, all three alike.
-    const taxRate = taxRateOf(p), tax = taxDemand(taxRate);
-    r += tax; cd += tax; id += tax;
     // Neighbours' jobs and shoppers, and rail links (commercial, half of it residential).
     // Special buildings (powered; one of each counts): a stadium draws residents, a seaport near water
     // attracts industry, an airport attracts commerce.
@@ -877,7 +874,7 @@ export class Sim {
 
     // 4. Budget: monthly share of yearly taxes minus yearly upkeep, through a fractional accumulator.
     //    (Only running cities get here: a city whose mayor is away is frozen, see tick().)
-    const yearlyTaxes = (c.R + jobs) * taxRate * TAX_MULT * (c.hall > 0 ? 1 + CITYHALL_TAX_BONUS : 1);
+    const yearlyTaxes = (c.R + jobs) * TAX_RATE * TAX_MULT * (c.hall > 0 ? 1 + CITYHALL_TAX_BONUS : 1);
     const yearlyUpkeep = c.upkeep.roads + c.upkeep.rail + c.upkeep.power + c.upkeep.services;
     const book = (p.yearBook ??= emptyYearBook());
     book.taxes += yearlyTaxes / 12;
@@ -912,7 +909,6 @@ export class Sim {
     s.powerDemand = c.demand;
     s.demand = newDemand;
     s.chunks = p.chunks.length;
-    s.taxRate = taxRate;
     s.budget = {
       taxes: Math.round(yearlyTaxes),
       upkeep: { roads: c.upkeep.roads, rail: c.upkeep.rail, power: c.upkeep.power, services: c.upkeep.services },
