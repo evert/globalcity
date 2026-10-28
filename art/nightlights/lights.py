@@ -106,7 +106,10 @@ EDITS = {
     'PORT': [('none',), ('row', 17, 45, 38, 3)],
     'COAL': [('clear', 7, 0, 40, 43), ('clear', 7, 44, 40, 54)],
     'NUC': [('clear', 16, 0, 63, 46)],
-    'FIRE': [('pix', 3, 6, 12, 44, {TAN}, 0.6), ('pix', 10, 39, 42, 43, {TAN}, 0.6)],
+    # fire station: even windows on the red side wall (two columns), the annex's blue window, small windows on the
+    # lower front, and a lamp over each truck bay; the bay doors themselves stay dark (the old scatter lit their hatching)
+    'FIRE': [('none',), ('add', [(6, 11)]), ('add', [(x, y) for y in (16, 20, 24, 28, 32) for x in (5, 10)]),
+             ('pix', 40, 6, 42, 7, {BLUE}, 1), ('dots', 30, 40, 43, 41, {DGREY}), ('add', [(15, 37), (24, 37)])],
     'POL': [('none',), ('pix', 2, 10, 7, 10, {BLUE}, 1), ('pix', 2, 14, 7, 14, {BLUE}, 1), ('pix', 2, 18, 7, 18, {BLUE}, 1), ('pix', 2, 22, 7, 22, {BLUE}, 1),
             ('vwin', 11, 10, 13, 20, {BLACK}, 1), ('pix', 15, 12, 18, 12, {BLUE}, 1), ('pix', 15, 17, 18, 17, {BLUE}, 1), ('pix', 15, 22, 18, 22, {BLUE}, 1),
             ('row', 19, 37, 24, 3), ('row', 20, 35, 26, 3), ('row', 21, 39, 28, 3), ('dots', 17, 27, 40, 30, {BLACK}), ('dots', 6, 26, 16, 30, {BLACK})],
@@ -121,7 +124,7 @@ EDITS = {
             # the terminal is the ring at the bottom left: its window dots, outside and round the courtyard
             ('dots', 1, 60, 33, 92, {LGREY}), ('dots', 9, 65, 27, 82, {GREY})],
     'HOS': [('win', 8, 31, 34, 39, {DGREY}, 0.7)],
-    'CHU': [('none',), ('pix', 7, 9, 10, 33, {BLACK, GREY}, 1), ('win', 11, 34, 18, 38, {BLACK}, 1), ('win', 35, 34, 38, 38, {BLACK}, 1)],
+    'CHU': [('none',), ('pix', 7, 9, 10, 33, {BLACK, GREY}, 1)],  # the tall side windows only: nothing on the front
     'HALL': [('none',), ('dots', 14, 10, 50, 43, {BLACK}), ('dots', 13, 10, 22, 35, {GREY})],
     'SCH': [('none',)],
     'UNI': [('clear', 44, 6, 52, 19), ('clear', 36, 38, 44, 46)],
