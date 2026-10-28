@@ -36,6 +36,9 @@ class TestClient {
   claims = new Set<string>();
   leaderboards: { entries: LeaderboardEntry[]; me?: { rank: number; population: number } }[] = [];
   fireTilesSeen = 0;
+  month = -1;
+  /** funds and "last year" income as each new year starts (stats arrive after the tick's time message) */
+  newYears: { funds: number; lastIncome: number }[] = [];
 
   constructor(readonly name: string) { clients.push(this); }
 
@@ -55,7 +58,11 @@ class TestClient {
         const msg = JSON.parse(data.toString()) as ServerMsg;
         switch (msg.t) {
           case 'welcome': this.id = msg.player.id; this.stats = msg.stats; resolve(); break;
-          case 'stats': this.stats = msg.stats; break;
+          case 'stats':
+            this.stats = msg.stats;
+            if (this.month === 0) { this.newYears.push({ funds: msg.stats.funds, lastIncome: msg.stats.lastIncome }); this.month = -1; }
+            break;
+          case 'time': this.month = msg.time.month; break;
           case 'toast': this.toasts.push({ kind: msg.kind, msg: msg.msg, at: msg.at }); break;
           case 'freeSpot': this.freeSpot = msg; break;
           case 'claim': if (msg.claim.ownerId === this.id) this.claims.add(chunkKey(msg.claim.cx, msg.claim.cy)); break;
@@ -205,6 +212,12 @@ async function main(): Promise<void> {
   await waitFor(() => A.hasToast(/^info: Selling \d+ units of power to Importer-B/), 'A selling toast', ticks(2));
   const buyToasts = B.toasts.filter((t) => t.msg.startsWith('Buying')).length;
   if (buyToasts !== 1) fail(`expected exactly one Buying toast so far, got ${buyToasts}`);
+  // "last year" counts the power bought: over a whole year B builds nothing, so its funds move by exactly that much
+  const seen = B.newYears.length;
+  await waitFor(() => B.newYears.length >= seen + 2, 'two new years for B', ticks(26));
+  const [y0, y1] = B.newYears.slice(seen, seen + 2);
+  console.log(`B over a year: funds ${y0.funds} -> ${y1.funds}, last year ${y1.lastIncome}`);
+  if (y1.funds - y0.funds !== y1.lastIncome) fail(`B last year ${y1.lastIncome} != funds change ${y1.funds - y0.funds}`);
   console.log('power trade OK');
 
   // ---- (b) leaderboard ----

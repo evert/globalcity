@@ -656,7 +656,8 @@ export class Sim {
         if (want !== ((v & PWRBIT) !== 0)) this.world.set(x, y, v ^ PWRBIT);
       });
     }
-    // Settle money (fractional accumulator) and announce new trade relationships.
+    // Settle money (fractional accumulator) and announce new trade relationships. Power bought and sold
+    // counts towards the year's income like taxes do (and a profit helps repay a lifeline).
     for (const p of cities) {
       const net = book.net.get(p.id) ?? 0;
       if (net !== 0) {
@@ -664,7 +665,11 @@ export class Sim {
         const whole = Math.trunc(acc);
         acc -= whole;
         this.tradeAcc.set(p.id, acc);
-        p.funds += whole;
+        if (whole !== 0) {
+          const settled = applyMonthlyNet(p, whole);
+          p.yearIncome += settled.net;
+          if (settled.cleared) this.toasts.push({ playerId: p.id, kind: 'success', msg: 'Lifeline repaid in full. Well done, mayor!' });
+        }
         p.stats.powerTradeNet = Math.round(net);
       }
       const buy = sortedKey(book.buyFrom.get(p.id));
