@@ -935,8 +935,8 @@ export class UI {
         const city = this.state.cityName;
         if (city) {
           this.foundedToastShown = true;
-          const hint = this.cityNameBtn.offsetParent === null ? 'tap your city hall to rename it, once you have one' : 'click the name in the top bar to rename';
-          this.toast(`You founded ${city}! (${hint})`, 'success', 7000);
+          // (phones hide the top-bar name; renaming from the city hall stays an unadvertised extra)
+          this.toast(this.cityNameBtn.offsetParent === null ? `You founded ${city}!` : `You founded ${city}! (click the name in the top bar to rename)`, 'success', 7000);
         } else if (!this.welcome.classList.contains('hidden')) {
           this.toast('Plot claimed — happy building!', 'success');
         }
