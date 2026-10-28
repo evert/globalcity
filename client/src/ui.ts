@@ -205,7 +205,7 @@ export class UI {
     aboutBtn.onclick = () => this.toggle(this.about);
     const bar = el('div', { id: 'topbar' },
       el('div', { class: 'brand' }, 'GlobalCity'),
-      el('div', { class: 'stat', title: 'Funds' }, el('span', { class: 'ico' }, '$'), this.funds),
+      el('div', { class: 'stat', title: 'Funds' }, el('span', { class: 'ico' }, '💵'), this.funds),
       el('div', { class: 'stat', title: 'Population' }, el('span', { class: 'ico' }, '👥'), this.pop),
       el('div', { class: 'stat', title: 'Date' }, el('span', { class: 'ico' }, '📅'), this.date),
       el('div', { class: 'stat', title: 'Players online' }, el('span', { class: 'ico' }, '●'), this.online),
