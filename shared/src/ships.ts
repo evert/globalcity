@@ -65,7 +65,10 @@ export function activeVoyages(ports: readonly PortInfo[], routes: readonly SeaRo
     const kMax = Math.floor((now - phase) / period), kMin = Math.floor((now - longest - phase) / period);
     for (let k = kMin; k <= kMax; k++) {
       const depart = k * period + phase;
-      const o = opts[hash(keyOf(p), k) % opts.length];
+      // rendezvous hashing: the destination with the highest hash for this departure. A route appearing or
+      // vanishing only moves the departures that prefer it; every other ship stays on its course.
+      let o = opts[0], best = -1;
+      for (const c of opts) { const h = hash(`${keyOf(p)}>${keyOf(ports[c.to])}`, k); if (h > best) { best = h; o = c; } }
       const duration = Math.max(SHIP_MIN_S * 1000, (o.len / SHIP_SPEED) * 1000);
       const t = (now - depart) / duration;
       if (t < 0 || t >= 1) continue;

@@ -51,13 +51,20 @@ export class ShippingPlanner {
     this.rebuild();
   }
 
-  /** Run at most one port's search. */
-  step(): void {
-    const src = this.queue.shift();
-    if (!src) return;
+  /**
+   * Run queued port searches until `budgetMs` is spent (at least one). A search is a few ms, so a tick's
+   * budget clears most of the queue at once: every republish of the routes re-deals ships, so the fewer
+   * partial route lists the clients see, the less the ships jump about.
+   */
+  step(budgetMs = 40): void {
+    if (!this.queue.length) return;
     const t0 = performance.now();
-    const found = this.searchFrom(src);
-    log(`shipping: routes from ${src.x},${src.y}: ${found} new in ${(performance.now() - t0).toFixed(0)} ms`);
+    let searched = 0, found = 0;
+    while (this.queue.length && (searched === 0 || performance.now() - t0 < budgetMs)) {
+      found += this.searchFrom(this.queue.shift()!);
+      searched++;
+    }
+    log(`shipping: routes from ${searched} port(s): ${found} new in ${(performance.now() - t0).toFixed(0)} ms, ${this.queue.length} port(s) queued`);
     this.rebuild();
   }
 

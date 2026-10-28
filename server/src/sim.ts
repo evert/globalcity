@@ -254,6 +254,7 @@ export class Sim {
       }
     }
     this.shipping.setPorts(seed.sort((a, b) => a.y - b.y || a.x - b.x));
+    this.shipping.step(Infinity); // the whole route map at boot (a few ms per port, a second or two in all): no re-dealt ships after a restart
     this.airports.sort((a, b) => a.y - b.y || a.x - b.x);
   }
 
