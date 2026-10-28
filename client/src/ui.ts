@@ -244,7 +244,7 @@ export class UI {
         if (img?.complete) paint(); else img?.addEventListener('load', paint, { once: true });
       }
       const cost = t.cost ? priceLabel(id) : 'free';
-      const btn = el('button', { class: 'tool', 'data-tool': id, title: `${t.name} — ${cost} (${t.hotkey.toUpperCase()})`, 'aria-label': t.name },
+      const btn = el('button', { class: 'tool', 'data-tool': id, title: `${t.name} — ${cost} (${t.hotkey.toUpperCase()})${t.tradeoff ? `. ${t.tradeoff}` : ''}`, 'aria-label': t.name },
         icon,
         el('span', { class: 'key', text: t.hotkey.toUpperCase() }),
         el('span', { class: 'label', text: t.name }),
@@ -604,7 +604,7 @@ export class UI {
       if (cost) cost.textContent = !unlocked ? `🔒 ${fmtCompact(m.pop)} pop` : atMax ? 'Built' : priceLabel(id);
       btn.title = !unlocked ? `${m.name}: unlocks at ${m.pop.toLocaleString('en-US')} people. ${m.benefits.join('. ')}.`
         : atMax ? `${m.name}: your city already has one (one per city). It can be rebuilt if it is destroyed.`
-        : `${m.name} — ${priceLabel(id)} (${TOOLS[id].hotkey.toUpperCase()}). ${m.benefits.join('. ')}.`;
+        : `${m.name} — ${priceLabel(id)} (${TOOLS[id].hotkey.toUpperCase()}). ${TOOLS[id].tradeoff ?? `${m.benefits.join('. ')}.`}`;
     }
     this.layoutToolGroups();
   }

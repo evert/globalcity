@@ -18,6 +18,8 @@ export interface ToolDef {
   h?: number;
   /** custom-building layer kind (drawn as one image, see CUSTOM_BUILDINGS) */
   custom?: string;
+  /** one sentence on what you get and what it costs you, for the toolbar tooltip (power plants) */
+  tradeoff?: string;
   /** the footprint tile under the cursor (default (1,1), Micropolis' hot spot); Grand Central uses its rail row */
   hot?: { x: number; y: number };
   /** first tile id of the building footprint (row-major), for multi-tile tools */
@@ -89,6 +91,11 @@ export const WIND_POWER = 40; // a handful of turbines, not a whole farm: wind's
 export const OFFSHORE_POWER = 60; // bigger turbines than on land, dearer to build and keep, but it takes no land
 /** Zones each power plant tool supplies, for labels. */
 export const PLANT_OUTPUT: Partial<Record<ToolId, number>> = { coal: COAL_POWER, nuclear: NUCLEAR_POWER, windfarm: WIND_POWER, offshore: OFFSHORE_POWER };
+// The trade-off of each plant, one sentence each (toolbar tooltips).
+TOOLS.coal.tradeoff = `Cheap power for ${COAL_POWER} zones, but its smog drags down land value for a dozen tiles around.`;
+TOOLS.nuclear.tradeoff = `Clean power for ${NUCLEAR_POWER.toLocaleString('en-US')} zones, if you can find the $${TOOLS.nuclear.cost.toLocaleString('en-US')} up front.`;
+TOOLS.windfarm.tradeoff = `Clean and cheap to run, but a few turbines power only ${WIND_POWER} zones, so a wind-powered city needs to dedicate lots of land.`;
+TOOLS.offshore.tradeoff = `${OFFSHORE_POWER} zones of clean power on water you could not build on anyway, at over twice the price of turbines on land.`;
 
 // ---- Milestones ----
 // Special buildings unlock when the city's peak population reaches their threshold; unlocks are permanent.
