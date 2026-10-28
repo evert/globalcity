@@ -4,7 +4,8 @@ import crypto from 'node:crypto';
 import {
   STARTING_FUNDS, claimCost, CHUNKS_X, CHUNKS_Y, CHUNK, MAX_CHUNKS_PER_PLAYER,
   chunkKey, parseChunkKey, colorForId,
-  type PlayerStats, type PlayerPublic, type ClaimInfo, type GameTime, START_YEAR,
+  type PlayerStats, type PlayerPublic, type ClaimInfo, type GameTime, START_YEAR, type BudgetYear, BUDGET_YEARS_SENT,
+  type IncomeLine, type ExpenseLine, type MoneyLine, INCOME_LINES, EXPENSE_LINES, emptyBudgetYear,
   MILESTONE_BUILDINGS, milestoneUnlocksFor, nextMilestone,
   LIFELINE_MAX_FUNDS, LIFELINE_REPAY_SHARE, LIFELINE_AMOUNT, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT,
 } from '@globalcity/shared';
@@ -41,15 +42,62 @@ export interface PlayerRecord {
   lastSeen: number;
   /** city participates in the simulation (has built something; cleared when no zones/plants remain) */
   active: boolean;
-  /** fractional tax accumulator and running total for the current game year */
-  incomeAcc: number;
+  /** fraction of a dollar carried between ledger moves (funds only move in whole dollars) */
+  fundsCarry?: number;
+  /** operating result so far this game year, whole dollars actually moved (the sidebar's "last year") */
   yearIncome: number;
-  /** what the current game year has brought and cost so far (the budget screen's "last year" at new year) */
+  /** the current game year's money so far, by budget line (fractional; rounded into the stats) */
   yearBook?: YearBook;
+  /** completed years, oldest first, at most BUDGET_HISTORY years (for the budget screen and any future graphs) */
+  budgetHistory?: BudgetYear[];
 }
 
-export interface YearBook { taxes: number; upkeep: number; power: number; repaid: number }
-export const emptyYearBook = (): YearBook => ({ taxes: 0, upkeep: 0, power: 0, repaid: 0 });
+export type YearBook = Record<MoneyLine, number>;
+export const BUDGET_HISTORY = 100;
+export function emptyYearBook(): YearBook {
+  const { year: _y, ...lines } = emptyBudgetYear(0);
+  return lines;
+}
+/** The running year book, created on first use. */
+export const bookOf = (p: PlayerRecord): YearBook => (p.yearBook ??= emptyYearBook());
+export function roundedYear(book: YearBook, year: number): BudgetYear {
+  const y = emptyBudgetYear(year);
+  for (const k of [...INCOME_LINES, ...EXPENSE_LINES]) y[k] = Math.round(book[k]);
+  return y;
+}
+/** Close the game year `year` for a player: file it in the history and start a fresh book. */
+export function closeYear(p: PlayerRecord, year: number): void {
+  const h = (p.budgetHistory ??= []);
+  h.push(roundedYear(bookOf(p), year));
+  if (h.length > BUDGET_HISTORY) h.splice(0, h.length - BUDGET_HISTORY);
+  p.yearBook = emptyYearBook();
+}
+/** The stats' view of the budget: the year so far plus the last few completed years. */
+export function budgetStats(p: PlayerRecord, year: number): PlayerStats['budget'] {
+  return { current: roundedYear(bookOf(p), year), years: (p.budgetHistory ?? []).slice(-BUDGET_YEARS_SENT) };
+}
+
+/**
+ * The ledger: the only way money enters or leaves a city. Every caller names the budget line, so the
+ * books always add up. Amounts are >= 0 and may be fractional (monthly shares of yearly figures):
+ * funds move in whole dollars through a carried fraction. Funds never go below $0. Both return the
+ * whole dollars actually moved. The only things that set funds outright are a fresh start and the
+ * dev/test hook.
+ */
+export function earn(p: PlayerRecord, line: IncomeLine, amount: number): number { return move(p, line, amount); }
+export function spend(p: PlayerRecord, line: ExpenseLine, amount: number): number { return -move(p, line, -amount); }
+function move(p: PlayerRecord, line: MoneyLine, signed: number): number {
+  if (!(Math.abs(signed) > 0)) return 0; // nothing, or NaN
+  bookOf(p)[line] += Math.abs(signed);
+  const acc = (p.fundsCarry ?? 0) + signed;
+  const whole = Math.trunc(acc);
+  p.fundsCarry = acc - whole;
+  const before = p.funds;
+  p.funds = Math.max(0, p.funds + whole);
+  p.stats.funds = p.funds;
+  refreshLifeline(p);
+  return p.funds - before;
+}
 
 export interface StateFile {
   version: 1;
@@ -95,7 +143,7 @@ export function emptyStats(funds: number): PlayerStats {
     crime: 0, policeStations: 0, specials: { stadium: 0, seaport: 0, airport: 0 }, traffic: 0,
     peakPop: 0, nextMilestone: MILESTONE_BUILDINGS.cityhall.pop, unlocked: [], built: {}, cityHall: 0,
     debt: 0, lifelineAvailable: false,
-    budget: { taxes: 0, upkeep: { roads: 0, rail: 0, power: 0, services: 0 }, lastYear: { taxes: 0, upkeep: 0, power: 0, repaid: 0, net: 0 } },
+    budget: { current: emptyBudgetYear(START_YEAR), years: [] },
   };
 }
 
@@ -117,19 +165,18 @@ export function refreshMilestoneStats(p: PlayerRecord): void {
 }
 
 /**
- * Apply one month's net budget to a player. A lifeline is repaid from surplus months only: a share
- * (LIFELINE_REPAY_SHARE, at least $1) of the gain, until cleared; loss months leave the debt alone.
- * Funds never go below $0. Returns what was repaid and whether the debt was just cleared.
+ * A lifeline is repaid from surplus months only: a share (LIFELINE_REPAY_SHARE, at least $1) of the
+ * month's operating result, until cleared; loss months leave the debt alone.
  */
-export function applyMonthlyNet(p: PlayerRecord, delta: number): { net: number; repaid: number; cleared: boolean } {
-  let net = delta, repaid = 0, cleared = false;
-  if (net > 0 && (p.debt ?? 0) > 0) {
-    repaid = Math.min(p.debt!, Math.max(1, Math.ceil(net * LIFELINE_REPAY_SHARE)));
-    p.debt = p.debt! - repaid; net -= repaid;
-    if (p.debt <= 0) { p.debt = 0; cleared = true; }
-  }
-  p.funds = Math.max(0, p.funds + net);
-  return { net, repaid, cleared };
+export function repayLifeline(p: PlayerRecord, monthNet: number): { repaid: number; cleared: boolean } {
+  if (monthNet <= 0 || (p.debt ?? 0) <= 0) return { repaid: 0, cleared: false };
+  const repaid = Math.min(p.debt!, Math.max(1, Math.ceil(monthNet * LIFELINE_REPAY_SHARE)));
+  p.debt = p.debt! - repaid;
+  spend(p, 'repaid', repaid);
+  const cleared = p.debt <= 0;
+  if (cleared) p.debt = 0;
+  refreshLifeline(p);
+  return { repaid, cleared };
 }
 
 /** Lifeline status in stats: what is owed, and whether a new lifeline can be taken now. */
@@ -178,7 +225,6 @@ export class Players {
       createdAt: now,
       lastSeen: now,
       active: false,
-      incomeAcc: 0,
       yearIncome: 0,
     };
     this.players.set(id, p);
@@ -290,7 +336,7 @@ export class Players {
       cost = claimCost(p.chunks.length);
       if (p.funds < cost) return { ok: false, msg: `Not enough funds (plot #${p.chunks.length + 1} costs $${cost.toLocaleString('en-US')})` };
     }
-    p.funds -= cost;
+    if (cost > 0) spend(p, 'plots', cost);
     if (p.chunks.length === 0 && !p.cityName) p.cityName = this.defaultCityName(cx, cy, p);
     p.chunks.push(key);
     p.stats.chunks = p.chunks.length;
@@ -330,9 +376,10 @@ export class Players {
     p.announced = [];
     p.railLinked = false;
     p.active = false;
-    p.incomeAcc = 0;
+    p.fundsCarry = 0;
     p.yearIncome = 0;
     delete p.yearBook;
+    delete p.budgetHistory;
     p.stats = emptyStats(STARTING_FUNDS);
     this.dirty = true;
   }
@@ -366,7 +413,7 @@ export class Players {
     }
     p.chunks = [];
     p.active = false;
-    p.incomeAcc = 0;
+    p.fundsCarry = 0;
     p.yearIncome = 0;
     p.stats = emptyStats(p.funds);
     if (out.length > 0) this.claimsVersion++;
@@ -455,7 +502,7 @@ export class Players {
       stats.specials = { ...emptyStats(0).specials, ...(raw.stats?.specials ?? {}) };
       stats.unlocked = Array.isArray(raw.stats?.unlocked) ? raw.stats.unlocked : [];
       stats.built = { ...(raw.stats?.built ?? {}) };
-      if (!raw.stats?.budget) stats.budget = emptyStats(0).budget;
+      if (!raw.stats?.budget?.current) stats.budget = emptyStats(0).budget;
       const p: PlayerRecord = {
         ...raw,
         cityName: typeof legacy.cityName === 'string' ? legacy.cityName : '',
@@ -465,6 +512,8 @@ export class Players {
       };
       p.stats.funds = p.funds;
       p.stats.chunks = p.chunks.length;
+      if (p.yearBook && typeof p.yearBook.taxes !== 'number' || (p.yearBook as unknown as { upkeep?: unknown })?.upkeep !== undefined) delete p.yearBook; // older book shapes
+      if (!Array.isArray(p.budgetHistory)) delete p.budgetHistory;
       this.players.set(p.id, p);
       if (!p.cityName && p.chunks.length > 0) unnamed.push(p);
     }

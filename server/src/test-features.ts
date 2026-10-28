@@ -6,7 +6,7 @@
 
 import WebSocket from 'ws';
 import {
-  DEFAULT_PORT, CHUNK, TICK_MS, TAX_RATE, TAX_MULT, CITYHALL_TAX_BONUS, LOMASK, FIRE, LASTFIRE, RUBBLE, LASTRUBBLE,
+  DEFAULT_PORT, CHUNK, TICK_MS, budgetTotals, LOMASK, FIRE, LASTFIRE, RUBBLE, LASTRUBBLE,
   lonLatToTile, chunkOf, chunkKey, decodeChunk, isWater,
   type ClientMsg, type ServerMsg, type PlayerStats, type LeaderboardEntry,
 } from '@globalcity/shared';
@@ -242,14 +242,22 @@ async function main(): Promise<void> {
 
   // ---- (b2) budget ----
   console.log('budget...');
-  /** yearly taxes the server should report for a stats message (same formula as the sim) */
-  const expectTaxes = (st: NonNullable<typeof A.stats>): number =>
-    Math.round((st.resPop + (st.comPop + st.indPop) * 8) * TAX_RATE * TAX_MULT * (st.cityHall > 0 ? 1 + CITYHALL_TAX_BONUS : 1));
-  await waitFor(() => (A.stats?.budget?.taxes ?? 0) > 0, 'A has tax income', ticks(4));
-  const bud = A.stats!.budget!;
-  console.log(`A: taxes $${bud.taxes}/yr, upkeep roads $${bud.upkeep.roads} rail $${bud.upkeep.rail} power $${bud.upkeep.power} services $${bud.upkeep.services}`);
-  if (bud.upkeep.power <= 0 || bud.upkeep.roads <= 0) fail('A built a plant and roads: expected power and road upkeep');
-  if (bud.taxes !== expectTaxes(A.stats!)) fail(`A taxes $${bud.taxes} != formula $${expectTaxes(A.stats!)}`);
+  // The year so far fills in month by month; A has a plant and roads, so power and road upkeep show. Bulldozing a
+  // road tile ($1) is construction spending in the current year.
+  const fundsAtBudget = A.stats!.funds;
+  A.send({ t: 'build', tool: 'bulldozer', x: AX + 1, y: Y + 7 });
+  await waitFor(() => { const c = A.stats?.budget?.current; return !!c && c.taxes > 0 && c.power > 0 && c.roads > 0 && c.construction > 0; }, 'A has taxes, upkeep lines and construction this year', ticks(14));
+  const cur = A.stats!.budget!.current;
+  console.log(`A ${cur.year} so far: taxes $${cur.taxes}, upkeep roads $${cur.roads} rail $${cur.rail} power $${cur.power} services $${cur.services}, construction $${cur.construction} (funds ${fundsAtBudget} -> ${A.stats!.funds})`);
+  if (cur.construction !== 1) fail(`construction should be the $1 bulldoze, got $${cur.construction}`);
+  // A completed year lands in the history with the same lines, oldest first and never the current year.
+  const had = A.stats!.budget!.years.length;
+  await waitFor(() => (A.stats?.budget?.years.length ?? 0) > had, 'a year closed for A', ticks(14));
+  const ys = A.stats!.budget!.years, last = ys[ys.length - 1];
+  console.log(`A history: ${ys.map((y) => `${y.year}: taxes $${y.taxes} upkeep $${budgetTotals(y).upkeep} construction $${y.construction} net $${budgetTotals(y).net}`).join('; ')}`);
+  if (last.year !== A.stats!.budget!.current.year - 1) fail(`last closed year ${last.year} should be the year before ${A.stats!.budget!.current.year}`);
+  if (last.taxes <= 0 || last.power <= 0 || last.roads <= 0) fail('closed year is missing taxes or upkeep lines');
+  for (let k = 1; k < ys.length; k++) if (ys[k].year !== ys[k - 1].year + 1) fail('history years are not consecutive');
   console.log('budget OK');
 
   // ---- (c) fire ----

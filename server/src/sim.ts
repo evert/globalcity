@@ -37,7 +37,7 @@ import {
 import { type World, chunkIndex, chunkCoords, type ChunkIndex } from './world.ts';
 import type { AirportInfo, PortInfo } from '@globalcity/shared';
 import type { Players, PlayerRecord } from './players.ts';
-import { unlockedOf, refreshMilestoneStats, applyMonthlyNet, emptyYearBook } from './players.ts';
+import { unlockedOf, refreshMilestoneStats, earn, spend, repayLifeline, closeYear, budgetStats } from './players.ts';
 import { ShippingPlanner } from './shipping.ts';
 import { zoneKind, isPlantCenter, countHouses, plopZone, findZoneCenter, isBuildingTile, clearFootprint } from './zones.ts';
 import { fixZone, waterNear, SEAPORT_WATER_RANGE } from './tools.ts';
@@ -169,8 +169,8 @@ export class Sim {
   private readonly randomFires: boolean;
   private readonly queue = new Int32Array(POWER_FILL_CAP + 4);
   private readonly lastPop = new Map<string, number>();
-  /** fractional $ carried between ticks from power trading (like incomeAcc for taxes) */
-  private readonly tradeAcc = new Map<string, number>();
+  /** $ net from power trading this tick per city, booked by cityStep's monthly settlement */
+  private readonly tradeNet = new Map<string, number>();
   /** last announced trade partner sets (sorted ids joined), so toasts only fire on change */
   private readonly tradePartners = new Map<string, { buy: string; sell: string }>();
   /** chunks that contain at least one fire tile (kept small; fire processing only scans these) */
@@ -401,6 +401,11 @@ export class Sim {
       const p = this.players.players.get(id);
       if (p && p.chunks.length > 0) claimsChanged.push(...this.players.claimInfosOf(p));
     }
+    // New year: every city's books close (after this month's settlement, which the sidebar's "last year" also
+    // includes), running or not: construction is spent by frozen cities too.
+    if (newYear) for (const p of this.players.players.values()) if (p.yearBook || p.budgetHistory) closeYear(p, t.year - 1);
+    // The budget in the stats, for every unfrozen city with land (a city with only roads doesn't run cityStep yet).
+    for (const p of this.players.players.values()) if (p.chunks.length > 0 && !this.frozen.has(p.id)) p.stats.budget = budgetStats(p, t.year);
     this.lap('cities');
     this.trafficStep(cities);
     this.lap('traffic');
@@ -658,24 +663,12 @@ export class Sim {
         if (want !== ((v & PWRBIT) !== 0)) this.world.set(x, y, v ^ PWRBIT);
       });
     }
-    // Settle money (fractional accumulator) and announce new trade relationships. Power bought and sold
-    // counts towards the year's income like taxes do (and a profit helps repay a lifeline).
+    // Hand each city its net from power trading (cityStep books it with the month's taxes and upkeep) and
+    // announce new trade relationships.
     for (const p of cities) {
       const net = book.net.get(p.id) ?? 0;
-      if (net !== 0) {
-        let acc = (this.tradeAcc.get(p.id) ?? 0) + net;
-        const whole = Math.trunc(acc);
-        acc -= whole;
-        this.tradeAcc.set(p.id, acc);
-        if (whole !== 0) {
-          const settled = applyMonthlyNet(p, whole);
-          p.yearIncome += settled.net;
-          const book = (p.yearBook ??= emptyYearBook());
-          book.power += whole; book.repaid += settled.repaid;
-          if (settled.cleared) this.toasts.push({ playerId: p.id, kind: 'success', msg: 'Lifeline repaid in full. Well done, mayor!' });
-        }
-        p.stats.powerTradeNet = Math.round(net);
-      }
+      this.tradeNet.set(p.id, net);
+      if (net !== 0) p.stats.powerTradeNet = Math.round(net);
       const buy = sortedKey(book.buyFrom.get(p.id));
       const sell = sortedKey(book.sellTo.get(p.id));
       let prev = this.tradePartners.get(p.id);
@@ -872,32 +865,22 @@ export class Sim {
     const newDemand: Demand = fresh ? { r: round2(r), c: round2(cd), i: round2(id) }
       : { r: ease(was.r, r), c: ease(was.c, cd), i: ease(was.i, id) };
 
-    // 4. Budget: monthly share of yearly taxes minus yearly upkeep, through a fractional accumulator.
-    //    (Only running cities get here: a city whose mayor is away is frozen, see tick().)
+    // 4. Budget: this month's share of the yearly taxes and upkeep, and the power scan's trade, through the
+    //    ledger (one line each). A lifeline is repaid from a surplus month. (Only running cities get here:
+    //    a city whose mayor is away is frozen, see tick().)
     const yearlyTaxes = (c.R + jobs) * TAX_RATE * TAX_MULT * (c.hall > 0 ? 1 + CITYHALL_TAX_BONUS : 1);
     const yearlyUpkeep = c.upkeep.roads + c.upkeep.rail + c.upkeep.power + c.upkeep.services;
-    const book = (p.yearBook ??= emptyYearBook());
-    book.taxes += yearlyTaxes / 12;
-    book.upkeep += yearlyUpkeep / 12;
-    p.incomeAcc += (yearlyTaxes - yearlyUpkeep) / 12;
-    const delta = p.incomeAcc >= 0 ? Math.floor(p.incomeAcc) : -Math.floor(-p.incomeAcc);
-    if (delta !== 0) {
-      p.incomeAcc -= delta;
-      const { net, repaid, cleared } = applyMonthlyNet(p, delta); // repays any lifeline from surplus months
-      if (cleared) this.toasts.push({ playerId: p.id, kind: 'success', msg: 'Lifeline repaid in full. Well done, mayor!' });
-      p.yearIncome += net;
-      book.repaid += repaid;
-    }
+    const trade = this.tradeNet.get(p.id) ?? 0;
+    this.tradeNet.delete(p.id);
+    let moved = earn(p, 'taxes', yearlyTaxes / 12);
+    for (const k of ['roads', 'rail', 'power', 'services'] as const) moved -= spend(p, k, c.upkeep[k] / 12);
+    moved += trade > 0 ? earn(p, 'powerSold', trade) : trade < 0 ? -spend(p, 'powerBought', -trade) : 0;
+    const { repaid, cleared } = repayLifeline(p, (yearlyTaxes - yearlyUpkeep) / 12 + trade);
+    if (cleared) this.toasts.push({ playerId: p.id, kind: 'success', msg: 'Lifeline repaid in full. Well done, mayor!' });
+    p.yearIncome += moved - repaid;
     if (newYear) {
       p.stats.lastIncome = p.yearIncome;
       p.yearIncome = 0;
-      p.stats.budget = {
-        ...p.stats.budget!,
-        // net from the rounded lines so the table adds up (the sidebar's "last year" is the exact funds change, which may differ by $1)
-        lastYear: { taxes: Math.round(book.taxes), upkeep: Math.round(book.upkeep), power: Math.round(book.power), repaid: Math.round(book.repaid),
-          net: Math.round(book.taxes) - Math.round(book.upkeep) + Math.round(book.power) - Math.round(book.repaid) },
-      };
-      p.yearBook = emptyYearBook();
     }
 
     // 5. Stats.
@@ -909,11 +892,6 @@ export class Sim {
     s.powerDemand = c.demand;
     s.demand = newDemand;
     s.chunks = p.chunks.length;
-    s.budget = {
-      taxes: Math.round(yearlyTaxes),
-      upkeep: { roads: c.upkeep.roads, rail: c.upkeep.rail, power: c.upkeep.power, services: c.upkeep.services },
-      lastYear: s.budget?.lastYear ?? { taxes: 0, upkeep: 0, power: 0, repaid: 0, net: 0 },
-    };
     s.fireStations = c.stations;
     s.policeStations = c.police;
     s.specials = { stadium: c.stadium, seaport: c.seaport, airport: connected ? c.airport : 0 };

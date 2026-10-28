@@ -264,7 +264,7 @@ a { color: var(--accent); }
 #lifeline .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 
 /* budget screen */
-#budgetPanel { width: min(480px, calc(100vw - 32px)); }
+#budgetPanel { width: min(560px, calc(100vw - 32px)); }
 .budget-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; margin-bottom: 10px; }
 .budget-table th { text-align: right; font-weight: 600; color: var(--muted); font-size: 11px; padding: 2px 6px; border-bottom: 1px solid var(--panel-border); }
 .budget-table th:first-child { text-align: left; }
@@ -275,5 +275,6 @@ a { color: var(--accent); }
 .budget-table tr.detail td { color: var(--muted); font-size: 12px; padding-top: 1px; padding-bottom: 1px; }
 .budget-table tr.detail td:first-child { padding-left: 18px; }
 .budget-table tr.detail td.num { color: var(--muted); }
-.budget-table tr.total td { border-top: 1px solid var(--panel-border); font-weight: 700; padding-top: 5px; }
+.budget-table tr.total td, .budget-table tr.subtotal td { border-top: 1px solid var(--panel-border); font-weight: 700; padding-top: 5px; }
+.budget-table tr.subtotal td { font-weight: 600; }
 #budgetPanel .small { font-size: 12px; margin: 0; }

@@ -73,9 +73,11 @@ tiles from coal/nuclear plants, R/C/I zones that need power and a nearby road to
 density levels mapped to the original building tiles, a simple land-value heuristic, an
 RCI demand model with an external market so new towns can start, and yearly taxes.
 
-The budget screen (💰 Budget) itemises yearly tax income (a flat `TAX_RATE` on residents and jobs,
-collected monthly), upkeep (roads, rail, power plants, services), power trade and lifeline
-repayments, next to what the last full game year actually brought in.
+The budget screen (💰 Budget, or click your cash) shows the city's money per game year: tax income
+(a flat `TAX_RATE` on residents and jobs, collected monthly), upkeep by line (roads, rail, power
+plants, services), power trade, lifeline repayments and construction spending, for the year so far
+and the completed years before it. Every player's closed years are kept on their record
+(`budgetHistory`, up to 100), so a history view can be added later.
 
 Power grids cross city borders: wires connect to a neighbour's grid, and a city whose plants
 produce more than its zones need sells the surplus to connected cities that lack power, at

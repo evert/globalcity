@@ -20,7 +20,7 @@ import {
   LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, STARTING_FUNDS, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT,
 } from '@globalcity/shared';
 import { World, chunkIndex, chunkCoords, type ChunkIndex } from './world.ts';
-import { Players, NAMES_LOCKED_MSG, sanitizeName, sanitizeCityName, refreshMilestoneStats, refreshLifeline, type PlayerRecord } from './players.ts';
+import { Players, NAMES_LOCKED_MSG, sanitizeName, sanitizeCityName, refreshMilestoneStats, refreshLifeline, earn, type PlayerRecord } from './players.ts';
 import { Sim, type TickResult } from './sim.ts';
 import { applyBuild, queryTile } from './tools.ts';
 import { Leaderboard } from './leaderboard.ts';
@@ -139,8 +139,7 @@ export class Net {
       : all.filter((p) => p.name.toLowerCase() === who.name!.trim().toLowerCase());
     if (matches.length !== 1) return { ok: false, error: `expected exactly one player, found ${matches.length}` };
     const p = matches[0];
-    p.funds += amount; p.stats.funds = p.funds;
-    refreshLifeline(p);
+    earn(p, 'gifts', amount);
     this.players.dirty = true;
     for (const c of this.clients) {
       if (c.player !== p) continue;
@@ -321,7 +320,7 @@ export class Net {
     if (m.t === 'devFunds') {
       const p = client.player;
       if (p && isInt(m.amount) && m.amount > 0 && m.amount <= 100_000_000) {
-        p.funds += m.amount;
+        earn(p, 'gifts', m.amount);
         p.stats.funds = p.funds;
         this.players.dirty = true;
         this.sendStatsIfChanged(client);
@@ -378,7 +377,7 @@ export class Net {
             : p.chunks.length === 0 ? 'Claim a plot first' : `A lifeline is only for cities with less than $${LIFELINE_MAX_FUNDS.toLocaleString('en-US')}`, 'error');
           break;
         }
-        p.funds += LIFELINE_AMOUNT; p.stats.funds = p.funds; p.debt = (p.debt ?? 0) + LIFELINE_AMOUNT;
+        earn(p, 'lifeline', LIFELINE_AMOUNT); p.debt = (p.debt ?? 0) + LIFELINE_AMOUNT;
         refreshLifeline(p); this.players.dirty = true;
         log(`${p.name} (${p.cityName}) took a $${LIFELINE_AMOUNT} lifeline`);
         this.toast(client, `🛟 Lifeline: $${LIFELINE_AMOUNT.toLocaleString('en-US')} added. It is repaid from a quarter of each month's surplus.`, 'success');

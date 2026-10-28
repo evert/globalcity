@@ -72,14 +72,34 @@ export interface PlayerStats {
   budget?: Budget;
 }
 
-/** The budget screen: what the city earns and pays per game year. All $ per year, rounded. */
+/**
+ * The budget lines. Every dollar that enters or leaves a city is booked on one of these (the server's
+ * `earn` / `spend`), so a year's lines always add up to its funds change.
+ */
+export const INCOME_LINES = ['taxes', 'powerSold', 'lifeline', 'gifts'] as const;
+export const EXPENSE_LINES = ['roads', 'rail', 'power', 'services', 'powerBought', 'repaid', 'construction', 'plots'] as const;
+export type IncomeLine = (typeof INCOME_LINES)[number];
+export type ExpenseLine = (typeof EXPENSE_LINES)[number];
+export type MoneyLine = IncomeLine | ExpenseLine;
+/** One game year of a city's money: every line a positive $ figure (rounded). */
+export type BudgetYear = { year: number } & Record<MoneyLine, number>;
+export function emptyBudgetYear(year: number): BudgetYear {
+  const y = { year } as BudgetYear;
+  for (const k of [...INCOME_LINES, ...EXPENSE_LINES]) y[k] = 0;
+  return y;
+}
+/** The budget screen: the year so far and the completed years before it (oldest first, the most recent BUDGET_YEARS_SENT). */
 export interface Budget {
-  /** tax income at today's population (what a whole year at this size would bring) */
-  taxes: number;
-  /** yearly upkeep of what stands now */
-  upkeep: { roads: number; rail: number; power: number; services: number };
-  /** what the last full game year actually brought and cost (net = taxes - upkeep + power - repaid, the "last year" figure) */
-  lastYear: { taxes: number; upkeep: number; power: number; repaid: number; net: number };
+  current: BudgetYear;
+  years: BudgetYear[];
+}
+export const BUDGET_YEARS_SENT = 5;
+/** Totals of a budget year: upkeep, power trade (sold minus bought), the operating result and the net funds change. */
+export function budgetTotals(y: BudgetYear): { upkeep: number; trade: number; operating: number; net: number } {
+  const upkeep = y.roads + y.rail + y.power + y.services;
+  const trade = y.powerSold - y.powerBought;
+  const operating = y.taxes - upkeep + trade - y.repaid;
+  return { upkeep, trade, operating, net: operating - y.construction - y.plots + y.lifeline + y.gifts };
 }
 
 export interface LeaderboardEntry {

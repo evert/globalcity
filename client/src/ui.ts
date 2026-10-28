@@ -1,7 +1,7 @@
 // DOM overlay: top bar, toolbar, RCI, toasts, query popover, welcome/about panels, minimap widget.
-import type { ClaimInfo, Demand, LeaderboardEntry, MonumentEntry, QueryInfo, ToolId } from '@globalcity/shared';
+import type { BudgetYear, ClaimInfo, Demand, LeaderboardEntry, MonumentEntry, QueryInfo, ToolId } from '@globalcity/shared';
 import { OVERLAY_INFO, OVERLAY_MODES, type OverlayMode } from './overlays.ts';
-import { TAX_RATE, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, STARTING_FUNDS, LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, LIFELINE_REPAY_SHARE, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT, LOMASK, FIRESTBASE, POLICESTBASE, CITYHALLBASE, LASTCITYHALL, chunkKey, shipCargo, flightLoad } from '@globalcity/shared';
+import { TAX_RATE, budgetTotals, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, STARTING_FUNDS, LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, LIFELINE_REPAY_SHARE, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT, LOMASK, FIRESTBASE, POLICESTBASE, CITYHALLBASE, LASTCITYHALL, chunkKey, shipCargo, flightLoad } from '@globalcity/shared';
 import { CHUNK, claimCost, MILESTONE_BUILDINGS, MILESTONE_ORDER, isMilestoneTool, nextMilestone, type MilestoneBuilding, MAX_CHUNKS_PER_PLAYER, POWER_PRICE_PER_UNIT, TOOLS, TOOL_ORDER, PLANT_OUTPUT, CUSTOM_BUILDINGS, GRAND_CENTRAL, WORLD_H, WORLD_W, chunkOf, lonLatToTile } from '@globalcity/shared';
 import type { Actions } from './actions.ts';
 import type { Minimap, SpriteSheet } from './assets.ts';
@@ -785,34 +785,37 @@ export class UI {
   private refreshBudget(): void {
     if (!this.budgetPanel || this.budgetPanel.classList.contains('hidden')) return;
     const s = this.state.stats;
-    const b = s?.budget ?? { taxes: 0, upkeep: { roads: 0, rail: 0, power: 0, services: 0 }, lastYear: { taxes: 0, upkeep: 0, power: 0, repaid: 0, net: 0 } };
-    const upkeep = b.upkeep.roads + b.upkeep.rail + b.upkeep.power + b.upkeep.services;
-    const power = (s?.powerTradeNet ?? 0) * 12; // last month's trade, as a yearly figure
-    const before = b.taxes - upkeep + power;
-    const debt = s?.debt ?? 0;
-    const repaid = debt > 0 ? Math.min(debt, Math.max(0, Math.round(before * LIFELINE_REPAY_SHARE))) : 0;
-    const net = before - repaid;
-    const ly = b.lastYear;
+    const b = s?.budget;
+    if (!b) { this.budgetTable.replaceChildren(); return; }
+    // columns: the last completed years, then the year so far (3 on a desktop, 2 on a phone)
+    const past = window.matchMedia('(max-width: 760px)').matches ? 1 : 2;
+    const cols: { y: BudgetYear; head: string }[] = [...b.years.slice(-past).map((y) => ({ y, head: String(y.year) })), { y: b.current, head: `${b.current.year} so far` }];
     const money = (n: number, sign: 1 | -1 = 1): HTMLElement => {
       const v = n * sign;
       return el('td', { class: `num ${v < 0 ? 'bad' : v > 0 ? 'good' : 'muted'}`, text: n === 0 ? '—' : `${v < 0 ? '−' : '+'}${fmtMoney(Math.abs(v))}` });
     };
-    const row = (cls: string, label: string, now: number, last: number | null, sign: 1 | -1 = 1): HTMLElement =>
-      el('tr', { class: cls }, el('td', { text: label }), money(now, sign), last === null ? el('td', { class: 'num muted', text: '' }) : money(last, sign));
+    const row = (cls: string, label: string, get: (y: BudgetYear) => number, sign: 1 | -1 = 1): HTMLElement =>
+      el('tr', { class: cls }, el('td', { text: label }), ...cols.map((c) => money(get(c.y), sign)));
+    const any = (get: (y: BudgetYear) => number): boolean => cols.some((c) => get(c.y) !== 0);
     const rows = [
-      el('tr', { class: 'head' }, el('th', { text: '' }), el('th', { text: 'Per year, now' }), el('th', { text: 'Last year' })),
-      row('income', 'Taxes', b.taxes, ly.taxes),
-      row('sub', 'Upkeep', upkeep, ly.upkeep, -1),
-      row('detail', 'Roads', b.upkeep.roads, null, -1),
-      row('detail', 'Rail', b.upkeep.rail, null, -1),
-      row('detail', 'Power plants', b.upkeep.power, null, -1),
-      row('detail', 'Services', b.upkeep.services, null, -1),
+      el('tr', { class: 'head' }, el('th', { text: '' }), ...cols.map((c) => el('th', { text: c.head }))),
+      row('income', 'Taxes', (y) => y.taxes),
+      row('sub', 'Upkeep', (y) => budgetTotals(y).upkeep, -1),
+      row('detail', 'Roads', (y) => y.roads, -1),
+      row('detail', 'Rail', (y) => y.rail, -1),
+      row('detail', 'Power plants', (y) => y.power, -1),
+      row('detail', 'Services', (y) => y.services, -1),
     ];
-    if (power !== 0 || ly.power !== 0) rows.push(row('income', 'Power trade', power, ly.power));
-    if (repaid !== 0 || ly.repaid !== 0 || debt > 0) rows.push(row('sub', 'Lifeline repayment', repaid, ly.repaid, -1));
-    rows.push(row('total', 'Net', net, ly.net));
+    if (any((y) => budgetTotals(y).trade)) rows.push(row('income', 'Power trade', (y) => budgetTotals(y).trade));
+    if (any((y) => y.repaid) || (s?.debt ?? 0) > 0) rows.push(row('sub', 'Lifeline repayment', (y) => y.repaid, -1));
+    // below the operating result: one-off money (building, land, loans, gifts), each row only when it happened
+    const extras: [string, (y: BudgetYear) => number, 1 | -1][] = [['Construction', (y) => y.construction, -1], ['New plots', (y) => y.plots, -1], ['Lifeline taken', (y) => y.lifeline, 1], ['Gifts', (y) => y.gifts, 1]];
+    const shown = extras.filter(([, get]) => any(get));
+    rows.push(row(shown.length ? 'subtotal' : 'total', shown.length ? 'Operating result' : 'Net', (y) => budgetTotals(y).operating));
+    for (const [label, get, sign] of shown) rows.push(row(sign < 0 ? 'sub' : 'income', label, get, sign));
+    if (shown.length) rows.push(row('total', 'Net', (y) => budgetTotals(y).net));
     this.budgetTable.replaceChildren(...rows);
-    this.budgetTable.title = 'Services: fire and police stations, schools, the university, city hall and Grand Central. Power trade: last month, as a yearly figure.';
+    this.budgetTable.title = 'Services: fire and police stations, schools, the university, city hall and Grand Central. Construction: building and bulldozing. Net: how your funds changed.';
   }
 
   // ---------- milestones ----------

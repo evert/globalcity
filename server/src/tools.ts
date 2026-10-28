@@ -23,7 +23,7 @@ import {
 } from '@globalcity/shared';
 import type { World } from './world.ts';
 import type { Players, PlayerRecord } from './players.ts';
-import { unlockedOf } from './players.ts';
+import { unlockedOf, spend } from './players.ts';
 import { findZoneCenter, zonePop, zoneKind, isBuildingTile, clearFootprint } from './zones.ts';
 import { randInt } from './util.ts';
 
@@ -216,8 +216,7 @@ export function applyBuild(ctx: BuildCtx, p: PlayerRecord, toolId: ToolId, x: nu
     default: result = placeZone(world, p, tool.base!, tool.size, tool.cost, x0, y0); break;
   }
   if (result.ok) {
-    p.funds -= result.cost;
-    p.stats.funds = p.funds;
+    spend(p, 'construction', result.cost);
     p.active = true;
     players.dirty = true;
   }
