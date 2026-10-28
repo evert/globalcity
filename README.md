@@ -20,7 +20,7 @@ SimCity is a trademark of Electronic Arts; this project is not affiliated with E
   ($25,000 for the second, rising 1.75x per plot, 10 plots max) and must touch a chunk you already own.
 - A Node server holds the world in memory (one `Uint16Array`, Micropolis tile encoding),
   runs a simplified Micropolis simulation for every active city once per game month
-  (2 seconds), and pushes tile deltas over WebSockets to clients subscribed to those chunks.
+  (5 seconds), and pushes tile deltas over WebSockets to clients subscribed to those chunks.
 - Persistence is plain files under `data/save/` (edited chunks + players/claims JSON),
   flushed every 10 seconds and on shutdown.
 - The client is Vite + vanilla TypeScript + Canvas 2D. Zoomed out you see the Earth with
@@ -43,7 +43,7 @@ endpoint from the same port (`PORT`, default 8787). The server is a single long-
 process with in-memory state, so run it on a VM or container, not on a serverless platform.
 
 Server environment variables: `PORT`, `HOST`, `DATA_DIR` (save directory relative to the repo
-root, default `data/save`), `TICK_MS` (game-month length, default 2000) and `DEV_HOOKS=1`, which
+root, default `data/save`), `TICK_MS` (game-month length, default 5000) and `DEV_HOOKS=1`, which
 is for tests only: it accepts the non-protocol socket message `{t:'devIgnite', x, y}` to start a
 fire and turns random fire outbreaks off. Tests run against a throwaway instance:
 

@@ -24,8 +24,8 @@ export function claimCost(owned: number): number {
 export const MIN_LAND_TILES_TO_CLAIM = 64;
 export const MAX_CHUNKS_PER_PLAYER = 10; // a city is at most this many plots // a chunk needs at least this much land to be claimable
 export const TAX_RATE = 7; // percent, SimCity classic default
-// Budget. The clock runs 24/7 (one game year every 24 real seconds), so income is scaled hard:
-// a mid-size city nets roughly $20-30k per real hour while its mayor is online.
+// Budget. The clock runs 24/7 (one game year every 60 real seconds), so income is scaled hard:
+// a mid-size city nets roughly $8-12k per real hour while its mayor is online.
 export const TAX_MULT = 0.1; // multiplier on the SimCity tax formula
 // Yearly maintenance (charged monthly), SimCity-style: infrastructure costs money to keep.
 export const UPKEEP_ROAD = 1; // per road tile per year
@@ -124,8 +124,9 @@ export const FIRE_OWNER_ONLINE_MS = 60_000;
 /** Chance that an outbreak inside a powered fire station's range never starts (it is put out at once). */
 export const FIRE_PREVENTED_P = 0.75;
 
-// Time: one game month per tick
-export const TICK_MS = 2000;
+// Time: one game month per tick (a game year every minute). Slowed from 2 s on 2026-10-28: the game felt
+// easy past the early stage, and a slower month cuts income per real hour without cheapening upkeep.
+export const TICK_MS = 5000;
 export const START_YEAR = 1900;
 
 // Networking
