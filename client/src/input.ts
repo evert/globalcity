@@ -1,6 +1,6 @@
 // Mouse / touch / keyboard handling for the map canvas.
 import type { ToolId } from '@globalcity/shared';
-import { CHUNK, LOMASK, LHPOWER, LVPOWER10, TOOLS, TOOL_ORDER, inWorld, isDirt, isRubble, isTree } from '@globalcity/shared';
+import { CHUNK, LOMASK, LHPOWER, LVPOWER10, TOOLS, TOOL_ORDER, footprintOrigin, inWorld, isDirt, isRubble, isTree, toolH, toolW } from '@globalcity/shared';
 import type { Actions } from './actions.ts';
 import type { Renderer } from './renderer.ts';
 import type { AppState } from './state.ts';
@@ -33,6 +33,8 @@ type Mode = 'none' | 'maybe-click' | 'maybe-paint' | 'pan' | 'paint' | 'pinch';
 const DRAG_THRESHOLD = 4;
 /** css px a finger must move before a touch on the aimed tile becomes a drag that paints */
 const TOUCH_PAINT_THRESHOLD = 8;
+/** css px around the aimed marker that still count as touching it (fingers are not precise) */
+const TOUCH_AIM_SLOP = 28;
 const BUILD_INTERVAL_MS = 25;
 
 export class Input {
@@ -259,12 +261,15 @@ export class Input {
     return true;
   }
 
-  /** Touch: is (cssX, cssY) on the aimed footprint of a paint or zone tool (within a tile of the marker)? */
+  /** Touch: is (cssX, cssY) on or near the aimed footprint of a paint or zone tool? Measured in screen
+   *  pixels, since a tile can be smaller than a fingertip. */
   private touchOnAim(cssX: number, cssY: number): boolean {
     const h = this.renderer.hover, tool = this.state.tool;
     if (!h || !this.renderer.isTileMode() || !(PAINT_TOOLS.has(tool) || ZONE_TOOLS.has(tool))) return false;
-    const t = this.tileAt(cssX, cssY);
-    return Math.abs(t.x - h.x) <= 1 && Math.abs(t.y - h.y) <= 1;
+    const def = TOOLS[tool], { x0, y0 } = footprintOrigin(def, h.x, h.y);
+    const a = this.renderer.tileToScreen(x0, y0), b = this.renderer.tileToScreen(x0 + toolW(def), y0 + toolH(def));
+    const dx = Math.max(a.x - cssX, 0, cssX - b.x), dy = Math.max(a.y - cssY, 0, cssY - b.y);
+    return Math.hypot(dx, dy) <= TOUCH_AIM_SLOP;
   }
 
   /** Commit the touch-aimed footprint (called by the UI's Build button). */
