@@ -585,6 +585,15 @@ export async function runSelfTest(): Promise<void> {
   const px2 = g.getImageData(400, 300, 1, 1).data;
   assert(px2[3] === 255, 'overview drawn');
   assert(r.desiredSubscription().length === 0, 'no subscription in overview');
+  // the overview is cached while panning; a new plot still shows on the next frame
+  r.render(); r.panBy(3, 2); r.render();
+  assert(!r.drawnClaims.has('40,20'), 'plot 40,20 not drawn before it is claimed');
+  state.setClaim(claim(40, 20, 'p9', 'Newcomer', '#e040fb', 1));
+  r.panBy(-3, -2); r.render();
+  assert(r.drawnClaims.has('40,20'), 'a new plot shows on the cached overview');
+  state.removeClaim(40, 20);
+  r.render();
+  assert(!r.drawnClaims.has('40,20'), 'a released plot leaves the cached overview');
 
   // zoom stepping reaches tile mode and back
   r.zoomStep(1); r.zoomStep(1); r.zoomStep(1); r.zoomStep(1); r.zoomStep(1); r.zoomStep(1); r.zoomStep(1);

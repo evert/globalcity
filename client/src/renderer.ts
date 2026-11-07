@@ -139,6 +139,11 @@ export class Renderer extends Emitter<RendererEvents> {
   /** lit windows for the zoomed-in view at night (derived from the tile art once the sheet loads) */
   private nightLights: NightLights | null = null;
   private speckle: CanvasPattern | null = null;
+  /** the zoomed-out map drawn ahead of time (see renderOverview); x, y: its offset from the world's top-left */
+  private ovCache: { canvas: HTMLCanvasElement; key: string; x: number; y: number; claims: Map<string, ClaimStyle> } | null = null;
+  private ovLastZoom = NaN;
+  /** bumped whenever the plots (or who I am) change, so the cached overview is redrawn */
+  private claimsVersion = 0;
   private flightTimer: ReturnType<typeof setTimeout> | null = null;
   /** transient marker (pulsing red ring) around a tile, e.g. after clicking a fire toast */
   private flash: { x: number; y: number; t0: number } | null = null;
@@ -183,10 +188,10 @@ export class Renderer extends Emitter<RendererEvents> {
     this.overlay.isOwn = (cx, cy) => this.state.ownsChunk(cx, cy);
     map.on('tiles', () => this.invalidate());
     map.on('drop', (key) => { this.chunkCanvases.delete(key); this.invalidate(); });
-    state.on('claims', () => this.invalidate());
+    state.on('claims', () => { this.claimsVersion++; this.invalidate(); });
     state.on('stats', () => this.invalidate());
     state.on('tool', () => this.invalidate());
-    state.on('me', () => { this.chunkCanvases.clear(); this.invalidate(); });
+    state.on('me', () => { this.chunkCanvases.clear(); this.claimsVersion++; this.invalidate(); });
     this.presence = new PresenceTracker(state);
     state.on('presence', () => {
       this.invalidate();
@@ -381,7 +386,7 @@ export class Renderer extends Emitter<RendererEvents> {
     this.processDirty();
     this.visibleAnim.length = 0;
     this.drawnClaims.clear();
-    if (this.isTileMode()) this.renderTiles(g, now); else this.renderOverview(g);
+    if (this.isTileMode()) { this.ovCache = null; this.ovLastZoom = NaN; this.renderTiles(g, now); } else this.renderOverview(g);
     this.renderFlights(g);
     this.renderPresence(g, now);
     this.renderFlash(g, now);
@@ -751,8 +756,55 @@ export class Renderer extends Emitter<RendererEvents> {
     g.strokeRect(px0 + 1, py0 + 1, px1 - px0 - 2, py1 - py0 - 2);
   }
 
+  /**
+   * The zoomed-out map does not change while it is panned, and drawing it (every plot, and at night every
+   * plot's lights and glow) is slow on phones. It is drawn once into an image a margin larger than the
+   * screen, which is then only shifted as the view moves. Redrawn when the zoom, the plots, the overview
+   * snapshot or the night change, or when the view pans past the margin.
+   */
   private renderOverview(g: CanvasRenderingContext2D): void {
+    this.overviewMap.maybeRefresh();
+    this.night.update();
     const W = this.canvas.width, H = this.canvas.height;
+    const left = this.dx(0), top = this.dy(0), right = this.dx(WORLD_W), bottom = this.dy(WORLD_H);
+    const vx0 = Math.max(0, left), vy0 = Math.max(0, top), vx1 = Math.min(W, right), vy1 = Math.min(H, bottom);
+    const zoom = this.cam.zoom, zooming = zoom !== this.ovLastZoom;
+    this.ovLastZoom = zoom;
+    const key = `${zoom}|${this.dpr}|${W}x${H}|${this.claimsVersion}|${this.overviewMap.version}|${this.night.version}|${this.state.me?.id ?? ''}`;
+    let c = this.ovCache;
+    // the cache's position is kept relative to the world's top-left corner, so it moves with the map
+    const fits = !!c && c.key === key && vx0 - left >= c.x && vy0 - top >= c.y
+      && vx1 - left <= c.x + c.canvas.width && vy1 - top <= c.y + c.canvas.height;
+    if (!fits) {
+      // while zooming every frame differs: draw straight to the screen, cache once the zoom holds still
+      if (zooming || vx1 <= vx0 || vy1 <= vy0) { this.drawOverview(g, vx0, vy0, vx1, vy1); return; }
+      const m = Math.round(Math.min(W, H) * 0.3);
+      const x0 = Math.max(left, vx0 - m), y0 = Math.max(top, vy0 - m), x1 = Math.min(right, vx1 + m), y1 = Math.min(bottom, vy1 + m);
+      const canvas = c?.canvas ?? document.createElement('canvas');
+      canvas.width = x1 - x0; canvas.height = y1 - y0; // also clears it and resets its context state
+      const cg = canvas.getContext('2d', { alpha: false })!;
+      cg.setTransform(1, 0, 0, 1, -x0, -y0);
+      this.drawOverview(cg, x0, y0, x1, y1);
+      c = this.ovCache = { canvas, key, x: x0 - left, y: y0 - top, claims: new Map(this.drawnClaims) };
+    } else {
+      for (const [k, v] of c!.claims) this.drawnClaims.set(k, v);
+    }
+    g.imageSmoothingEnabled = false;
+    g.drawImage(c!.canvas, left + c!.x, top + c!.y);
+  }
+
+  /** Chunks under a rectangle of the screen (device pixels). */
+  private chunkRectOf(x0: number, y0: number, x1: number, y1: number): ChunkRect {
+    const s = this.tilePx() * this.dpr;
+    const tx = (x: number) => this.cam.x + (x - (this.cssW / 2) * this.dpr) / s, ty = (y: number) => this.cam.y + (y - (this.cssH / 2) * this.dpr) / s;
+    return {
+      cx0: clamp(Math.floor(tx(x0) / CHUNK), 0, CHUNKS_X - 1), cy0: clamp(Math.floor(ty(y0) / CHUNK), 0, CHUNKS_Y - 1),
+      cx1: clamp(Math.floor((tx(x1) - 1e-6) / CHUNK), 0, CHUNKS_X - 1), cy1: clamp(Math.floor((ty(y1) - 1e-6) / CHUNK), 0, CHUNKS_Y - 1),
+    };
+  }
+
+  /** Draw the zoomed-out map for the screen rectangle (rx0, ry0)-(rx1, ry1), in device pixels. */
+  private drawOverview(g: CanvasRenderingContext2D, rx0: number, ry0: number, rx1: number, ry1: number): void {
     const left = this.dx(0), top = this.dy(0), right = this.dx(WORLD_W), bottom = this.dy(WORLD_H);
     g.imageSmoothingEnabled = false;
     g.drawImage(this.minimap.image, 0, 0, this.minimap.width, this.minimap.height, left, top, right - left, bottom - top);
@@ -763,13 +815,12 @@ export class Renderer extends Emitter<RendererEvents> {
       if (this.speckle) {
         this.speckle.setTransform(new DOMMatrix().translateSelf(left, top).scaleSelf(tpx, tpx));
         g.fillStyle = this.speckle;
-        g.fillRect(Math.max(0, left), Math.max(0, top), Math.min(W, right) - Math.max(0, left), Math.min(H, bottom) - Math.max(0, top));
+        g.fillRect(rx0, ry0, rx1 - rx0, ry1 - ry0);
       }
     }
     // plots as one-pixel-per-tile images of what is built there (snapshot refreshed every 30 s)
-    this.overviewMap.maybeRefresh();
+    const vr = this.chunkRectOf(rx0, ry0, rx1, ry1);
     {
-      const vr = this.visibleChunkRect(0);
       g.imageSmoothingEnabled = tpx < 1; // average when shrinking below a pixel per tile, crisp otherwise
       for (const claim of this.state.claims.values()) {
         if (claim.cx < vr.cx0 || claim.cx > vr.cx1 || claim.cy < vr.cy0 || claim.cy > vr.cy1) continue;
@@ -782,11 +833,9 @@ export class Renderer extends Emitter<RendererEvents> {
       g.imageSmoothingEnabled = false;
     }
     // night: the real-time shade over the whole map, then the lights of every city on the dark side
-    this.night.update();
     g.imageSmoothingEnabled = true;
     g.drawImage(this.night.canvas, left, top, right - left, bottom - top);
     {
-      const vr = this.visibleChunkRect(0);
       g.imageSmoothingEnabled = tpx < 1;
       for (const claim of this.state.claims.values()) {
         if (claim.cx < vr.cx0 || claim.cx > vr.cx1 || claim.cy < vr.cy0 || claim.cy > vr.cy1) continue;
@@ -815,12 +864,12 @@ export class Renderer extends Emitter<RendererEvents> {
     }
     // chunk grid at the higher overview zooms
     if (this.cam.zoom >= 0.125) {
-      const r = this.visibleChunkRect(0);
+      const r = vr;
       g.strokeStyle = 'rgba(255,255,255,0.06)';
       g.lineWidth = 1;
       g.beginPath();
-      for (let cx = r.cx0; cx <= r.cx1 + 1; cx++) { const x = this.dx(cx * CHUNK) + 0.5; g.moveTo(x, Math.max(0, top)); g.lineTo(x, Math.min(H, bottom)); }
-      for (let cy = r.cy0; cy <= r.cy1 + 1; cy++) { const y = this.dy(cy * CHUNK) + 0.5; g.moveTo(Math.max(0, left), y); g.lineTo(Math.min(W, right), y); }
+      for (let cx = r.cx0; cx <= r.cx1 + 1; cx++) { const x = this.dx(cx * CHUNK) + 0.5; g.moveTo(x, ry0); g.lineTo(x, ry1); }
+      for (let cy = r.cy0; cy <= r.cy1 + 1; cy++) { const y = this.dy(cy * CHUNK) + 0.5; g.moveTo(rx0, y); g.lineTo(rx1, y); }
       g.stroke();
     }
     // claims
@@ -829,7 +878,7 @@ export class Renderer extends Emitter<RendererEvents> {
     // at the two most zoomed-out levels cities are just their own pixels: no coloured square or outline around them
     const levels = this.zoomLevels();
     const farOut = this.cam.zoom <= (levels[1] ?? levels[0]) + 1e-9;
-    const v = this.visibleChunkRect(0);
+    const v = vr;
     g.textBaseline = 'middle'; g.textAlign = 'center';
     // Group visible plots by city so multi-plot cities render as one shape with one name.
     const cities = new Map<string, ClaimInfo[]>();

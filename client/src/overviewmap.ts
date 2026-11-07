@@ -29,6 +29,8 @@ export class OverviewMap {
   private litShare = new Map<string, number>();
   private fetchedAt = 0;
   private inflight = false;
+  /** bumped on every new snapshot */
+  version = 0;
   /** called when new chunk images are ready (renderer invalidates) */
   onUpdate: () => void = () => {};
 
@@ -90,6 +92,7 @@ export class OverviewMap {
     this.canvases = next;
     this.lights = nextLights;
     this.litShare = nextShare;
+    this.version++;
   }
 }
 

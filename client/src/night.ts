@@ -25,6 +25,8 @@ export class NightLayer {
   readonly canvas = document.createElement('canvas');
   private computedAt = -Infinity;
   private sub = subsolarPoint(sunNow());
+  /** bumped every time the shade is recomputed */
+  version = 0;
 
   constructor() { this.canvas.width = W; this.canvas.height = H; }
 
@@ -34,6 +36,7 @@ export class NightLayer {
     if (now - this.computedAt < 60_000) return false;
     this.computedAt = now;
     this.sub = subsolarPoint(now);
+    this.version++;
     const g = this.canvas.getContext('2d')!;
     const img = g.createImageData(W, H);
     for (let y = 0; y < H; y++) {
