@@ -277,3 +277,13 @@ a { color: var(--accent); }
 .budget-table tr.detail td.num { color: var(--muted); }
 .budget-table tr.total td, .budget-table tr.subtotal td { border-top: 1px solid var(--panel-border); font-weight: 700; padding-top: 5px; }
 .budget-table tr.subtotal td { font-weight: 600; }
+
+/* Long-press tooltip for touch screens (longpress.ts). */
+#touchtip {
+  position: fixed; z-index: 60; max-width: min(320px, calc(100vw - 16px)); padding: 7px 10px;
+  background: #0e121c; border: 1px solid #3b4a66; border-radius: 4px; box-shadow: 0 6px 24px rgba(0,0,0,0.6);
+  color: var(--fg); font-size: 12px; line-height: 1.4; white-space: normal; pointer-events: none;
+}
+@media (hover: none) {
+  #ui [title] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+}

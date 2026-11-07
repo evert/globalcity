@@ -13,6 +13,7 @@ import { ViewReporter } from './presence.ts';
 import { Renderer } from './renderer.ts';
 import { AppState } from './state.ts';
 import { UI } from './ui.ts';
+import { installLongPressTooltips } from './longpress.ts';
 import { loadSprites, SpriteEngine } from './sprites.ts';
 
 /** Shareable view links: #x=4207&y=855&z=1 (tile coords of the view centre + zoom). */
@@ -58,6 +59,7 @@ async function boot(): Promise<void> {
   if (!applyHashCamera(renderer)) renderer.showWorld();
   const actions = new Actions(state, net, renderer);
   const ui = new UI(state, net, renderer, actions, sheet, minimap);
+  installLongPressTooltips();
   const input = new Input(renderer, state, actions, {
     onQueryClick: (x, y) => ui.queryPendingAt(x, y),
     onVehicleClick: (v, x, y) => ui.showVehicle(v, x, y),
