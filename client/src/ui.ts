@@ -8,6 +8,7 @@ import type { Minimap, SpriteSheet } from './assets.ts';
 import { drawTile } from './assets.ts';
 import type { Net } from './net.ts';
 import type { Renderer } from './renderer.ts';
+import { PAINT_TOOLS, ZONE_TOOLS } from './input.ts';
 import { NIGHT_REFRESH_MS } from './night.ts';
 import { isFireTile, withAlpha } from './renderer.ts';
 import type { AppState } from './state.ts';
@@ -1236,7 +1237,9 @@ export class UI {
     this.touchTile = tile;
     if (!tile) { this.touchBar.classList.add('hidden'); return; }
     const t = TOOLS[this.state.tool];
-    this.touchWhat.textContent = `${t.name} here${t.cost ? ` · ${fmtMoney(t.cost)}` : ''} — tap again or`;
+    // paint and zone tools also draw a line when dragged from the marker
+    const drags = PAINT_TOOLS.has(this.state.tool) || ZONE_TOOLS.has(this.state.tool);
+    this.touchWhat.textContent = `${t.name} here${t.cost ? ` · ${fmtMoney(t.cost)}` : ''} — ${drags ? 'tap again, drag from it, or' : 'tap again or'}`;
     this.touchBar.classList.remove('hidden');
   }
 

@@ -28,9 +28,11 @@ export interface InputHooks {
 }
 
 interface PointerInfo { x: number; y: number; sx: number; sy: number; button: number; type: string }
-type Mode = 'none' | 'maybe-click' | 'pan' | 'paint' | 'pinch';
+type Mode = 'none' | 'maybe-click' | 'maybe-paint' | 'pan' | 'paint' | 'pinch';
 
 const DRAG_THRESHOLD = 4;
+/** css px a finger must move before a touch on the aimed tile becomes a drag that paints */
+const TOUCH_PAINT_THRESHOLD = 8;
 const BUILD_INTERVAL_MS = 25;
 
 export class Input {
@@ -91,6 +93,7 @@ export class Input {
   private onPointerDown = (e: PointerEvent): void => {
     const c = this.renderer.canvas;
     try { c.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    this.renderer.syncSize(); // a stale canvas size would put this tap on the wrong tile
     this.hooks.onInteract();
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, button: e.button, type: e.pointerType });
     if (this.pointers.size === 2) {
@@ -103,6 +106,11 @@ export class Input {
     if (this.pointers.size > 2) return;
     const tool = this.state.tool;
     const panButton = e.button === 1 || e.button === 2;
+    if (e.pointerType === 'touch' && this.pointers.size === 1 && this.touchOnAim(e.clientX, e.clientY)) {
+      // touch on the aimed footprint: a tap builds it (as before), a drag paints a line from it
+      this.mode = 'maybe-paint';
+      return;
+    }
     if (panButton || this.spaceHeld || !this.renderer.isTileMode() || e.pointerType === 'touch' || tool === 'query') {
       // middle button / space: pan at once; right button: pan once dragged, a plain right-click picks the query tool
       this.mode = e.button === 1 || this.spaceHeld ? 'pan' : 'maybe-click';
@@ -140,6 +148,17 @@ export class Input {
     if (this.mode === 'maybe-click') {
       if (Math.hypot(e.clientX - p.sx, e.clientY - p.sy) > DRAG_THRESHOLD) this.mode = 'pan';
     }
+    if (this.mode === 'maybe-paint') {
+      if (Math.hypot(e.clientX - p.sx, e.clientY - p.sy) <= TOUCH_PAINT_THRESHOLD) return;
+      // the drag starts at the aimed tile (not under the finger), so the road begins where the marker was
+      const start = this.renderer.hover;
+      if (!start) { this.mode = 'pan'; return; }
+      this.hooks.onTouchTarget(null);
+      this.mode = 'paint';
+      this.lastPaint = start;
+      this.paintStart = start; this.axis = null;
+      this.enqueueBuild(start.x, start.y, true);
+    }
     if (this.mode === 'pan') {
       this.renderer.panBy(dx, dy);
       this.updateHover(e.clientX, e.clientY);
@@ -165,6 +184,7 @@ export class Input {
       if (this.pointers.size < 2) { this.pinch = null; this.mode = this.pointers.size === 1 ? 'pan' : 'none'; }
       return;
     }
+    if (this.mode === 'maybe-paint') this.mode = 'maybe-click'; // no drag: a plain tap on the aimed tile
     if (this.mode === 'maybe-click' && p && p.button === 2 && this.state.tool !== 'query') {
       // right-click drops the build tool and returns to query mode (a right-drag still pans)
       this.state.setTool('query');
@@ -195,7 +215,8 @@ export class Input {
       }
     }
     if (this.mode === 'paint') this.flushPaint();
-    const wasGesture = this.mode === 'pan'; // (a pinch always ends through 'pan' or returns above)
+    // (a pinch always ends through 'pan' or returns above); after a touch paint the marker goes too
+    const wasGesture = this.mode === 'pan' || this.mode === 'paint';
     this.mode = 'none';
     this.lastPaint = null;
     this.paintStart = null; this.axis = null;
@@ -236,6 +257,14 @@ export class Input {
       if (!isDirt(v) && !isTree(v) && !isRubble(v) && !(id >= LHPOWER && id <= LVPOWER10)) return false;
     }
     return true;
+  }
+
+  /** Touch: is (cssX, cssY) on the aimed footprint of a paint or zone tool (within a tile of the marker)? */
+  private touchOnAim(cssX: number, cssY: number): boolean {
+    const h = this.renderer.hover, tool = this.state.tool;
+    if (!h || !this.renderer.isTileMode() || !(PAINT_TOOLS.has(tool) || ZONE_TOOLS.has(tool))) return false;
+    const t = this.tileAt(cssX, cssY);
+    return Math.abs(t.x - h.x) <= 1 && Math.abs(t.y - h.y) <= 1;
   }
 
   /** Commit the touch-aimed footprint (called by the UI's Build button). */

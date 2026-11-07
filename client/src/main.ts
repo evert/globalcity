@@ -71,6 +71,8 @@ async function boot(): Promise<void> {
   window.addEventListener('resize', () => renderer.resizeToWindow());
   renderer.overviewMap.onUpdate = () => renderer.invalidate();
   window.visualViewport?.addEventListener('resize', () => renderer.resizeToWindow());
+  // fires after layout, with the size the canvas really has (resize events can come before it settles)
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => renderer.syncSize()).observe(canvas);
   ui.onTouchBuild = () => input.buildAtHover();
   ui.onTouchCancel = () => input.clearTouchTarget();
   state.on('tool', () => input.clearTouchTarget());

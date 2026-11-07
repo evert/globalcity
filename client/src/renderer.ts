@@ -222,6 +222,17 @@ export class Renderer extends Emitter<RendererEvents> {
     this.setSize(w, h, Math.min(2, window.devicePixelRatio || 1));
   }
 
+  /** Re-measure if the canvas's size on screen no longer matches (a resize event can fire before layout
+   *  settles, which leaves the map stretched and taps off by a tile or so). Returns true when it changed. */
+  syncSize(): boolean {
+    const r = this.canvas.getBoundingClientRect();
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (r.width <= 0 || r.height <= 0) return false;
+    if (Math.abs(r.width - this.cssW) < 0.5 && Math.abs(r.height - this.cssH) < 0.5 && dpr === this.dpr) return false;
+    this.setSize(r.width, r.height, dpr);
+    return true;
+  }
+
   // ---------- camera ----------
   tilePx(): number { return TILE_PX * this.cam.zoom; }
   isTileMode(): boolean { return this.cam.zoom >= TILE_MODE_ZOOM - 1e-9; }
