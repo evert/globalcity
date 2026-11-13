@@ -159,8 +159,8 @@
 
         <activity android:name="com.google.androidbrowserhelper.trusted.FocusActivity" />
 
-        <activity android:name="com.google.androidbrowserhelper.trusted.WebViewFallbackActivity"
-            android:configChanges="orientation|screenSize" />
+        <!-- No WebViewFallbackActivity: the fallback is Custom Tabs (twa-manifest fallbackType), and leaving it
+             out lets the build drop its deprecated status/navigation bar colour calls (flagged by Play for Android 15). -->
 
         <provider
             android:name="androidx.core.content.FileProvider"

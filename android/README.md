@@ -19,6 +19,9 @@ Requirements, installed once under `~/.bubblewrap`: JDK 17 (`jdk/`) and the Andr
 `~/.globalcity-android/upload.jks` with its password in `upload-password.txt`. Back both up somewhere safe;
 without them no update can be uploaded.
 
+The app needs Android 7.0 or newer (minSdk 24, required by androidbrowserhelper 2.7, which draws the launch screen
+edge-to-edge as Android 15 expects). It targets SDK 36.
+
 To release a new version, bump `versionCode` (must always increase) and `versionName` in `app/build.gradle`
 and `twa-manifest.json`, then run the script.
 
