@@ -373,8 +373,7 @@ export class UI {
       this.trafficText,
       this.tradeText,
       this.neighbourText,
-      this.budgetText,
-      el('div', { class: 'rci-more', 'aria-hidden': 'true' }));
+      this.budgetText);
     // phones show only the bars, power and budget; a tap on the panel opens or closes the rest
     box.addEventListener('click', (e) => {
       if (this.budgetText.contains(e.target as Node) || !window.matchMedia('(max-width: 760px)').matches) return;
