@@ -4,7 +4,7 @@ import {
   CHUNK, CHUNKS_X, CHUNKS_Y, WORLD_W, WORLD_H, TILE_PX, MAX_SUBSCRIBED_CHUNKS,
   LOMASK, ZONEBIT, PWRBIT, ANIMBIT, LIGHTNINGBOLT, FIRE, LASTFIRE, TOOLS, CUSTOM_BUILDINGS, footprintOrigin, toolW, toolH, chunkKey, parseChunkKey, clamp, inWorld,
 } from '@globalcity/shared';
-import type { ClaimInfo, Flight, Voyage } from '@globalcity/shared';
+import type { ClaimInfo, Flight, ToolId, Voyage } from '@globalcity/shared';
 import type { SpriteSheet, Minimap } from './assets.ts';
 import { drawTile } from './assets.ts';
 import { ANI_TILE, isAnimatedId } from './anim.ts';
@@ -103,6 +103,8 @@ export class Renderer extends Emitter<RendererEvents> {
   readonly ctx: CanvasRenderingContext2D;
   cam: Camera = { x: WORLD_W / 2, y: WORLD_H / 2, zoom: 0.03 };
   hover: TilePos | null = null;
+  /** touch drawing waiting to be confirmed: every tile it would build (`ok` false where it can't) */
+  plan: { tool: ToolId; tiles: readonly (TilePos & { ok: boolean })[] } | null = null;
   cssW = 1; cssH = 1; dpr = 1;
   /** chunks currently subscribed (for the pending-vs-unsubscribed checker shade) */
   subscribed = new Set<string>();
@@ -363,6 +365,11 @@ export class Renderer extends Emitter<RendererEvents> {
     if (same) return;
     this.hover = p;
     this.emit('hover', p);
+    this.invalidate();
+  }
+
+  setPlan(plan: Renderer['plan']): void {
+    this.plan = plan;
     this.invalidate();
   }
 
@@ -748,6 +755,7 @@ export class Renderer extends Emitter<RendererEvents> {
   }
 
   private renderCursor(g: CanvasRenderingContext2D): void {
+    this.renderPlan(g);
     const h = this.hover;
     if (!h || !inWorld(h.x, h.y)) return;
     const tool = TOOLS[this.state.tool];
@@ -765,6 +773,22 @@ export class Renderer extends Emitter<RendererEvents> {
     g.lineWidth = Math.max(2, Math.round(2 * this.dpr));
     g.strokeStyle = ok ? 'rgba(255,255,255,0.95)' : 'rgba(255,70,70,0.95)';
     g.strokeRect(px0 + 1, py0 + 1, px1 - px0 - 2, py1 - py0 - 2);
+  }
+
+  /** The touch drawing: each footprint it would build, see-through, red where it can't be built. */
+  private renderPlan(g: CanvasRenderingContext2D): void {
+    const plan = this.plan;
+    if (!plan || !plan.tiles.length) return;
+    const tool = TOOLS[plan.tool], fw = toolW(tool), fh = toolH(tool);
+    g.lineWidth = Math.max(1, Math.round(this.dpr));
+    for (const t of plan.tiles) {
+      const { x0, y0 } = footprintOrigin(tool, t.x, t.y);
+      const px0 = this.dx(x0), py0 = this.dy(y0), px1 = this.dx(x0 + fw), py1 = this.dy(y0 + fh);
+      g.fillStyle = t.ok ? 'rgba(255,255,255,0.35)' : 'rgba(255,60,60,0.35)';
+      g.fillRect(px0, py0, px1 - px0, py1 - py0);
+      g.strokeStyle = t.ok ? 'rgba(255,255,255,0.8)' : 'rgba(255,70,70,0.8)';
+      g.strokeRect(px0 + 0.5, py0 + 0.5, px1 - px0 - 1, py1 - py0 - 1);
+    }
   }
 
   /**

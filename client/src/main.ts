@@ -6,7 +6,7 @@ import { handleServerMsg } from './dispatch.ts';
 import { loadMinimap, loadSpriteSheet } from './assets.ts';
 import { recolourMinimap } from './overviewmap.ts';
 import { Updater } from './updater.ts';
-import { Input } from './input.ts';
+import { Input, PAINT_TOOLS, ZONE_TOOLS } from './input.ts';
 import { TileMap } from './map.ts';
 import { Net } from './net.ts';
 import { ViewReporter } from './presence.ts';
@@ -66,6 +66,7 @@ async function boot(): Promise<void> {
     onClearOverlay: () => ui.clearOverlay(),
     onInteract: () => ui.hideQuery(),
     onTouchTarget: (t) => ui.setTouchTarget(t),
+    onTouchPlan: (p) => ui.setTouchPlan(p),
   });
 
   window.addEventListener('resize', () => renderer.resizeToWindow());
@@ -73,9 +74,19 @@ async function boot(): Promise<void> {
   window.visualViewport?.addEventListener('resize', () => renderer.resizeToWindow());
   // fires after layout, with the size the canvas really has (resize events can come before it settles)
   if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => renderer.syncSize()).observe(canvas);
-  ui.onTouchBuild = () => input.buildAtHover();
+  ui.onTouchBuild = () => input.confirmTouch();
   ui.onTouchCancel = () => input.clearTouchTarget();
-  state.on('tool', () => input.clearTouchTarget());
+  state.on('tool', () => {
+    input.clearTouchTarget();
+    // once, on a touch screen: how drawing and moving the map work with a drawing tool
+    const tool = state.tool;
+    if (!(PAINT_TOOLS.has(tool) || ZONE_TOOLS.has(tool)) || !window.matchMedia('(pointer: coarse)').matches) return;
+    try {
+      if (localStorage.getItem('globalcity.drawHint')) return;
+      localStorage.setItem('globalcity.drawHint', '1');
+    } catch { /* no storage: show it anyway */ }
+    ui.toast('Draw with one finger · move the map with two', 'info', 6000);
+  });
 
   // ---- subscriptions follow the camera ----
   let lastSubKey = '';

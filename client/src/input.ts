@@ -1,6 +1,6 @@
 // Mouse / touch / keyboard handling for the map canvas.
 import type { ToolId } from '@globalcity/shared';
-import { CHUNK, LOMASK, LHPOWER, LVPOWER10, TOOLS, TOOL_ORDER, footprintOrigin, inWorld, isDirt, isRubble, isTree, toolH, toolW } from '@globalcity/shared';
+import { CHUNK, LOMASK, LHPOWER, LVPOWER10, TOOLS, TOOL_ORDER, WORLD_W, inWorld, isDirt, isRubble, isTree } from '@globalcity/shared';
 import type { Actions } from './actions.ts';
 import type { Renderer } from './renderer.ts';
 import type { AppState } from './state.ts';
@@ -25,16 +25,19 @@ export interface InputHooks {
   onInteract(): void;
   /** touch: a build tool was aimed at a tile (null = cleared); the UI shows a confirm bar */
   onTouchTarget(tile: { x: number; y: number } | null): void;
+  /** touch: a drawn line or area waits for confirmation (null = cleared); the UI shows a confirm bar */
+  onTouchPlan(plan: TouchPlan | null): void;
 }
 
+/** A touch drawing waiting to be confirmed: what it would build and roughly what it costs. */
+export interface TouchPlan { tool: ToolId; count: number; cost: number }
+
 interface PointerInfo { x: number; y: number; sx: number; sy: number; button: number; type: string }
-type Mode = 'none' | 'maybe-click' | 'maybe-paint' | 'pan' | 'paint' | 'pinch';
+type Mode = 'none' | 'maybe-click' | 'maybe-draw' | 'draw' | 'pan' | 'paint' | 'pinch';
 
 const DRAG_THRESHOLD = 4;
-/** css px a finger must move before a touch on the aimed tile becomes a drag that paints */
-const TOUCH_PAINT_THRESHOLD = 8;
-/** css px around the aimed marker that still count as touching it (fingers are not precise) */
-const TOUCH_AIM_SLOP = 28;
+/** css px a finger must move (with a paint or zone tool) before a touch becomes a drawing */
+const TOUCH_DRAW_THRESHOLD = 8;
 const BUILD_INTERVAL_MS = 25;
 
 export class Input {
@@ -48,7 +51,12 @@ export class Input {
   private pinch: { dist: number; zoom: number } | null = null;
   private wheelAcc = 0;
   private lastWheelStep = 0;
-  private buildQueue: { x: number; y: number }[] = [];
+  private buildQueue: { tool: ToolId; x: number; y: number }[] = [];
+  /** touch drawing: the tiles drawn so far (or waiting for confirmation), each with whether it can be built */
+  private plan: { tool: ToolId; tiles: { x: number; y: number; ok: boolean }[] } | null = null;
+  private planKeys = new Set<number>();
+  /** a finger is drawing right now (a second finger turns it into a pinch and drops the drawing) */
+  private drafting = false;
   private buildTimer: ReturnType<typeof setTimeout> | null = null;
   private lastBuildAt = 0;
   private hotkeys = new Map<string, ToolId>();
@@ -102,15 +110,17 @@ export class Input {
       const [a, b] = [...this.pointers.values()];
       this.pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom: this.renderer.cam.zoom };
       this.mode = 'pinch';
+      if (this.drafting) this.clearPlan(); // two fingers move the map: the drawing just started is dropped
       this.flushPaint();
       return;
     }
     if (this.pointers.size > 2) return;
     const tool = this.state.tool;
     const panButton = e.button === 1 || e.button === 2;
-    if (e.pointerType === 'touch' && this.pointers.size === 1 && this.touchOnAim(e.clientX, e.clientY)) {
-      // touch on the aimed footprint: a tap builds it (as before), a drag paints a line from it
-      this.mode = 'maybe-paint';
+    if (e.pointerType === 'touch' && this.renderer.isTileMode() && (PAINT_TOOLS.has(tool) || ZONE_TOOLS.has(tool))) {
+      // touch with a paint or zone tool: one finger draws (a tap aims one tile), two fingers move the map
+      this.mode = 'maybe-draw';
+      this.paintStart = this.tileAt(e.clientX, e.clientY);
       return;
     }
     if (panButton || this.spaceHeld || !this.renderer.isTileMode() || e.pointerType === 'touch' || tool === 'query') {
@@ -150,17 +160,19 @@ export class Input {
     if (this.mode === 'maybe-click') {
       if (Math.hypot(e.clientX - p.sx, e.clientY - p.sy) > DRAG_THRESHOLD) this.mode = 'pan';
     }
-    if (this.mode === 'maybe-paint') {
-      if (Math.hypot(e.clientX - p.sx, e.clientY - p.sy) <= TOUCH_PAINT_THRESHOLD) return;
-      // the drag starts at the aimed tile (not under the finger), so the road begins where the marker was
-      const start = this.renderer.hover;
-      if (!start) { this.mode = 'pan'; return; }
+    if (this.mode === 'maybe-draw') {
+      if (Math.hypot(e.clientX - p.sx, e.clientY - p.sy) <= TOUCH_DRAW_THRESHOLD) return;
+      // a new drawing replaces an aimed tile or an unconfirmed drawing
+      this.renderer.setHover(null);
       this.hooks.onTouchTarget(null);
-      this.mode = 'paint';
-      this.lastPaint = start;
-      this.paintStart = start; this.axis = null;
-      this.enqueueBuild(start.x, start.y, true);
+      this.clearPlan();
+      this.mode = 'draw';
+      this.drafting = true;
+      this.plan = { tool: this.state.tool, tiles: [] };
+      this.lastPaint = this.paintStart;
+      this.addToPlan(this.paintStart!.x, this.paintStart!.y);
     }
+    if (this.mode === 'draw') { this.extendPlan(this.tileAt(e.clientX, e.clientY)); return; }
     if (this.mode === 'pan') {
       this.renderer.panBy(dx, dy);
       this.updateHover(e.clientX, e.clientY);
@@ -172,7 +184,7 @@ export class Input {
       const t = zone ? this.snapToZone(this.tileAt(e.clientX, e.clientY)) : this.lockToAxis(this.tileAt(e.clientX, e.clientY), e.shiftKey);
       if (this.paintStart && (zone || (LINE_TOOLS.has(this.state.tool) && !e.shiftKey))) this.renderer.setHover(t);
       if (t.x !== this.lastPaint.x || t.y !== this.lastPaint.y) {
-        this.paintLine(this.lastPaint, t, zone ? ZONE : 1);
+        this.paintLine(this.lastPaint, t, zone ? ZONE : 1, (x, y) => this.enqueueBuild(x, y, false));
         this.lastPaint = t;
       }
     }
@@ -186,7 +198,17 @@ export class Input {
       if (this.pointers.size < 2) { this.pinch = null; this.mode = this.pointers.size === 1 ? 'pan' : 'none'; }
       return;
     }
-    if (this.mode === 'maybe-paint') this.mode = 'maybe-click'; // no drag: a plain tap on the aimed tile
+    if (this.mode === 'maybe-draw') {
+      // no drag: a tap. With a drawing waiting it only cancels that; otherwise it aims (or builds) one tile.
+      if (this.plan) { this.clearPlan(); this.mode = 'none'; this.paintStart = null; return; }
+      this.mode = 'maybe-click';
+    }
+    if (this.mode === 'draw') {
+      // the drawing stays on the map until the player confirms or cancels it
+      this.drafting = false;
+      const plan = this.plan!, ok = plan.tiles.filter((t) => t.ok).length;
+      this.hooks.onTouchPlan({ tool: plan.tool, count: ok, cost: ok * TOOLS[plan.tool].cost });
+    }
     if (this.mode === 'maybe-click' && p && p.button === 2 && this.state.tool !== 'query') {
       // right-click drops the build tool and returns to query mode (a right-drag still pans)
       this.state.setTool('query');
@@ -218,7 +240,7 @@ export class Input {
     }
     if (this.mode === 'paint') this.flushPaint();
     // (a pinch always ends through 'pan' or returns above); after a touch paint the marker goes too
-    const wasGesture = this.mode === 'pan' || this.mode === 'paint';
+    const wasGesture = this.mode === 'pan' || this.mode === 'paint' || this.mode === 'draw';
     this.mode = 'none';
     this.lastPaint = null;
     this.paintStart = null; this.axis = null;
@@ -261,26 +283,61 @@ export class Input {
     return true;
   }
 
-  /** Touch: is (cssX, cssY) on or near the aimed footprint of a paint or zone tool? Measured in screen
-   *  pixels, since a tile can be smaller than a fingertip. */
-  private touchOnAim(cssX: number, cssY: number): boolean {
-    const h = this.renderer.hover, tool = this.state.tool;
-    if (!h || !this.renderer.isTileMode() || !(PAINT_TOOLS.has(tool) || ZONE_TOOLS.has(tool))) return false;
-    const def = TOOLS[tool], { x0, y0 } = footprintOrigin(def, h.x, h.y);
-    const a = this.renderer.tileToScreen(x0, y0), b = this.renderer.tileToScreen(x0 + toolW(def), y0 + toolH(def));
-    const dx = Math.max(a.x - cssX, 0, cssX - b.x), dy = Math.max(a.y - cssY, 0, cssY - b.y);
-    return Math.hypot(dx, dy) <= TOUCH_AIM_SLOP;
-  }
-
-  /** Commit the touch-aimed footprint (called by the UI's Build button). */
-  buildAtHover(): void {
+  /** Commit the touch drawing, or else the touch-aimed footprint (the UI's Build button). */
+  confirmTouch(): void {
+    if (this.plan) {
+      for (const t of this.plan.tiles) if (t.ok) this.buildQueue.push({ tool: this.plan.tool, x: t.x, y: t.y });
+      this.clearPlan();
+      this.drainBuilds();
+      return;
+    }
     const h = this.renderer.hover;
     if (!h || !this.renderer.isTileMode()) return;
     this.actions.build(this.state.tool, h.x, h.y);
     this.renderer.setHover(null);
     this.hooks.onTouchTarget(null);
   }
-  clearTouchTarget(): void { this.renderer.setHover(null); this.hooks.onTouchTarget(null); }
+  clearTouchTarget(): void { this.clearPlan(); this.renderer.setHover(null); this.hooks.onTouchTarget(null); }
+
+  // ---------- touch drawing ----------
+  private clearPlan(): void {
+    this.drafting = false;
+    if (!this.plan) return;
+    this.plan = null;
+    this.planKeys.clear();
+    this.renderer.setPlan(null);
+    this.hooks.onTouchPlan(null);
+  }
+
+  /** Grow the drawing to the finger at t: road, rail and power lines go straight from the start along the
+   *  finger's main direction (redrawn as it moves); zones follow the finger on their 3x3 grid, parks and the
+   *  bulldozer tile by tile. */
+  private extendPlan(t: { x: number; y: number }): void {
+    const plan = this.plan, s = this.paintStart;
+    if (!plan || !s || !this.lastPaint) return;
+    if (LINE_TOOLS.has(plan.tool)) {
+      const end = Math.abs(t.x - s.x) >= Math.abs(t.y - s.y) ? { x: t.x, y: s.y } : { x: s.x, y: t.y };
+      plan.tiles = []; this.planKeys.clear();
+      this.addToPlan(s.x, s.y);
+      this.paintLine(s, end, 1, (x, y) => this.addToPlan(x, y));
+    } else {
+      const zone = ZONE_TOOLS.has(plan.tool);
+      const to = zone ? this.snapToZone(t) : t;
+      if (to.x === this.lastPaint.x && to.y === this.lastPaint.y) return;
+      this.paintLine(this.lastPaint, to, zone ? ZONE : 1, (x, y) => this.addToPlan(x, y));
+      this.lastPaint = to;
+    }
+    this.renderer.setPlan(plan);
+  }
+
+  private addToPlan(x: number, y: number): void {
+    const plan = this.plan;
+    if (!plan || !inWorld(x, y) || this.planKeys.has(y * WORLD_W + x)) return;
+    this.planKeys.add(y * WORLD_W + x);
+    const owned = this.state.ownsChunk(Math.floor(x / CHUNK), Math.floor(y / CHUNK));
+    plan.tiles.push({ x, y, ok: owned && (!ZONE_TOOLS.has(plan.tool) || this.zoneFits(x, y)) });
+    this.renderer.setPlan(plan);
+  }
 
   private onWheel = (e: WheelEvent): void => {
     e.preventDefault();
@@ -339,7 +396,7 @@ export class Input {
 
   // ---------- painting ----------
   /** Paint from a to b. `step` > 1 walks a grid of that spacing anchored at the drag start (zone cells). */
-  private paintLine(a: { x: number; y: number }, b: { x: number; y: number }, step = 1): void {
+  private paintLine(a: { x: number; y: number }, b: { x: number; y: number }, step: number, visit: (x: number, y: number) => void): void {
     // Bresenham (in grid cells) so fast drags do not skip tiles
     const o = this.paintStart ?? a;
     const ax = (a.x - o.x) / step, ay = (a.y - o.y) / step;
@@ -350,7 +407,7 @@ export class Input {
     let err = dx + dy;
     let guard = 0;
     while (guard++ < 4096) {
-      if (x0 !== ax || y0 !== ay) this.enqueueBuild(o.x + x0 * step, o.y + y0 * step, false);
+      if (x0 !== ax || y0 !== ay) visit(o.x + x0 * step, o.y + y0 * step);
       if (x0 === x1 && y0 === y1) break;
       const e2 = 2 * err;
       if (e2 >= dy) { err += dy; x0 += sx; }
@@ -364,7 +421,7 @@ export class Input {
     // through so the server can explain)
     if (!first && !this.state.ownsChunk(Math.floor(x / CHUNK), Math.floor(y / CHUNK))) return;
     if (!first && ZONE_TOOLS.has(this.state.tool) && (!this.zoneFits(x, y) || this.state.funds < TOOLS[this.state.tool].cost)) return;
-    this.buildQueue.push({ x, y });
+    this.buildQueue.push({ tool: this.state.tool, x, y });
     this.drainBuilds();
   }
 
@@ -377,8 +434,7 @@ export class Input {
       const next = this.buildQueue.shift();
       if (next) {
         this.lastBuildAt = performance.now();
-        const tool = this.state.tool;
-        if (PAINT_TOOLS.has(tool) || ZONE_TOOLS.has(tool)) this.actions.build(tool, next.x, next.y);
+        if (PAINT_TOOLS.has(next.tool) || ZONE_TOOLS.has(next.tool)) this.actions.build(next.tool, next.x, next.y);
       }
       if (this.buildQueue.length) this.drainBuilds();
     }, wait);

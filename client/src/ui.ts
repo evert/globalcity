@@ -8,7 +8,7 @@ import type { Minimap, SpriteSheet } from './assets.ts';
 import { drawTile } from './assets.ts';
 import type { Net } from './net.ts';
 import type { Renderer } from './renderer.ts';
-import { PAINT_TOOLS, ZONE_TOOLS } from './input.ts';
+import { ZONE_TOOLS, type TouchPlan } from './input.ts';
 import { NIGHT_REFRESH_MS } from './night.ts';
 import { isFireTile, withAlpha } from './renderer.ts';
 import type { AppState } from './state.ts';
@@ -1222,11 +1222,13 @@ export class UI {
   private touchBar!: HTMLElement;
   private touchWhat!: HTMLElement;
   private touchTile: { x: number; y: number } | null = null;
+  private touchPlan: TouchPlan | null = null;
+  private touchBuild!: HTMLButtonElement;
   onTouchBuild: () => void = () => {};
   onTouchCancel: () => void = () => {};
   private buildTouchBar(): void {
     this.touchWhat = el('span', { class: 'what' });
-    const build = el('button', { class: 'primary', type: 'button' }, 'Build');
+    const build = this.touchBuild = el('button', { class: 'primary', type: 'button' }, 'Build');
     const cancel = el('button', { type: 'button' }, 'Cancel');
     build.addEventListener('click', () => this.onTouchBuild());
     cancel.addEventListener('click', () => this.onTouchCancel());
@@ -1235,11 +1237,21 @@ export class UI {
   /** Touch aimed a build tool at a tile (null = hide). Tap the same tile again or press Build. */
   setTouchTarget(tile: { x: number; y: number } | null): void {
     this.touchTile = tile;
-    if (!tile) { this.touchBar.classList.add('hidden'); return; }
+    if (!tile) { if (!this.touchPlan) this.touchBar.classList.add('hidden'); return; }
     const t = TOOLS[this.state.tool];
-    // paint and zone tools also draw a line when dragged from the marker
-    const drags = PAINT_TOOLS.has(this.state.tool) || ZONE_TOOLS.has(this.state.tool);
-    this.touchWhat.textContent = `${t.name} here${t.cost ? ` · ${fmtMoney(t.cost)}` : ''} — ${drags ? 'tap again, drag from it, or' : 'tap again or'}`;
+    this.touchWhat.textContent = `${t.name} here${t.cost ? ` · ${fmtMoney(t.cost)}` : ''} — tap again or`;
+    this.touchBuild.disabled = false;
+    this.touchBar.classList.remove('hidden');
+  }
+  /** A touch drawing waits for confirmation (null = hide): how many tiles it builds and roughly what it costs. */
+  setTouchPlan(plan: TouchPlan | null): void {
+    this.touchPlan = plan;
+    if (!plan) { if (!this.touchTile) this.touchBar.classList.add('hidden'); return; }
+    const t = TOOLS[plan.tool], zone = ZONE_TOOLS.has(plan.tool);
+    const what = zone ? `${plan.count} zone${plan.count === 1 ? '' : 's'}` : `${plan.count} tile${plan.count === 1 ? '' : 's'}`;
+    // the server can charge more (bridges, clearing trees), so the cost is an estimate
+    this.touchWhat.textContent = plan.count ? `${t.name} · ${what}${plan.cost ? ` · about ${fmtMoney(plan.cost)}` : ''}` : 'Only on your own plots';
+    this.touchBuild.disabled = plan.count === 0;
     this.touchBar.classList.remove('hidden');
   }
 
