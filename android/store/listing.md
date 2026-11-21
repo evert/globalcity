@@ -38,7 +38,7 @@ GlobalCity uses graphics from Micropolis, the open-source release of SimCity Cla
 
 - **App icon:** `../store_icon.png` (512 x 512)
 - **Feature graphic:** `feature-graphic.png` (1024 x 500)
-- **Phone screenshots:** `phone-1-city.png` to `phone-5-milestones.png` (1080 x 1920)
+- **Phone screenshots** (1080 x 1920, taken from the live game on 21 Nov 2026): `phone-1-city-day.png` (Platinum City by day), `phone-2-city-night.png` (Hellhole at night), `phone-3-world.png` (Europe and Africa at dusk, pole to pole), `phone-4-milestones.png` (the milestones panel)
 
 ## Data safety form (suggested answers)
 
