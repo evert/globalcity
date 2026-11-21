@@ -10,6 +10,7 @@ import {
   UPKEEP_ROAD, UPKEEP_RAIL, UPKEEP_STATION, UPKEEP_COAL, UPKEEP_NUCLEAR, CITY_FREEZE_MS,
   POLICESTATION,
   FIRE_SPREAD_P, FIRE_BURNOUT_P, FIRE_BURNOUT_P_COVERED, FIRE_STATION_RANGE, FIRE_OUTBREAK_BASE_P, FIRE_OWNER_ONLINE_MS, FIRE_PREVENTED_P,
+  REGROW_MS, REGROW_P,
   ABANDON_DECAY_DAYS, ABANDON_FREE_DAYS, ABANDON_DECAY_P, ABANDON_DECAY_ENABLED, SMALL_CITY_MAX_ITEMS, SMALL_CITY_RELEASE_MS, NEIGHBOUR_DEMAND_MAX, RAIL_LINK_BOOST, RAIL_LINK_MAX,
   TRAFFIC_MAX_STEPS, TRAFFIC_ADD, TRAFFIC_DECAY, TRAFFIC_LIGHT, TRAFFIC_HEAVY, TRAFFIC_RAIL_SHARE, TRAFFIC_RAIL_REACH,
   STADIUM_RES_BOOST, SEAPORT_IND_BOOST, AIRPORT_COM_BOOST, POLICE_RANGE, CRIME_PER_POP,
@@ -20,7 +21,7 @@ import {
   COALBASE, STADIUM, FULLSTADIUM, STADIUMBASE, FULLSTADIUMBASE, PORT, AIRPORT,
   COAL_SMOKE, IND_SMOKE, STADIUM_GAME, NUKE_SWIRL, AIRPORT_RADAR, roadPiece, trafficTile,
   resBuildingCenter, comBuildingCenter, indBuildingCenter, resZonePop, comZonePop, indZonePop, displayPopulation,
-  isRoad, isRail, isWire, isTree, isWater, isIndZone, isComZone, isHouse, parseChunkKey, inWorld, clamp,
+  isRoad, isRail, isWire, isTree, isWater, isIndZone, isComZone, isHouse, isRubble, chunkKey, parseChunkKey, inWorld, clamp,
   HOSPITAL, CHURCH, HOSPITALBASE, CHURCHBASE,
   type ClaimInfo, type Demand, type GameTime,
   isOverWater,
@@ -57,6 +58,9 @@ const plantSupply = (id: number): number =>
   id === POWERPLANT ? COAL_POWER : id === NUCLEAR ? NUCLEAR_POWER : id === WINDFARM ? WIND_POWER : id === OFFSHORE ? OFFSHORE_POWER : 0;
 /** SMALL_CITY_RELEASE_MS can be overridden by the environment (tests use a few seconds). */
 const SMALL_RELEASE_MS = Number(process.env.SMALL_CITY_RELEASE_MS) || SMALL_CITY_RELEASE_MS;
+/** REGROW_MS and REGROW_P can be overridden by the environment (tests use a few seconds and a high chance). */
+const REGROW_EVERY_MS = Number(process.env.REGROW_MS) || REGROW_MS;
+const REGROW_CHANCE = Number(process.env.REGROW_P) || REGROW_P;
 /** CITY_FREEZE_MS can be overridden by the environment (tests use a few seconds). */
 const FREEZE_MS = Number(process.env.CITY_FREEZE_MS) || CITY_FREEZE_MS;
 /** Rail networks are recomputed at most this often (in ticks) when only zones next to track changed. */
@@ -291,6 +295,8 @@ export class Sim {
   private readonly gridStamp = new Uint8Array(WORLD_W * WORLD_H);
   /** ids of cities frozen this tick (mayor away >= CITY_FREEZE_MS) */
   readonly frozen = new Set<string>();
+  /** wall-clock time of the last regrowth pass (rubble turning back into landscape) */
+  private lastRegrow = Date.now();
   isFrozen(id: string): boolean { return this.frozen.has(id); }
   private gridEpoch = 0;
 
@@ -379,6 +385,7 @@ export class Sim {
     for (const p of this.players.players.values()) {
       if (p.chunks.length > 0 && (p.monument || now - p.lastSeen >= FREEZE_MS)) this.frozen.add(p.id); // monuments stay frozen for good
     }
+    if (now - this.lastRegrow >= REGROW_EVERY_MS) { this.lastRegrow = now; this.regrow(); this.lap('regrow'); }
     // 1. Neighbourhood: rail networks and neighbour/rail demand for every running city with land.
     this.updateRailNetworks();
     this.lap('rail');
@@ -450,6 +457,32 @@ export class Sim {
       this.ruin(x, y, v);
     }
     return left > 0;
+  }
+
+  /**
+   * Nature returns: each rubble tile has REGROW_P chance of turning back into the landscape that was there
+   * before anyone built. Only chunks that were ever built on can hold rubble; chunks of cities whose mayor is
+   * playing right now are left alone (they may be clearing land to build on).
+   */
+  private regrow(): void {
+    const tiles = this.world.tiles;
+    let n = 0;
+    for (const [ci, orig] of this.world.pristine) {
+      const { cx, cy } = chunkCoords(ci);
+      const owner = this.players.claims.get(chunkKey(cx, cy));
+      if (owner && !this.frozen.has(owner)) continue;
+      for (let dy = 0; dy < CHUNK; dy++) {
+        const row = (cy * CHUNK + dy) * WORLD_W + cx * CHUNK;
+        for (let dx = 0; dx < CHUNK; dx++) {
+          if (!isRubble(tiles[row + dx]) || !chance(REGROW_CHANCE)) continue;
+          const was = orig[dy * CHUNK + dx];
+          if (isRubble(was)) continue;
+          this.world.set(cx * CHUNK + dx, cy * CHUNK + dy, was);
+          n++;
+        }
+      }
+    }
+    if (n) log(`regrow: ${n} rubble tile(s) turned back into landscape`);
   }
 
   /** Released plots: drop their traffic maps and redraw their roads plain (shared by idle release and abandon). */

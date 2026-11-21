@@ -30,6 +30,9 @@ export class World {
   railDirty = true;
   /** Chunks overlaid from a save at boot (the sim normalises their traffic tiles once). */
   readonly loaded = new Set<ChunkIndex>();
+  /** The untouched landscape of every chunk that has been built on, copied just before its first change
+   *  (so rubble can grow back into what was there). Rebuilt each boot from the base map. */
+  readonly pristine = new Map<ChunkIndex, Uint16Array>();
   private landCache = new Int32Array(CHUNKS_X * CHUNKS_Y).fill(-1);
 
   get(x: number, y: number): number {
@@ -54,11 +57,13 @@ export class World {
     const i = y * WORLD_W + x;
     const old = this.tiles[i];
     if (old === v) return;
+    const cx = Math.floor(x / CHUNK), cy = Math.floor(y / CHUNK);
+    if (!this.pristine.has(chunkIndex(cx, cy))) this.pristine.set(chunkIndex(cx, cy), this.chunkView(cx, cy));
     this.tiles[i] = v;
     // Rail networks only care about rail tiles and the zones that touch them: a zone/house change only
     // dirties them when there is track next to it (zone growth elsewhere happens every tick).
     if (isRail(old) !== isRail(v) || (zoneLike(old) !== zoneLike(v) && this.railAround(x, y))) this.railDirty = true;
-    const ci = chunkIndex(Math.floor(x / CHUNK), Math.floor(y / CHUNK));
+    const ci = chunkIndex(cx, cy);
     this.dirty.add(ci);
     let arr = this.pending.get(ci);
     if (!arr) { arr = []; this.pending.set(ci, arr); }
@@ -78,6 +83,7 @@ export class World {
 
   /** Overlay saved chunk data without marking dirty or broadcasting (boot only). */
   loadChunk(cx: number, cy: number, data: Uint16Array): void {
+    if (!this.pristine.has(chunkIndex(cx, cy))) this.pristine.set(chunkIndex(cx, cy), this.chunkView(cx, cy));
     const base = cy * CHUNK * WORLD_W + cx * CHUNK;
     for (let dy = 0; dy < CHUNK; dy++) {
       this.tiles.set(data.subarray(dy * CHUNK, dy * CHUNK + CHUNK), base + dy * WORLD_W);

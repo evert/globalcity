@@ -47,6 +47,11 @@ export const ABANDON_DECAY_P = 0.004;
 /** Decay of idle cities into rubble. Off for now (2026-10-05): the world is still empty, so ruins only hurt.
  *  Idle cities still show as abandoned and their plots are still released after ABANDON_FREE_DAYS. */
 export const ABANDON_DECAY_ENABLED = false;
+// Nature returns: every REGROW_MS each rubble tile has REGROW_P chance of turning back into the landscape that
+// was there before anyone built (dirt, forest, shore), except in cities whose mayor is playing right now.
+// At 2% every 5 minutes a field of rubble is half gone after about 3 hours and nearly all gone in half a day.
+export const REGROW_MS = 5 * 60_000;
+export const REGROW_P = 0.02;
 // Barely-started cities don't hold land for long: with fewer than SMALL_CITY_MAX_ITEMS things built
 // (each zone/building counts once, each road/rail/power line/park tile once) and the mayor away for
 // SMALL_CITY_RELEASE_MS, the plots are released for others to claim.
