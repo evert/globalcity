@@ -66,30 +66,6 @@ data/     generated world + save data (git-ignored)
 LICENSES/ GPL-3.0 and the Micropolis additional terms
 ```
 
-## Simulation notes
-
-The simulation is a deliberately simplified Micropolis: power flood-fill through conductive
-tiles from coal/nuclear plants, R/C/I zones that need power and a nearby road to grow,
-density levels mapped to the original building tiles, a simple land-value heuristic, an
-RCI demand model with an external market so new towns can start, and yearly taxes.
-
-The budget screen (💰 Budget, or click your cash) shows the city's money per game year: tax income
-(a flat `TAX_RATE` on residents and jobs, collected monthly), upkeep by line (roads, rail, power
-plants, services), power trade, lifeline repayments and construction spending, for the year so far
-and the completed years before it. Every player's closed years are kept on their record
-(`budgetHistory`, up to 100), so a history view can be added later.
-
-Power grids cross city borders: wires connect to a neighbour's grid, and a city whose plants
-produce more than its zones need sells the surplus to connected cities that lack power, at
-`POWER_PRICE_PER_UNIT` per zone-unit per game month (importers must be able to pay; unmet
-zones brown out). Fire follows Micropolis `doFire`/`fireZone`: random outbreaks scale with city
-size, a hit building collapses to rubble around one burning tile, fire spreads to burnable
-neighbours (including across the border into a neighbour's city, never into unclaimed land)
-and burns out into rubble; a powered fire station within `FIRE_STATION_RANGE` halves the
-spread and quadruples the burn-out rate. A leaderboard of the biggest cities is pushed every
-`LEADERBOARD_PUSH_TICKS` ticks. Traffic simulation, crime and pollution maps are not
-implemented (yet).
-
 ## License
 
 GPL-3.0-or-later. See [LICENSE](LICENSE) and [LICENSES/](LICENSES/).
