@@ -263,6 +263,8 @@ a { color: var(--accent); }
 
 .btn.lifeline { background: #c0392b; border-color: #e74c3c; color: #fff; font-weight: bold; }
 #lifeline { width: min(460px, calc(100vw - 32px)); }
+#discordInvite { width: min(440px, calc(100vw - 32px)); }
+a.btn { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
 #lifeline .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 
 /* budget screen */

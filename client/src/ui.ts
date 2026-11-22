@@ -42,6 +42,9 @@ function milestoneCell(pct: number | undefined): HTMLElement {
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const WELCOMED_KEY = 'globalcity.welcomed';
+/** how many times this browser has opened the game, and whether it has been invited to the Discord yet */
+const VISITS_KEY = 'globalcity.visits';
+const DISCORD_ASKED_KEY = 'globalcity.discordAsked';
 const TOAST_DEDUP_MS = 3000;
 const POWER_TRADE_HELP = 'Power flows over wires across plot borders; surplus is sold at $1 per unit per month.';
 export const NEIGHBOUR_HELP = "Neighbouring cities' jobs and shoppers add demand across the border; rail connecting your zones to theirs boosts commerce.";
@@ -124,6 +127,7 @@ export class UI {
   private welcome!: HTMLElement; private welcomeStatus!: HTMLElement; private welcomeDismissed = false; private welcomeMode: 'idle' | 'locating' | 'pick' = 'idle';
   /** we saw this player with zero plots this session, so the next plot is a founding */
   private sawNoPlots = false; private foundedToastShown = false;
+  private discordInvite!: HTMLElement;
   private about!: HTMLElement;
   private mini!: HTMLCanvasElement; private miniDirty = true;
 
@@ -152,6 +156,7 @@ export class UI {
     this.buildMonument();
     this.buildAbandon();
     this.buildBudget();
+    this.buildDiscordInvite();
     this.buildMinimap();
     this.root.append(this.toasts, this.query, this.touchBar, this.banners);
     this.bind();
@@ -616,6 +621,40 @@ export class UI {
   }
 
   // ---------- lifeline ----------
+  /** Asks returning players (from their second visit, once) to join the Discord for news of world resets and updates. */
+  private buildDiscordInvite(): void {
+    const close = el('button', { class: 'btn ghost round close', title: 'Close' }, '×');
+    close.onclick = () => this.hide(this.discordInvite);
+    const join = el('a', { class: 'btn primary', href: DISCORD_URL, target: '_blank', rel: 'noopener noreferrer' }, discordIcon(), el('span', {}, 'Join the Discord'));
+    join.addEventListener('click', () => this.hide(this.discordInvite));
+    const later = el('button', { class: 'btn', type: 'button' }, 'Maybe later');
+    later.onclick = () => this.hide(this.discordInvite);
+    this.discordInvite = el('div', { id: 'discordInvite', class: 'panel card hidden' },
+      close,
+      el('h2', { text: 'Welcome back, mayor!' }),
+      el('p', { text: 'Join the GlobalCity Discord to get notified of game updates and to hear when the next world reset is coming, so you can plan your next city.' }),
+      el('p', { text: "It's also where neighbours meet, find trading partners, and suggest what to build next." }),
+      el('div', { class: 'row' }, join, later),
+    );
+    this.root.append(this.discordInvite);
+    let visits = 0, asked = false;
+    try {
+      visits = (Number(localStorage.getItem(VISITS_KEY)) || 0) + 1;
+      localStorage.setItem(VISITS_KEY, String(visits));
+      asked = localStorage.getItem(DISCORD_ASKED_KEY) === '1';
+    } catch { return; } // no storage: we can't tell a second visit from the first
+    if (visits < 2 || asked) return;
+    // a few seconds in, once nothing else (the welcome, a budget screen, ...) is open; give up after a minute
+    let tries = 0;
+    const attempt = (): void => {
+      const busy = !this.state.me || [...this.root.querySelectorAll('.card')].some((c) => c !== this.discordInvite && !c.classList.contains('hidden'));
+      if (busy) { if (++tries < 12) setTimeout(attempt, 5000); return; }
+      try { localStorage.setItem(DISCORD_ASKED_KEY, '1'); } catch { /* ignore */ }
+      this.show(this.discordInvite);
+    };
+    setTimeout(attempt, 4000);
+  }
+
   private buildLifeline(): void {
     const close = el('button', { class: 'btn ghost round close', title: 'Close' }, '×');
     close.onclick = () => this.hide(this.lifelinePanel);
