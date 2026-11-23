@@ -43,7 +43,7 @@ const SETTLE_MS = 150;
 export const ANIM_MS = 200;
 const FLASH_MS = 2000;
 
-type RendererEvents = { camera: Camera; settle: Camera; hover: TilePos | null };
+type RendererEvents = { camera: Camera; settle: Camera; hover: TilePos | null; touchCursor: TilePos | null };
 
 /** `anim`: tile indices in this chunk that animate (ANIMBIT set, or an animated id for old servers);
  *  `frame`: the tile id currently drawn for each of them (advanced through ANI_TILE every ANIM_MS while on screen). */
@@ -103,6 +103,9 @@ export class Renderer extends Emitter<RendererEvents> {
   readonly ctx: CanvasRenderingContext2D;
   cam: Camera = { x: WORLD_W / 2, y: WORLD_H / 2, zoom: 0.03 };
   hover: TilePos | null = null;
+  /** Phones have no hover: the tile last touched (or the end of the line being drawn) stands in as the
+   *  cursor other players see. Not drawn locally. */
+  touchCursor: TilePos | null = null;
   /** touch drawing waiting to be confirmed: every tile it would build (`ok` false where it can't) */
   plan: { tool: ToolId; tiles: readonly (TilePos & { ok: boolean })[] } | null = null;
   cssW = 1; cssH = 1; dpr = 1;
@@ -366,6 +369,13 @@ export class Renderer extends Emitter<RendererEvents> {
     this.hover = p;
     this.emit('hover', p);
     this.invalidate();
+  }
+
+  setTouchCursor(p: TilePos | null): void {
+    const same = (!p && !this.touchCursor) || (!!p && !!this.touchCursor && p.x === this.touchCursor.x && p.y === this.touchCursor.y);
+    if (same) return;
+    this.touchCursor = p;
+    this.emit('touchCursor', p);
   }
 
   setPlan(plan: Renderer['plan']): void {

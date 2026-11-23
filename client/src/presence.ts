@@ -46,7 +46,8 @@ export class ViewReporter {
     const msg: { t: 'view'; x: number; y: number; zoom: number; cx?: number; cy?: number } = {
       t: 'view', x: Math.round(cam.x * 10) / 10, y: Math.round(cam.y * 10) / 10, zoom: Math.round(cam.zoom * 10000) / 10000,
     };
-    if (r.isTileMode() && r.hover) { msg.cx = r.hover.x; msg.cy = r.hover.y; }
+    const cursor = r.hover ?? r.touchCursor; // a mouse hovers; a finger leaves its last touch behind
+    if (r.isTileMode() && cursor) { msg.cx = cursor.x; msg.cy = cursor.y; }
     this.last = this.now();
     const key = `${msg.x},${msg.y},${msg.zoom},${msg.cx},${msg.cy}`;
     if (key === this.lastKey) return false; // nothing changed since the last send

@@ -39,6 +39,8 @@ const DRAG_THRESHOLD = 4;
 /** css px a finger must move (with a paint or zone tool) before a touch becomes a drawing */
 const TOUCH_DRAW_THRESHOLD = 8;
 const BUILD_INTERVAL_MS = 25;
+/** How long the touch cursor (what other players see of a phone player) stays after the finger lifts. */
+export const TOUCH_CURSOR_LINGER_MS = 10_000;
 
 export class Input {
   private pointers = new Map<number, PointerInfo>();
@@ -60,6 +62,7 @@ export class Input {
   private buildTimer: ReturnType<typeof setTimeout> | null = null;
   private lastBuildAt = 0;
   private hotkeys = new Map<string, ToolId>();
+  private touchCursorTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     readonly renderer: Renderer,
@@ -106,6 +109,7 @@ export class Input {
     this.renderer.syncSize(); // a stale canvas size would put this tap on the wrong tile
     this.hooks.onInteract();
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, button: e.button, type: e.pointerType });
+    if (e.pointerType === 'touch' && this.pointers.size === 1) this.touchAt(this.tileAt(e.clientX, e.clientY));
     if (this.pointers.size === 2) {
       const [a, b] = [...this.pointers.values()];
       this.pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom: this.renderer.cam.zoom };
@@ -175,6 +179,7 @@ export class Input {
     if (this.mode === 'draw') { this.extendPlan(this.tileAt(e.clientX, e.clientY)); return; }
     if (this.mode === 'pan') {
       this.renderer.panBy(dx, dy);
+      if (p.type === 'touch') this.touchAt(this.tileAt(e.clientX, e.clientY));
       this.updateHover(e.clientX, e.clientY);
       return;
     }
@@ -194,6 +199,7 @@ export class Input {
     const p = this.pointers.get(e.pointerId);
     this.pointers.delete(e.pointerId);
     try { this.renderer.canvas.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    if (e.pointerType === 'touch' && this.pointers.size === 0) this.lingerTouchCursor();
     if (this.mode === 'pinch') {
       if (this.pointers.size < 2) { this.pinch = null; this.mode = this.pointers.size === 1 ? 'pan' : 'none'; }
       return;
@@ -299,12 +305,28 @@ export class Input {
   }
   clearTouchTarget(): void { this.clearPlan(); this.renderer.setHover(null); this.hooks.onTouchTarget(null); }
 
+  // ---------- touch cursor (what other players see of a phone player) ----------
+  private touchAt(t: { x: number; y: number }): void {
+    if (this.touchCursorTimer) { clearTimeout(this.touchCursorTimer); this.touchCursorTimer = null; }
+    this.renderer.setTouchCursor(inWorld(t.x, t.y) ? { x: t.x, y: t.y } : null);
+  }
+  /** After the finger lifts the cursor stays a while, and as long as a drawing waits for confirmation. */
+  private lingerTouchCursor(): void {
+    if (this.touchCursorTimer) clearTimeout(this.touchCursorTimer);
+    this.touchCursorTimer = setTimeout(() => {
+      this.touchCursorTimer = null;
+      if (this.plan) return; // clearPlan restarts the countdown
+      this.renderer.setTouchCursor(null);
+    }, TOUCH_CURSOR_LINGER_MS);
+  }
+
   // ---------- touch drawing ----------
   private clearPlan(): void {
     this.drafting = false;
     if (!this.plan) return;
     this.plan = null;
     this.planKeys.clear();
+    if (!this.pointers.size) this.lingerTouchCursor();
     this.renderer.setPlan(null);
     this.hooks.onTouchPlan(null);
   }
@@ -320,12 +342,14 @@ export class Input {
       plan.tiles = []; this.planKeys.clear();
       this.addToPlan(s.x, s.y);
       this.paintLine(s, end, 1, (x, y) => this.addToPlan(x, y));
+      this.touchAt(end);
     } else {
       const zone = ZONE_TOOLS.has(plan.tool);
       const to = zone ? this.snapToZone(t) : t;
       if (to.x === this.lastPaint.x && to.y === this.lastPaint.y) return;
       this.paintLine(this.lastPaint, to, zone ? ZONE : 1, (x, y) => this.addToPlan(x, y));
       this.lastPaint = to;
+      this.touchAt(to);
     }
     this.renderer.setPlan(plan);
   }

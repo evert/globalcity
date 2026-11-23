@@ -106,6 +106,7 @@ async function boot(): Promise<void> {
   const view = new ViewReporter(net, renderer);
   renderer.on('camera', () => view.poke());
   renderer.on('hover', () => view.poke());
+  renderer.on('touchCursor', () => view.poke());
   state.on('me', (me) => { if (me) { view.reset(); view.sendNow(); } });
 
   // ---- network ----

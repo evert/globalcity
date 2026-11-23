@@ -573,6 +573,14 @@ export async function runSelfTest(): Promise<void> {
   assert(JSON.parse(views[views.length - 1]).x === CHUNK + 100, 'moves inside the window are held back');
   await new Promise((res) => setTimeout(res, VIEW_INTERVAL_MS + 50)); // the trailing send fires (real timer)
   assert(views.length === perSec + 2 && JSON.parse(views[views.length - 1]).x === CHUNK + 105, `trailing send carries the latest camera (${views[views.length - 1]})`);
+  // phones: no hover, the last touched tile is the cursor others see
+  r.setHover(null); r.setTouchCursor({ x: 70, y: 71 });
+  clock += 1000; reporter.poke();
+  assert(JSON.parse(views[views.length - 1]).cx === 70 && JSON.parse(views[views.length - 1]).cy === 71, `touch cursor sent as the cursor (${views[views.length - 1]})`);
+  r.setHover({ x: 50, y: 50 });
+  clock += 1000; reporter.poke();
+  assert(JSON.parse(views[views.length - 1]).cx === 50, 'a hovered tile wins over the touch cursor');
+  r.setTouchCursor(null);
   r.showWorld();
   clock += 1000; reporter.poke();
   assert(JSON.parse(views[views.length - 1]).cx === undefined, 'no cursor in the view message outside tile mode');
