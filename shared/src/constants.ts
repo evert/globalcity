@@ -27,8 +27,20 @@ export function claimCost(owned: number): number {
   if (owned <= 0) return 0;
   return Math.round((CLAIM_BASE_COST * Math.pow(CLAIM_COST_GROWTH, owned - 1)) / 500) * 500;
 }
+/** A chunk needs at least this many non-water tiles (of 64x64 = 4096) to be claimed as an extra, adjacent plot.
+ *  Low on purpose: buying a coastal strip next to your city is a fine choice. */
 export const MIN_LAND_TILES_TO_CLAIM = 64;
-export const MAX_CHUNKS_PER_PLAYER = 10; // a city is at most this many plots // a chunk needs at least this much land to be claimable
+/** A founding (first) plot needs much more land, so a new mayor can't get stuck on a sliver of coast: a quarter of
+ *  the plot, i.e. a 32x32 block's worth. A small working city (coal plant 4x4, ~15-20 3x3 zones, roads and wires)
+ *  needs ~300-400 tiles, and coastlines are ragged, so ~3x that. On the generated Earth this still leaves ~86% of the
+ *  plots with any real land open to found on, and in plots at this level the biggest connected piece of land is
+ *  almost always 500+ tiles (the land isn't scattered islets). Existing claims are never re-checked. */
+export const MIN_LAND_TILES_FIRST_CLAIM = 1024;
+/** Land tiles a chunk needs to be claimed by a player who already owns `owned` plots. */
+export function minLandToClaim(owned: number): number {
+  return owned <= 0 ? MIN_LAND_TILES_FIRST_CLAIM : MIN_LAND_TILES_TO_CLAIM;
+}
+export const MAX_CHUNKS_PER_PLAYER = 10; // a city is at most this many plots
 export const TAX_RATE = 7; // percent, SimCity classic default
 // Budget. The clock runs 24/7 (one game year every 60 real seconds), so income is scaled hard:
 // a mid-size city nets roughly $8-12k per real hour while its mayor is online.

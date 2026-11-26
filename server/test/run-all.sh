@@ -34,6 +34,7 @@ TESTS=(
   "smallrelease|SMALL_CITY_RELEASE_MS=3000"
   "custom|"
   "notify|"
+  "firstplot|"
 )
 
 want=" $* "

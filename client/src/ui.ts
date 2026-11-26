@@ -2,7 +2,7 @@
 import type { BudgetYear, ClaimInfo, Demand, LeaderboardEntry, MonumentEntry, QueryInfo, ToolId } from '@globalcity/shared';
 import { OVERLAY_INFO, OVERLAY_MODES, type OverlayMode } from './overlays.ts';
 import { budgetTotals, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, ABANDON_RECLAIM_DAYS, MAX_MAYOR_NAME, MAX_CITY_NAME, STARTING_FUNDS, LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, LIFELINE_REPAY_SHARE, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT, LOMASK, FIRESTBASE, POLICESTBASE, CITYHALLBASE, LASTCITYHALL, chunkKey, shipCargo, flightLoad } from '@globalcity/shared';
-import { CHUNK, claimCost, MILESTONE_BUILDINGS, MILESTONE_ORDER, isMilestoneTool, nextMilestone, type MilestoneBuilding, MAX_CHUNKS_PER_PLAYER, POWER_PRICE_PER_UNIT, TOOLS, TOOL_ORDER, PLANT_OUTPUT, CUSTOM_BUILDINGS, GRAND_CENTRAL, WORLD_H, WORLD_W, chunkOf, lonLatToTile } from '@globalcity/shared';
+import { CHUNK, claimCost, chunkLandCount, minLandToClaim, MILESTONE_BUILDINGS, MILESTONE_ORDER, isMilestoneTool, nextMilestone, type MilestoneBuilding, MAX_CHUNKS_PER_PLAYER, POWER_PRICE_PER_UNIT, TOOLS, TOOL_ORDER, PLANT_OUTPUT, CUSTOM_BUILDINGS, GRAND_CENTRAL, WORLD_H, WORLD_W, chunkOf, lonLatToTile } from '@globalcity/shared';
 import type { Actions } from './actions.ts';
 import type { Minimap, SpriteSheet } from './assets.ts';
 import { drawTile } from './assets.ts';
@@ -508,6 +508,12 @@ export class UI {
     this.net.on('status', (s) => { this.status.textContent = s; this.offline.textContent = s; });
     this.renderer.on('camera', () => { this.hideQuery(); this.miniDirty = true; this.scheduleMini(); });
     this.renderer.on('settle', () => this.refreshClaimButtons());
+    // the land check needs the centre chunk's tiles, which may arrive after the camera settled
+    this.renderer.map.on('chunk', ({ cx, cy }) => {
+      if (!this.renderer.isTileMode()) return;
+      const c = this.renderer.centerChunk();
+      if (c.cx === cx && c.cy === cy) this.refreshClaimButtons();
+    });
   }
 
   private refreshAll(): void {
@@ -1170,9 +1176,20 @@ export class UI {
       : `Plots claimed (a city is at most ${MAX_CHUNKS_PER_PLAYER} plots)`;
     const tileMode = this.renderer.isTileMode();
     let showClaim = false, showFind = false;
+    let findTitle = 'Ask the server for the nearest free plot';
     if (tileMode && this.state.me) {
       const { cx, cy } = this.renderer.centerChunk();
-      if (this.state.canClaim(cx, cy)) {
+      // Same land rule as the server (a founding plot needs much more land than an extra one). Hint only: an
+      // unloaded chunk counts as fine and the server has the final say.
+      const minLand = minLandToClaim(owned);
+      const tiles = this.renderer.map.getChunk(cx, cy);
+      const land = tiles ? chunkLandCount(tiles) : Infinity;
+      if (this.state.canClaim(cx, cy) && land < minLand) {
+        if (owned === 0) {
+          showFind = true;
+          findTitle = `Too little land here for a first plot: it needs at least ${minLand.toLocaleString('en-US')} land tiles, this one has ${land.toLocaleString('en-US')}. Ask the server for the nearest plot with enough land.`;
+        }
+      } else if (this.state.canClaim(cx, cy)) {
         showClaim = true;
         const cost = claimCost(owned);
         this.claimBtn.textContent = owned === 0 ? 'Claim this plot (free)' : `Claim plot #${owned + 1} (${fmtMoney(cost)})`;
@@ -1184,6 +1201,7 @@ export class UI {
     }
     this.claimBtn.classList.toggle('hidden', !showClaim);
     this.findBtn.classList.toggle('hidden', !showFind);
+    this.findBtn.title = findTitle;
   }
 
   private refreshWelcome(): void {
@@ -1240,7 +1258,7 @@ export class UI {
         if (claim) {
           this.setWelcomeStatus(`The plot at your location belongs to ${claim.ownerName}. Try "Find nearest free plot".`, true);
         } else {
-          this.setWelcomeStatus('Found you! Use "Claim this plot" in the top bar once the map has loaded. If the server rejects it (e.g. open ocean), try "Find nearest free plot".');
+          this.setWelcomeStatus('Found you! Use "Claim this plot" in the top bar once the map has loaded. If there is too little land there (a first plot needs plenty), try "Find nearest free plot".');
           this.welcomeDismissed = true;
           setTimeout(() => this.hide(this.welcome), 1500);
         }

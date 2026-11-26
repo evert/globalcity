@@ -2,7 +2,7 @@
 
 import crypto from 'node:crypto';
 import {
-  STARTING_FUNDS, ABANDON_RECLAIM_DAYS, MAX_MAYOR_NAME, MAX_CITY_NAME, claimCost, CHUNKS_X, CHUNKS_Y, CHUNK, MAX_CHUNKS_PER_PLAYER, WORLD_W, ZONEBIT,
+  STARTING_FUNDS, ABANDON_RECLAIM_DAYS, MAX_MAYOR_NAME, MAX_CITY_NAME, claimCost, minLandToClaim, MIN_LAND_TILES_FIRST_CLAIM, CHUNKS_X, CHUNKS_Y, CHUNK, MAX_CHUNKS_PER_PLAYER, WORLD_W, ZONEBIT,
   chunkKey, parseChunkKey, colorForId,
   type PlayerStats, type PlayerPublic, type ClaimInfo, type GameTime, START_YEAR, type BudgetYear, BUDGET_YEARS_SENT,
   type IncomeLine, type ExpenseLine, type MoneyLine, INCOME_LINES, EXPENSE_LINES, emptyBudgetYear,
@@ -309,9 +309,9 @@ export class Players {
     return this.claims.get(chunkKey(cx, cy)) === p.id;
   }
 
-  /** Unclaimed and enough land. */
-  isClaimable(cx: number, cy: number): boolean {
-    return validChunk(cx, cy) && !this.claims.has(chunkKey(cx, cy)) && this.world.hasEnoughLand(cx, cy);
+  /** Unclaimed and at least `minLand` land tiles (defaults to the stricter founding-plot rule). */
+  isClaimable(cx: number, cy: number, minLand = MIN_LAND_TILES_FIRST_CLAIM): boolean {
+    return validChunk(cx, cy) && !this.claims.has(chunkKey(cx, cy)) && this.world.hasEnoughLand(cx, cy, minLand);
   }
 
   /**
@@ -330,7 +330,16 @@ export class Players {
       const days = Math.max(1, Math.ceil((p.leftPlots.until - Date.now()) / this.dayMs));
       return { ok: false, msg: `You left this plot when you abandoned your city: you can claim it again in ${days} ${days === 1 ? 'day' : 'days'}. Start your new city somewhere else.` };
     }
-    if (!this.world.hasEnoughLand(cx, cy)) return { ok: false, msg: 'Not enough land here to found a city' };
+    const minLand = minLandToClaim(p.chunks.length);
+    if (!this.world.hasEnoughLand(cx, cy, minLand)) {
+      const land = this.world.landCount(cx, cy).toLocaleString('en-US');
+      return {
+        ok: false,
+        msg: p.chunks.length === 0
+          ? `Not enough land here to found a city: a first plot needs at least ${minLand.toLocaleString('en-US')} land tiles, this one has ${land}. Try "Find nearest free plot".`
+          : `Not enough land here: a plot needs at least ${minLand.toLocaleString('en-US')} land tiles, this one has ${land}`,
+      };
+    }
     if (p.chunks.length >= MAX_CHUNKS_PER_PLAYER) return { ok: false, msg: `Your city is at the maximum of ${MAX_CHUNKS_PER_PLAYER} plots` };
     let cost = 0;
     if (p.chunks.length > 0) {
@@ -460,7 +469,8 @@ export class Players {
     return s;
   }
 
-  /** Nearest claimable chunk to (cx,cy) by expanding square rings; null if none within the radius cap. */
+  /** Nearest chunk a new mayor could found a city on (unclaimed, founding-plot land rule) to (cx,cy), by expanding
+   *  square rings; null if none within the radius cap. */
   findFree(cx: number, cy: number): { cx: number; cy: number } | null {
     cx = Math.min(Math.max(Math.round(cx), 0), CHUNKS_X - 1);
     cy = Math.min(Math.max(Math.round(cy), 0), CHUNKS_Y - 1);

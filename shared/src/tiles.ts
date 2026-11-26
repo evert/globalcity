@@ -239,6 +239,12 @@ export const TREE_EDGE_TABLE: readonly number[] = [0, 0, 0, 34, 0, 0, 36, 35, 0,
 export const tileId = (v: number): number => v & LOMASK;
 export const isDirt = (v: number): boolean => (v & LOMASK) === DIRT;
 export const isWater = (v: number): boolean => { const t = v & LOMASK; return t >= WATER_LOW && t <= WATER_HIGH; };
+/** Number of non-water tiles in one chunk's tiles (CHUNK*CHUNK values, row-major). */
+export const chunkLandCount = (tiles: ArrayLike<number>): number => {
+  let n = 0;
+  for (let i = 0; i < tiles.length; i++) { const t = tiles[i] & LOMASK; if (t < WATER_LOW || t > WATER_HIGH) n++; }
+  return n;
+};
 export const isTree = (v: number): boolean => { const t = v & LOMASK; return t >= WOODS_LOW && t <= WOODS_HIGH; };
 export const isRubble = (v: number): boolean => { const t = v & LOMASK; return t >= RUBBLE && t <= LASTRUBBLE; };
 export const isRoad = (v: number): boolean => { const t = v & LOMASK; return t >= ROADBASE && t <= LASTROAD; };
