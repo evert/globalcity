@@ -199,6 +199,8 @@ export type ClientMsg =
   | { t: 'hello'; id?: string; token?: string; name?: string; v?: string } // v: client build version (absent on old clients)
   | { t: 'sub'; chunks: [number, number][] } // replaces the whole subscription set
   | { t: 'claim'; cx: number; cy: number }
+  /** test servers (DISASTER_TRIGGER=1): start a disaster now in the city owning chunk cx,cy, or in a random city */
+  | { t: 'testDisaster'; kind: number; cx?: number; cy?: number }
   | { t: 'build'; tool: ToolId; x: number; y: number }
   | { t: 'query'; x: number; y: number }
   | { t: 'findFree'; cx: number; cy: number } // nearest chunk to (cx,cy) a new city can be founded on
@@ -222,6 +224,8 @@ export type ServerMsg =
       claims: ClaimInfo[];
       online: number;
       time: GameTime;
+      /** a test server that lets players start disasters (DISASTER_TRIGGER=1): the client shows its test dialog */
+      testDisasters?: boolean;
     }
   | { t: 'tiles'; u: number[] } // flat triples: x, y, value
   | { t: 'claim'; claim: ClaimInfo } // a chunk changed owner

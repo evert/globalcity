@@ -1,6 +1,6 @@
 // Natural disasters. Each kind only happens where it happens on Earth: the world generator records, per chunk,
 // which kinds are possible there (data/world-*/hazards.bin, one byte of HAZARD bits per chunk), from plate
-// boundaries, elevation, climate and storm regions. At most one disaster strikes per hour in the whole world,
+// boundaries, elevation, climate and storm regions. Disasters strike about every 15 minutes in the whole world,
 // always a city whose mayor is online, and everyone playing is told. A disaster only touches the plots of the
 // city it strikes.
 
@@ -20,10 +20,10 @@ export const DISASTERS: Record<Disaster, DisasterInfo> = {
 };
 
 /** At most one disaster in the whole world in this long. */
-export const DISASTER_MIN_GAP_MS = 60 * 60_000;
+export const DISASTER_MIN_GAP_MS = 10 * 60_000;
 /** Once the gap has passed, the chance per simulation step that a disaster strikes one of the cities that can be
- *  struck (720 steps an hour at 5 s): on average about an hour later, so roughly one every two hours worldwide. */
-export const DISASTER_STEP_P = 1 / 720;
+ *  struck (60 steps in 5 minutes at 5 s): on average 5 minutes later, so roughly one every 15 minutes worldwide. */
+export const DISASTER_STEP_P = 1 / 60;
 /** Small towns are spared: disasters start once a city has this many people (the fire station milestone). */
 export const DISASTER_MIN_POP = 15_000;
 

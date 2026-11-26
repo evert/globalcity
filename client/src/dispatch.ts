@@ -19,6 +19,7 @@ export function handleServerMsg(msg: ServerMsg, { state, map, renderer, ui, upda
       state.replaceClaims(msg.claims);
       state.setStats(msg.stats);
       state.setTime(msg.time, msg.online);
+      if (msg.testDisasters) ui.enableTestDisasters();
       if (msg.world.chunk !== CHUNK || msg.world.w !== WORLD_W || msg.world.h !== WORLD_H) {
         console.warn('[main] server world size differs from shared constants', msg.world);
       }

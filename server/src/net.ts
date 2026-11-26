@@ -88,6 +88,9 @@ export interface NetOptions {
   notify?: Notify;
 }
 
+/** test servers: players may start disasters from the client's test dialog (see index.ts) */
+const DISASTER_TRIGGER = process.env.DISASTER_TRIGGER === '1';
+
 export class Net {
   private readonly clients = new Set<Client>();
   private httpServer: http.Server | null = null;
@@ -158,6 +161,28 @@ export class Net {
       this.sendStatsIfChanged(c);
     }
     return { ok: true, id: p.id, name: p.name, cityName: p.cityName, funds: p.funds };
+  }
+
+  /** Test servers (DISASTER_TRIGGER=1): a player starts a disaster now, in the city owning chunk cx,cy or in a
+   *  random city, ignoring where that disaster can happen and the time since the last one. */
+  private onTestDisaster(client: Client, p: PlayerRecord, kind: number, cx?: number, cy?: number): void {
+    if (!DISASTER_TRIGGER) { this.toast(client, 'Disasters can only be started on a test server', 'error'); return; }
+    if (kind < 0 || kind >= DISASTER_COUNT) return;
+    let target: PlayerRecord | undefined;
+    if (cx !== undefined && cy !== undefined) {
+      target = this.players.ownerOf(cx, cy);
+      if (!target || target.monument) { this.toast(client, 'No city here: move the map so a city is in the middle of the screen', 'error'); return; }
+    } else {
+      const cities = [...this.players.players.values()].filter((c) => c.chunks.length > 0 && !c.monument && c.stats.population > 0);
+      target = cities[Math.floor(Math.random() * cities.length)];
+      if (!target) { this.toast(client, 'There is no city to strike', 'error'); return; }
+    }
+    const name = DISASTERS[kind as Disaster].name, city = target.cityName || `${target.name}'s city`;
+    const ok = this.sim.disasters.start(target, kind as Disaster, Date.now());
+    log(`test disaster by ${p.name}: ${name} in ${city}: ${ok ? 'started' : 'nothing to hit'}`);
+    if (!ok) { this.toast(client, `${name}: nothing it can hit in ${city}`, 'error'); return; }
+    this.broadcast({ t: 'disasters', list: this.sim.disasters.active() });
+    for (const t of this.sim.disasters.takeToasts()) this.deliverToast(t);
   }
 
   onlineCount(): number {
@@ -424,6 +449,7 @@ export class Net {
         for (const c of this.clients) if (c !== client && c.player) this.toast(c, `🏛 ${p.name} retired ${city} (${pop.toLocaleString('en-US')} people) as a monument`, 'info');
         break;
       }
+      case 'testDisaster': this.onTestDisaster(client, p, msg.kind, msg.cx, msg.cy); break;
       case 'abandon': {
         if (p.chunks.length === 0) { this.toast(client, 'You have no city to abandon', 'error'); break; }
         const city = p.cityName || `${p.name}'s city`;
@@ -541,6 +567,7 @@ export class Net {
       claims: this.players.allClaims(),
       online: this.onlineCount(),
       time: { ...this.players.time },
+      ...(DISASTER_TRIGGER ? { testDisasters: true } : {}),
     };
   }
 
@@ -698,6 +725,7 @@ function parseClientMsg(raw: unknown): ClientMsg | null {
     case 'lifeline': return { t: 'lifeline' };
     case 'monument': return { t: 'monument' };
     case 'abandon': return { t: 'abandon' };
+    case 'testDisaster': return isInt(m.kind) ? { t: 'testDisaster', kind: m.kind, ...(isInt(m.cx) && isInt(m.cy) ? { cx: m.cx, cy: m.cy } : {}) } : null;
     case 'ping': return { t: 'ping' };
     default: return null;
   }

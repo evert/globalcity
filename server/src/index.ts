@@ -11,6 +11,7 @@
 //   ABANDON_DAY_MS  length of an abandonment "day" in ms (default 86400000; tests use 1000)
 //   ALL_ONLINE  "1": every mayor counts as online all the time (no frozen cities, disasters anywhere), to see how
 //              a full world simulates. Test saves only: it keeps every city from going idle or being released.
+//   DISASTER_TRIGGER  "1": players get a test dialog to start any disaster in any city right away (test servers).
 //   DISASTER_EVERY_MS  a disaster strikes this often (when a city can be struck) instead of about one every two
 //              hours; for testing (e.g. 120000). Disasters never strike with DEV_HOOKS.
 //   NOTIFY_DB  world reset notification sign-ups (SQLite; default notify.db beside the save directory, so it

@@ -1,5 +1,5 @@
 // Natural disasters (shared/src/disasters.ts): which kinds a city can get comes from the world's hazard map; at
-// most one strikes per hour in the whole world, always in a city whose mayor is online, and everyone playing is
+// most one strikes every 10 minutes in the whole world (about one every 15 on average), always in a city whose mayor is online, and everyone playing is
 // told; a disaster only ever touches the plots of the city it strikes. Damage is Micropolis-style: buildings hit become rubble (or catch fire),
 // floods cover low land next to water and then recede, a tornado tears a path across town.
 import {
@@ -12,7 +12,7 @@ import type { Players, PlayerRecord } from './players.ts';
 import type { Elevation } from './elevation.ts';
 import { findZoneCenter, clearFootprint, isBuildingTile } from './zones.ts';
 
-/** DISASTER_EVERY_MS (testing): a disaster exactly this often, instead of the hourly gap and the random wait after it */
+/** DISASTER_EVERY_MS (testing): a disaster exactly this often, instead of the usual gap (DISASTER_MIN_GAP_MS) and the random wait after it */
 const EVERY_MS = Number(process.env.DISASTER_EVERY_MS) || 0;
 const MIN_GAP_MS = EVERY_MS || DISASTER_MIN_GAP_MS, STEP_P = EVERY_MS ? 1 : DISASTER_STEP_P;
 
@@ -51,7 +51,7 @@ export interface DisasterToast { playerId: string; kind: 'error' | 'info'; msg: 
 
 export class Disasters {
   private runs: Run[] = [];
-  /** when the last disaster struck anywhere (ms epoch): at most one an hour in the whole world */
+  /** when the last disaster struck anywhere (ms epoch): at most one per DISASTER_MIN_GAP_MS in the whole world */
   private lastStrike = 0;
   /** announcements not yet delivered (the simulation hands them on every step; the dev hook straight away) */
   private toasts: DisasterToast[] = [];
@@ -98,7 +98,7 @@ export class Disasters {
     for (const r of this.runs) this.advance(r, now);
     const moved = this.runs.some((r) => r.kind === Disaster.Tornado);
     this.runs = this.runs.filter((r) => !this.done(r, now));
-    // at most one disaster an hour in the whole world: once the hour is up, now and then one strikes a city
+    // at most one disaster per gap in the whole world: once the gap is up, now and then one strikes a city
     // that can be struck (its mayor online, big enough, a hazard on its land), picked at random
     if (random && now - this.lastStrike >= MIN_GAP_MS && rand() < STEP_P) {
       const candidates: { p: PlayerRecord; kinds: Disaster[] }[] = [];

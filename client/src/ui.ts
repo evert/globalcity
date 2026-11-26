@@ -3,7 +3,7 @@ import type { BudgetYear, ClaimInfo, Demand, LeaderboardEntry, MonumentEntry, Qu
 import { OVERLAY_INFO, OVERLAY_MODES, type OverlayMode } from './overlays.ts';
 import { budgetTotals, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, ABANDON_RECLAIM_DAYS, MAX_MAYOR_NAME, MAX_CITY_NAME, STARTING_FUNDS, LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, LIFELINE_REPAY_SHARE, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT, LOMASK, FIRESTBASE, POLICESTBASE, CITYHALLBASE, LASTCITYHALL, chunkKey, shipCargo, flightLoad } from '@globalcity/shared';
 import { CHUNK, claimCost, chunkLandCount, minLandToClaim, MILESTONE_BUILDINGS, MILESTONE_ORDER, isMilestoneTool, nextMilestone, type MilestoneBuilding, MAX_CHUNKS_PER_PLAYER, POWER_PRICE_PER_UNIT, TOOLS, TOOL_ORDER, PLANT_OUTPUT, CUSTOM_BUILDINGS, GRAND_CENTRAL, WORLD_H, WORLD_W, chunkOf, lonLatToTile } from '@globalcity/shared';
-import { DISASTERS, Disaster, type WorldStats } from '@globalcity/shared';
+import { DISASTERS, DISASTER_COUNT, Disaster, type WorldStats } from '@globalcity/shared';
 import type { Actions } from './actions.ts';
 import type { Minimap, SpriteSheet } from './assets.ts';
 import { drawTile } from './assets.ts';
@@ -757,6 +757,39 @@ export class UI {
       this.show(this.discordInvite);
     };
     setTimeout(attempt, 4000);
+  }
+
+  // ---------- test servers: start a disaster ----------
+  private testDisasters: HTMLElement | null = null;
+  /** The server lets players start disasters (DISASTER_TRIGGER=1): a 🧪 button in the top bar opens a dialog. */
+  enableTestDisasters(): void {
+    if (this.testDisasters) return;
+    const close = el('button', { class: 'btn ghost round close', title: 'Close', type: 'button' }, '×');
+    const where = el('select', { class: 'td-where' },
+      el('option', { value: 'here' }, 'The city in the middle of the screen'),
+      el('option', { value: 'random' }, 'A random city'));
+    const kinds = Array.from({ length: DISASTER_COUNT }, (_, kind) => {
+      const d = DISASTERS[kind as Disaster];
+      const b = el('button', { class: 'btn td-kind', type: 'button' }, el('span', { class: 'td-emoji', text: d.emoji }), el('span', { text: d.name }));
+      b.onclick = () => {
+        const msg = where.value === 'here' ? { t: 'testDisaster' as const, kind, ...this.renderer.centerChunk() } : { t: 'testDisaster' as const, kind };
+        if (!this.net.send(msg)) this.toast('Not connected — try again in a moment.', 'error');
+      };
+      return b;
+    });
+    const panel = el('div', { id: 'testDisasters', class: 'panel card hidden', role: 'dialog', 'aria-label': 'Start a disaster' },
+      close,
+      el('h2', { text: '🧪 Start a disaster' }),
+      el('p', { class: 'muted', text: 'Test server only. It strikes right away, wherever you send it: the usual rules about where each disaster can happen and how often are skipped.' }),
+      el('label', { class: 'mp-field' }, el('span', { text: 'Where' }), where),
+      el('div', { class: 'td-kinds' }, ...kinds));
+    close.onclick = () => this.hide(panel);
+    this.testDisasters = panel;
+    this.root.append(panel);
+    const btn = el('button', { class: 'btn', id: 'testDisastersBtn', title: 'Test server: start a disaster' }, '🧪 Disasters');
+    btn.onclick = () => this.toggle(panel);
+    const spacer = this.root.querySelector('#topbar .spacer');
+    spacer?.parentElement?.insertBefore(btn, spacer);
   }
 
   private buildLifeline(): void {

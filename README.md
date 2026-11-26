@@ -21,7 +21,7 @@ SimCity is a trademark of Electronic Arts; this project is not affiliated with E
 - Natural disasters (earthquake, flood, tornado, tropical storm, wildfire, blizzard) strike only
   where they happen on Earth: the generator writes a hazard byte per chunk (hazards.bin) from plate
   boundaries, elevation (elevation.bin, metres per tile, from ETOPO 2022), climate and storm and
-  tornado regions. At most one disaster strikes per hour in the whole world, always a city whose
+  tornado regions. A disaster strikes about every 15 minutes in the whole world, always a city whose
   mayor is online, and everyone playing is told (shared/src/disasters.ts, server/src/disasters.ts).
 - Tiles are 32 bits: Micropolis' 16 (tile kind + flags) plus a look (shared/src/looks.ts): the
   biome the tile is drawn in, frozen water, or a transition at a biome border or an ice edge.

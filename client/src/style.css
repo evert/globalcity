@@ -267,6 +267,11 @@ a { color: var(--accent); }
 .btn.lifeline { background: #c0392b; border-color: #e74c3c; color: #fff; font-weight: bold; }
 #lifeline { width: min(460px, calc(100vw - 32px)); }
 #discordInvite { width: min(440px, calc(100vw - 32px)); }
+#testDisasters { width: min(420px, calc(100vw - 24px)); top: auto; bottom: 90px; transform: translateX(-50%); }
+#testDisasters .td-where { font: inherit; color: var(--fg); background: #0f1522; border: 1px solid var(--panel-border); border-radius: 4px; padding: 6px 8px; }
+.td-kinds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+.td-kind { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px; }
+.td-kind .td-emoji { font-size: 22px; }
 #mayorPanel { width: min(440px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow-y: auto; }
 .mp-form { display: flex; flex-direction: column; gap: 10px; }
 .mp-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }

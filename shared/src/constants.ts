@@ -149,11 +149,12 @@ export const FIRE_PREVENTED_P = 0.75;
 
 // Time: the simulation takes a step every TICK_MS (slowed from 2 s on 2026-10-28: the game felt easy past the
 // early stage). Growth, traffic, fires, taxes and upkeep all run per step. The calendar is slower: a game month
-// every STEPS_PER_MONTH steps, so a game year takes a real hour (it was a minute before the 2x world).
+// every STEPS_PER_MONTH steps, so a game year takes 30 real minutes (an hour until 2026-11-26, a minute before
+// the 2x world).
 // Money constants named "a year" below are per 12 steps (one real minute); a game year is STEPS_PER_MONTH times
 // as long, so its budget shows that many times more (gameYearAmount).
 export const TICK_MS = 5000;
-export const STEPS_PER_MONTH = 60;
+export const STEPS_PER_MONTH = 30;
 /** What an amount given per 12 steps (the money constants) comes to over a game year. */
 export const gameYearAmount = (per12Steps: number): number => per12Steps * STEPS_PER_MONTH;
 export const START_YEAR = 1900;
