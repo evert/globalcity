@@ -2,13 +2,13 @@ import { mkdirSync, existsSync, writeFileSync, readFileSync, statSync } from 'no
 import { deflateSync } from 'node:zlib';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { WORLD_W as W, WORLD_H as H } from '@globalcity/shared';
+import { WORLD_TAG, WORLD_W as W, WORLD_H as H, Biome, BASE_WATER, BASE_FROZEN, BASE_TREES, BASE_BIOME_MASK } from '@globalcity/shared';
+import { fromFile, type GeoTIFFImage } from 'geotiff';
 import { genPlaces } from './gen-places.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const RAW = resolve(ROOT, 'data/raw');
-const OUT = resolve(ROOT, 'data/world');
-const PNG_OUT = resolve(ROOT, 'client/public/assets/world-minimap.png');
+const OUT = resolve(ROOT, `data/world-${WORLD_TAG}`);
 const BASE = 'https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master';
 
 const t0 = Date.now();
@@ -126,10 +126,10 @@ function valueNoise(x: number, y: number, seed: number): number {
   const c = hash(ix, iy + 1, seed), d = hash(ix + 1, iy + 1, seed);
   return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
 }
-function fbm(x: number, y: number): number {
+function fbm(x: number, y: number, seed = 1337, octaves = 4): number {
   let amp = 1, freq = 1, sum = 0, norm = 0;
-  for (let o = 0; o < 4; o++) {
-    sum += amp * valueNoise(x * freq, y * freq, 1337 + o * 17);
+  for (let o = 0; o < octaves; o++) {
+    sum += amp * valueNoise(x * freq, y * freq, seed + o * 17);
     norm += amp; amp *= 0.5; freq *= 2;
   }
   return sum / norm;
@@ -170,19 +170,138 @@ function encodePng(w: number, h: number, rgb: Uint8Array): Buffer {
   ]);
 }
 
+// ---- rasters (GeoTIFF, read in strips of output rows) ----
+const KOPPEN_FILE = resolve(RAW, 'koppen/1991_2020/koppen_geiger_0p00833333.tif');
+const KOPPEN_URL = 'https://figshare.com/articles/dataset/21789074 (koppen_geiger_tif.zip: 1991_2020/koppen_geiger_0p00833333.tif)';
+const TREE_FILE = resolve(RAW, 'treecover/tree_cover_1km_2022.tif');
+const TREE_URL = 'https://zenodo.org/records/14439377 (tree.cover_glc.fcd30d_p_1km_20220101_20221231_go_epsg4326_v20241210.tif)';
+const SEAICE_DIR = resolve(RAW, 'seaice');
+const SEAICE_URL = 'https://noaadata.apps.nsidc.org/NOAA/G02135/{north,south}/monthly/geotiff/ ({N,S}_YYYYMM_extent_v4.0.tif, 2015-2024)';
+const SEAICE_YEARS = [2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024];
+
+function need(file: string, how: string): void {
+  if (!existsSync(file)) throw new Error(`missing ${file} (${how})\n  run tools/fetch-terrain-data.sh first`);
+}
+
+interface Raster { im: GeoTIFFImage; w: number; h: number; lon0: number; lat0: number; res: number; nodata: number }
+async function openRaster(file: string): Promise<Raster> {
+  const im = await (await fromFile(file)).getImage();
+  const [lon0, lat0] = im.getOrigin();
+  return { im, w: im.getWidth(), h: im.getHeight(), lon0, lat0, res: im.getResolution()[0], nodata: Number(im.getGDALNoData() ?? -1) };
+}
+/** Source rows [r0, r1) of a raster, full width. */
+async function readRows(r: Raster, r0: number, r1: number): Promise<Uint8Array> {
+  r0 = Math.max(0, r0); r1 = Math.min(r.h, r1);
+  if (r1 <= r0) return new Uint8Array(0);
+  const [band] = (await r.im.readRasters({ window: [0, r0, r.w, r1] })) as unknown as Uint8Array[];
+  return band;
+}
+
+// Koppen-Geiger classes (legend.txt of Beck et al. 2023) -> ground palette
+const KOPPEN_BIOME: Biome[] = [];
+for (let c = 0; c <= 30; c++) {
+  KOPPEN_BIOME[c] =
+    c === 4 || c === 5 ? Biome.Desert
+    : c === 6 || c === 7 ? Biome.Steppe
+    : [19, 20, 23, 24, 27, 28].includes(c) ? Biome.Boreal
+    : c === 29 ? Biome.Tundra
+    : c === 30 ? Biome.Snow
+    : Biome.Temperate;
+}
+/** Lakes and rivers in these climates are frozen for at least half of the year (subarctic, polar). */
+const KOPPEN_FROZEN_INLAND = new Set([19, 20, 23, 24, 27, 28, 29, 30]);
+
+// ---- sea ice: share of months with ice (extent >= 15% concentration), per 25 km cell of the NSIDC polar grids ----
+interface IceGrid { w: number; h: number; x0: number; y0: number; freq: Float32Array; south: boolean }
+async function loadSeaIce(south: boolean): Promise<IceGrid> {
+  const P = south ? 'S' : 'N';
+  let grid: IceGrid | null = null;
+  let count: Uint16Array | null = null, n = 0;
+  for (const y of SEAICE_YEARS) for (let m = 1; m <= 12; m++) {
+    const f = resolve(SEAICE_DIR, `${P}_${y}${String(m).padStart(2, '0')}_extent_v4.0.tif`);
+    need(f, SEAICE_URL);
+    const im = await (await fromFile(f)).getImage();
+    const [band] = (await im.readRasters()) as unknown as Uint8Array[];
+    if (!grid) {
+      const [x0, y0] = im.getOrigin();
+      grid = { w: im.getWidth(), h: im.getHeight(), x0, y0, freq: new Float32Array(im.getWidth() * im.getHeight()), south };
+      count = new Uint16Array(grid.freq.length);
+      for (let i = 0; i < band.length; i++) if (band[i] >= 253) grid.freq[i] = -1; // coast / land
+    }
+    for (let i = 0; i < band.length; i++) if (band[i] === 1 || band[i] === 251) count![i]++; // 251: pole hole, always ice
+    n++;
+  }
+  const g = grid!;
+  for (let i = 0; i < g.freq.length; i++) if (g.freq[i] >= 0) g.freq[i] = count![i] / n;
+  // spread ocean values into the coast/land cells, so fjords and inlets next to the coast get a value too
+  for (let pass = 0; pass < 6; pass++) {
+    const next = g.freq.slice();
+    for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) {
+      const i = y * g.w + x;
+      if (g.freq[i] >= 0) continue;
+      let s = 0, k = 0;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const xx = x + dx, yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= g.w || yy >= g.h) continue;
+        const v = g.freq[yy * g.w + xx];
+        if (v >= 0) { s += v; k++; }
+      }
+      if (k) next[i] = s / k;
+    }
+    g.freq = next;
+  }
+  return g;
+}
+// NSIDC polar stereographic (EPSG:3411 north, lon0 -45; EPSG:3412 south, lon0 0), Hughes 1980 ellipsoid, true scale at 70 deg.
+const D2R = Math.PI / 180;
+const HUGHES_A = 6378273, HUGHES_E = 0.081816153;
+const tsf = (phi: number) => Math.tan(Math.PI / 4 - phi / 2) / Math.pow((1 - HUGHES_E * Math.sin(phi)) / (1 + HUGHES_E * Math.sin(phi)), HUGHES_E / 2);
+const PS_MC = Math.cos(70 * D2R) / Math.sqrt(1 - HUGHES_E * HUGHES_E * Math.sin(70 * D2R) ** 2);
+const PS_TC = tsf(70 * D2R);
+function polarStereo(lat: number, lon: number, south: boolean): [number, number] {
+  let phi = lat * D2R, lam = lon * D2R;
+  const lam0 = south ? 0 : -45 * D2R;
+  if (south) { phi = -phi; lam = -lam; }
+  const rho = (HUGHES_A * PS_MC * tsf(phi)) / PS_TC;
+  const x = rho * Math.sin(lam - (south ? -lam0 : lam0)), y = -rho * Math.cos(lam - (south ? -lam0 : lam0));
+  return south ? [-x, -y] : [x, y];
+}
+/** Share of the year (0..1) this ocean point is ice, bilinear over the 25 km grid; -1 if unknown. */
+function iceAt(g: IceGrid, lat: number, lon: number): number {
+  const [x, y] = polarStereo(lat, lon, g.south);
+  const fx = (x - g.x0) / 25000 - 0.5, fy = (g.y0 - y) / 25000 - 0.5;
+  const ix = Math.floor(fx), iy = Math.floor(fy), tx = fx - ix, ty = fy - iy;
+  let s = 0, wsum = 0;
+  for (const [dx, dy, w] of [[0, 0, (1 - tx) * (1 - ty)], [1, 0, tx * (1 - ty)], [0, 1, (1 - tx) * ty], [1, 1, tx * ty]] as const) {
+    const xx = ix + dx, yy = iy + dy;
+    if (xx < 0 || yy < 0 || xx >= g.w || yy >= g.h) continue;
+    const v = g.freq[yy * g.w + xx];
+    if (v < 0) continue;
+    s += v * w; wsum += w;
+  }
+  return wsum > 0 ? s / wsum : -1;
+}
+
+/** Spread noise to [0,1]: fbm clusters around 0.5, this stretches it to roughly uniform. */
+const spread = (n: number, k: number): number => Math.min(1, Math.max(0, (n - 0.5) * k + 0.5));
+const smoothstep = (a: number, b: number, v: number): number => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
+
 async function main() {
   const land = await getData('land', 'land');
   const lakes = await getData('lakes', 'lakes');
   const rivers = await getData('rivers_lake_centerlines', 'rivers');
+  const glaciers = await getData('glaciated_areas', 'glaciers');
+  const shelves = await getData('antarctic_ice_shelves_polys', 'ice shelves');
+  need(KOPPEN_FILE, KOPPEN_URL);
+  need(TREE_FILE, TREE_URL);
 
-  const grid = new Uint8Array(W * H);
+  // 1. land / water: Natural Earth land plus the Antarctic ice shelves, minus lakes and major rivers
+  const grid = new Uint8Array(W * H); // 1 = land
   fillPolygons(grid, land.json.features, 1);
+  fillPolygons(grid, shelves.json.features, 1);
   log('land rasterized');
   fillPolygons(grid, lakes.json.features, 0);
   log('lakes rasterized');
-
-  const props = rivers.json.features[0]?.properties ?? {};
-  log(`river properties: ${Object.keys(props).join(',')}`);
   let nRivers = 0;
   for (const f of rivers.json.features) {
     const sr = f.properties?.scalerank;
@@ -196,55 +315,135 @@ async function main() {
         line(grid, px(ls[i][0]), py(ls[i][1]), px(ls[i + 1][0]), py(ls[i + 1][1]), 0);
   }
   log(`rivers drawn: ${nRivers}`);
+  // 2. ice: glaciers and ice shelves are snow-covered land
+  const ice = new Uint8Array(W * H);
+  fillPolygons(ice, glaciers.json.features, 1);
+  fillPolygons(ice, shelves.json.features, 1);
+  log('glaciers rasterized');
 
-  // forest
-  let landCount = 0, forestCount = 0;
-  for (let y = 0; y < H; y++) {
-    const lat = 90 - ((y + 0.5) / H) * 180;
-    const alat = Math.abs(lat);
-    const taper = (alat >= 75 || lat < -56) ? 0 : alat > 60 ? 1 - (alat - 60) / 15 : 1;
-    for (let x = 0; x < W; x++) {
-      const i = y * W + x;
-      if (grid[i] !== 1) continue;
-      landCount++;
-      if (taper <= 0) continue;
-      const n = fbm(x / 90, y / 90);
-      // shift threshold with taper: fewer trees at high latitude
-      if (n + (1 - taper) * 0.25 > 0.56) { grid[i] = 2; forestCount++; }
+  const iceN = await loadSeaIce(false), iceS = await loadSeaIce(true);
+  log('sea ice loaded');
+
+  // 3. per strip of rows: climate (Koppen, sampled at a noise-jittered point so borders wiggle like real
+  // ones instead of following the 1 km raster), tree cover (box average), sea ice
+  const kop = await openRaster(KOPPEN_FILE), tree = await openRaster(TREE_FILE);
+  const out = new Uint8Array(W * H);
+  const STRIP = 128, JIT = 6; // rows per strip, max jitter in tiles
+  const kpt = kop.w / W; // source px per tile (both rasters are 1/120 degree)
+  const tpt = (360 / W) / tree.res;
+  const stats = new Float64Array(16);
+  for (let y0 = 0; y0 < H; y0 += STRIP) {
+    const y1 = Math.min(H, y0 + STRIP);
+    const kr0 = Math.floor((y0 - JIT) * kpt) - 1, kr1 = Math.ceil((y1 + JIT) * kpt) + 1;
+    const kRows = await readRows(kop, kr0, kr1), kBase = Math.max(0, kr0);
+    const lat0 = 90 - (y0 / H) * 180, lat1 = 90 - (y1 / H) * 180;
+    const tr0 = Math.floor((tree.lat0 - lat0) / tree.res), tr1 = Math.ceil((tree.lat0 - lat1) / tree.res);
+    const tRows = await readRows(tree, tr0, tr1), tBase = Math.max(0, tr0);
+    const tRowsN = tRows.length / tree.w;
+    for (let y = y0; y < y1; y++) {
+      const lat = 90 - ((y + 0.5) / H) * 180;
+      // tree source rows for this tile row
+      const ta = Math.floor((tree.lat0 - (90 - (y / H) * 180)) / tree.res) - tBase;
+      const tb = Math.max(ta + 1, Math.floor((tree.lat0 - (90 - ((y + 1) / H) * 180)) / tree.res) - tBase);
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        const isLand = grid[i] === 1;
+        // climate
+        const jx = (fbm(x / 28, y / 28, 911, 3) - 0.5) * 2 * JIT, jy = (fbm(x / 28, y / 28, 577, 3) - 0.5) * 2 * JIT;
+        const kx = Math.min(kop.w - 1, Math.max(0, Math.floor(((x + 0.5 + jx + W) % W) * kpt)));
+        const ky = Math.min(kRows.length / kop.w - 1, Math.max(0, Math.floor((y + 0.5 + jy) * kpt) - kBase));
+        let k = kRows[ky * kop.w + kx];
+        if (k > 30) k = 0;
+        if (!isLand) {
+          let frozen: boolean;
+          if (k !== 0) frozen = KOPPEN_FROZEN_INLAND.has(k) || ice[i] === 1; // lake or river
+          else if (Math.abs(lat) < 38) frozen = false;
+          else {
+            const f = iceAt(lat > 0 ? iceN : iceS, lat, (x + 0.5) / W * 360 - 180);
+            frozen = f >= 0 ? f + (fbm(x / 20, y / 20, 4242, 3) - 0.5) * 0.25 >= 0.5 : Math.abs(lat) > 80;
+          }
+          out[i] = BASE_WATER | (frozen ? BASE_FROZEN : 0);
+          stats[frozen ? 1 : 0]++;
+          continue;
+        }
+        let biome = k === 0 ? (Math.abs(lat) > 64 ? Biome.Tundra : Biome.Temperate) : KOPPEN_BIOME[k];
+        if (ice[i] === 1) biome = Biome.Snow;
+        // forest: real tree cover decides how likely a tile is wooded; clumpy noise decides which ones
+        let cover = 0;
+        if (tRowsN > 0 && biome !== Biome.Snow) {
+          const lon0 = (x / W) * 360 - 180;
+          const ca = Math.floor((lon0 - tree.lon0) / tree.res), cb = Math.max(ca + 1, Math.floor((lon0 + 360 / W - tree.lon0) / tree.res));
+          let s = 0, nPx = 0;
+          for (let r = Math.max(0, ta); r < Math.min(tRowsN, tb); r++) {
+            const row = r * tree.w;
+            for (let c = ca; c < cb; c++) {
+              const v = tRows[row + ((c + tree.w) % tree.w)];
+              if (v <= 100) { s += v; nPx++; }
+            }
+          }
+          if (nPx) cover = s / nPx / 100;
+        }
+        const pForest = smoothstep(0.1, 0.55, cover);
+        const n = spread(fbm(x / 16, y / 16, 1337, 4), 2.6);
+        const forest = pForest > 0 && n < pForest;
+        out[i] = biome | (forest ? BASE_TREES : 0);
+        stats[2 + biome]++;
+        if (forest) stats[10]++;
+      }
+    }
+    if ((y0 / STRIP) % 8 === 0) log(`climate/forest/ice rows ${y0}..${y1}`);
+  }
+  // 4. water tiles take the ground of the land next to them, so shorelines are drawn in that biome
+  for (let pass = 0; pass < 2; pass++) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x;
+    if (!(out[i] & BASE_WATER)) continue;
+    for (const j of [i - 1, i + 1, i - W, i + W]) {
+      if (j < 0 || j >= W * H) continue;
+      const b = out[j];
+      if ((b & BASE_WATER) && pass === 0) continue;
+      if ((b & BASE_BIOME_MASK) !== 0) { out[i] = (out[i] & ~BASE_BIOME_MASK) | (b & BASE_BIOME_MASK); break; }
     }
   }
-  log('forest placed');
+  log('shore biomes');
 
   mkdirSync(OUT, { recursive: true });
-  writeFileSync(resolve(OUT, 'base.bin'), grid);
+  writeFileSync(resolve(OUT, 'base.bin'), out);
   writeFileSync(resolve(OUT, 'base.json'), JSON.stringify({
-    w: W, h: H, generatedAt: new Date().toISOString(), sources: [land.url, lakes.url, rivers.url],
+    w: W, h: H, version: 2,
+    layout: 'one byte per tile: bits 0-3 biome (0 temperate, 1 desert, 2 steppe, 3 tundra, 4 boreal, 5 snow), 0x20 trees, 0x40 frozen, 0x80 water',
+    generatedAt: new Date().toISOString(),
+    sources: [land.url, lakes.url, rivers.url, glaciers.url, shelves.url, KOPPEN_URL, TREE_URL, SEAICE_URL],
   }, null, 2));
 
-  // minimap 2048x1024, 4x4 tiles per pixel
+  // preview, 4x4 tiles per pixel: the most common kind wins
   const S = 4, mw = W / S, mh = H / S;
-  const cols = [[0, 0, 168], [138, 154, 74], [46, 106, 46]];
   const rgb = new Uint8Array(mw * mh * 3);
+  const PAL: Record<string, [number, number, number]> = {
+    water: [0x66, 0x66, 0xe6], ice: [0xd8, 0xe8, 0xf4],
+    g0: [0xcc, 0x7f, 0x66], g1: [0xe6, 0xc8, 0x8c], g2: [0xc4, 0xb0, 0x70], g3: [0x9c, 0x9c, 0x84], g4: [0xc8, 0xc8, 0xc8], g5: [0xff, 0xff, 0xff],
+    t0: [0x00, 0xb8, 0x00], t1: [0x70, 0x90, 0x30], t2: [0x60, 0x98, 0x30], t3: [0x40, 0x80, 0x40], t4: [0x1c, 0x60, 0x3c], t5: [0x1c, 0x60, 0x3c],
+  };
+  const counts = new Map<string, number>();
   for (let my = 0; my < mh; my++) for (let mx = 0; mx < mw; mx++) {
-    let c0 = 0, c1 = 0, c2 = 0;
-    for (let dy = 0; dy < S; dy++) {
-      const row = (my * S + dy) * W + mx * S;
-      for (let dx = 0; dx < S; dx++) { const v = grid[row + dx]; if (v === 0) c0++; else if (v === 1) c1++; else c2++; }
+    counts.clear();
+    for (let dy = 0; dy < S; dy++) for (let dx = 0; dx < S; dx++) {
+      const b = out[(my * S + dy) * W + mx * S + dx];
+      const key = b & BASE_WATER ? (b & BASE_FROZEN ? 'ice' : 'water') : (b & BASE_TREES ? 't' : 'g') + (b & BASE_BIOME_MASK);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
     }
-    // land if any land majority, else water; forest if forest >= grass share among land
-    const land = c1 + c2;
-    const cls = land * 2 < S * S ? 0 : c2 > c1 ? 2 : 1;
-    const o = (my * mw + mx) * 3;
-    rgb[o] = cols[cls][0]; rgb[o + 1] = cols[cls][1]; rgb[o + 2] = cols[cls][2];
+    let best = 'water', bn = -1;
+    for (const [k, v] of counts) if (v > bn) { best = k; bn = v; }
+    const c = PAL[best], o = (my * mw + mx) * 3;
+    rgb[o] = c[0]; rgb[o + 1] = c[1]; rgb[o + 2] = c[2];
   }
-  mkdirSync(dirname(PNG_OUT), { recursive: true });
-  writeFileSync(PNG_OUT, encodePng(mw, mh, rgb));
+  writeFileSync(resolve(OUT, 'preview.png'), encodePng(mw, mh, rgb));
 
-  const kb = (p: string) => `${(statSync(p).size / 1024).toFixed(0)} KB`;
+  const landCount = stats.slice(2, 8).reduce((a, b) => a + b, 0);
+  const pct = (v: number, of: number) => `${((v / of) * 100).toFixed(1)}%`;
   console.log('--- summary ---');
-  console.log(`land:   ${landCount} tiles (${((landCount / (W * H)) * 100).toFixed(2)}% of world)`);
-  console.log(`forest: ${forestCount} tiles (${((forestCount / landCount) * 100).toFixed(2)}% of land)`);
+  console.log(`land:   ${landCount} tiles (${pct(landCount, W * H)} of world), forest ${pct(stats[10], landCount)} of land`);
+  console.log(`biomes: ${['temperate', 'desert', 'steppe', 'tundra', 'boreal', 'snow'].map((n, b) => `${n} ${pct(stats[2 + b], landCount)}`).join(', ')}`);
+  console.log(`water:  ${stats[0] + stats[1]} tiles, frozen ${pct(stats[1], stats[0] + stats[1])}`);
   console.log(`elapsed: ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-  console.log(`base.bin ${kb(resolve(OUT, 'base.bin'))}, base.json ${kb(resolve(OUT, 'base.json'))}, minimap ${kb(PNG_OUT)}`);
 }
 main().then(() => genPlaces()).catch((e) => { console.error(e); process.exit(1); });

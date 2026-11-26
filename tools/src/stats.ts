@@ -1,18 +1,18 @@
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { WORLD_W as W, WORLD_H as H, CHUNK, MIN_LAND_TILES_TO_CLAIM } from '@globalcity/shared';
+import { WORLD_TAG, WORLD_W as W, WORLD_H as H, CHUNK, MIN_LAND_TILES_TO_CLAIM, BASE_WATER, baseIsForest } from '@globalcity/shared';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const g = readFileSync(resolve(ROOT, 'data/world/base.bin'));
+const g = readFileSync(resolve(ROOT, `data/world-${WORLD_TAG}/base.bin`));
 if (g.length !== W * H) throw new Error(`base.bin size ${g.length} != ${W * H}`);
 let land = 0, forest = 0;
-for (let i = 0; i < g.length; i++) { if (g[i] >= 1) land++; if (g[i] === 2) forest++; }
+for (let i = 0; i < g.length; i++) { if (!(g[i] & BASE_WATER)) land++; if (baseIsForest(g[i])) forest++; }
 let claimable = 0, partial = 0;
 const cx = W / CHUNK, cy = H / CHUNK;
 for (let j = 0; j < cy; j++) for (let i = 0; i < cx; i++) {
   let n = 0;
-  for (let y = 0; y < CHUNK; y++) { const o = (j * CHUNK + y) * W + i * CHUNK; for (let x = 0; x < CHUNK; x++) if (g[o + x] >= 1) n++; }
+  for (let y = 0; y < CHUNK; y++) { const o = (j * CHUNK + y) * W + i * CHUNK; for (let x = 0; x < CHUNK; x++) if (!(g[o + x] & BASE_WATER)) n++; }
   if (n >= MIN_LAND_TILES_TO_CLAIM) claimable++;
   if (n > 0) partial++;
 }

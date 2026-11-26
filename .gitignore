@@ -1,6 +1,7 @@
 node_modules/
 dist/
 data/world/
+data/world-*/
 data/save*/
 data/raw/
 *.log

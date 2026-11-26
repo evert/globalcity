@@ -37,8 +37,9 @@ sudo chown -R $APP_USER:$APP_USER $APP_DIR
 echo "==> Install, generate world, build client"
 cd $APP_DIR
 sudo -u $APP_USER npm ci --no-audit --no-fund 2>/dev/null || sudo -u $APP_USER npm install --no-audit --no-fund
-[ -f data/world/base.bin ] || sudo -u $APP_USER npm run gen:world
-[ -f data/world/places.json ] || sudo -u $APP_USER npm run gen:places -w tools
+WORLD_DIR=data/world-$(node -e "import('./shared/src/constants.ts').then(m => console.log(m.WORLD_TAG))" 2>/dev/null || echo 16384x8192)
+[ -f $WORLD_DIR/base.bin ] || { sudo -u $APP_USER bash tools/fetch-terrain-data.sh && sudo -u $APP_USER npm run gen:world; }
+[ -f $WORLD_DIR/places.json ] || sudo -u $APP_USER npm run gen:places -w tools
 sudo -u $APP_USER npm run build
 
 echo "==> systemd service"

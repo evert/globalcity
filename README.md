@@ -61,7 +61,7 @@ or an Oracle Cloud Always Free VM with Caddy TLS in [deploy/oracle/README.md](de
 shared/   constants, Micropolis tile ids/tables, tool defs, wire protocol (shared by all)
 server/   world state, simulation, WebSocket server, persistence
 client/   canvas renderer, input, UI, networking
-tools/    gen-world: Natural Earth -> data/world/base.bin + minimap PNG
+tools/    gen-world: Natural Earth + climate/tree cover/sea ice rasters -> data/world-<W>x<H>/base.bin (run tools/fetch-terrain-data.sh first)
 data/     generated world + save data (git-ignored)
 LICENSES/ GPL-3.0 and the Micropolis additional terms
 ```

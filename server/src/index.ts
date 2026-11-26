@@ -11,7 +11,7 @@
 
 import os from 'node:os';
 import path from 'node:path';
-import { TICK_MS, DEFAULT_PORT, WORLD_W, WORLD_H, CHUNKS_X, CHUNKS_Y } from '@globalcity/shared';
+import { TICK_MS, DEFAULT_PORT, WORLD_W, WORLD_H, CHUNKS_X, CHUNKS_Y, WORLD_TAG } from '@globalcity/shared';
 import { bootWorld } from './world.ts';
 import { Players } from './players.ts';
 import { Places } from './places.ts';
@@ -23,8 +23,9 @@ import { log, warn, timed } from './util.ts';
 const TILE_FLUSH_MS = 100;
 
 const root = path.resolve(import.meta.dirname, '../..');
-const baseFile = path.join(root, 'data/world/base.bin');
-const placesFile = path.join(root, 'data/world/places.json');
+const worldDir = path.join(root, `data/world-${WORLD_TAG}`);
+const baseFile = path.join(worldDir, 'base.bin');
+const placesFile = path.join(worldDir, 'places.json');
 const saveDir = path.resolve(root, process.env.DATA_DIR || 'data/save');
 const clientDist = path.join(root, 'client/dist');
 const port = Number(process.env.PORT) || DEFAULT_PORT;

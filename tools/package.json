@@ -10,6 +10,13 @@
     "stats": "tsx src/stats.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
-  "dependencies": { "@globalcity/shared": "*" },
-  "devDependencies": { "@types/node": "^22", "tsx": "^4", "typescript": "^5.6" }
+  "dependencies": {
+    "@globalcity/shared": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "geotiff": "^3.0.5",
+    "tsx": "^4",
+    "typescript": "^5.6"
+  }
 }

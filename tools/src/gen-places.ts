@@ -1,11 +1,11 @@
 import { mkdirSync, existsSync, writeFileSync, readFileSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { lonLatToTile } from '@globalcity/shared';
+import { lonLatToTile, WORLD_TAG, WORLD_W } from '@globalcity/shared';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const RAW = resolve(ROOT, 'data/raw');
-const OUT = resolve(ROOT, 'data/world');
+const OUT = resolve(ROOT, `data/world-${WORLD_TAG}`);
 const BASE = 'https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master';
 
 const pick = (p: Record<string, unknown>, ...keys: string[]): unknown => {
@@ -62,8 +62,8 @@ export async function genPlaces(): Promise<void> {
     const ok = !!p && Math.abs(p[1] - tx) <= 10 && Math.abs(p[2] - ty) <= 10;
     console.log(`  sanity ${n}: ${p ? `(${p[1]},${p[2]})` : 'missing'} expected ~(${tx},${ty}) ${ok ? 'OK' : 'FAIL'}`);
   };
-  check('London', 4093, 876);
-  check('Sydney', 7534, 2819);
+  check('London', Math.round(4093 * WORLD_W / 8192), Math.round(876 * WORLD_W / 8192));
+  check('Sydney', Math.round(7534 * WORLD_W / 8192), Math.round(2819 * WORLD_W / 8192));
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

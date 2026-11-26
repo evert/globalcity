@@ -1,9 +1,12 @@
 // World geometry. The whole Earth is one tile grid in equirectangular projection.
-export const WORLD_W = 8192; // tiles (longitude -180..180)
-export const WORLD_H = 4096; // tiles (latitude 90..-90)
+export const WORLD_W = 16384; // tiles (longitude -180..180); 8192 before the world reset
+export const WORLD_H = 8192; // tiles (latitude 90..-90)
 export const CHUNK = 64; // tiles per chunk side; a chunk is also the unit players claim
-export const CHUNKS_X = WORLD_W / CHUNK; // 128
-export const CHUNKS_Y = WORLD_H / CHUNK; // 64
+export const CHUNKS_X = WORLD_W / CHUNK; // 256
+export const CHUNKS_Y = WORLD_H / CHUNK; // 128
+/** Names the world's generated files (data/world-<tag>/) and is stamped into every save, so a save is never
+ *  loaded into a world of another size. */
+export const WORLD_TAG = `${WORLD_W}x${WORLD_H}`;
 export const TILE_PX = 16; // sprite size in tiles.png
 
 // Economy

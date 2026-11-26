@@ -3,7 +3,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { CHUNK } from '@globalcity/shared';
+import { CHUNK, WORLD_TAG } from '@globalcity/shared';
 import { World, chunkCoords, validChunk } from './world.ts';
 import { Players, type StateFile } from './players.ts';
 import { log, warn } from './util.ts';
@@ -20,7 +20,13 @@ export class Persist {
     this.chunksDir = path.join(saveDir, 'chunks');
     this.stateFile = path.join(saveDir, 'state.json');
     this.buildingsFile = path.join(saveDir, 'buildings.json');
+    // A save belongs to one world size. Saves from before the stamp are from the 8192x4096 world.
+    const stamp = path.join(saveDir, 'world.txt');
+    const hasSave = fs.existsSync(path.join(saveDir, 'state.json')) || (fs.existsSync(this.chunksDir) && fs.readdirSync(this.chunksDir).length > 0);
+    const tag = fs.existsSync(stamp) ? fs.readFileSync(stamp, 'utf8').trim() : hasSave ? '8192x4096' : WORLD_TAG;
+    if (tag !== WORLD_TAG) throw new Error(`${saveDir} is a save of the ${tag} world; this server runs the ${WORLD_TAG} world. Use another DATA_DIR.`);
     fs.mkdirSync(this.chunksDir, { recursive: true });
+    fs.writeFileSync(stamp, WORLD_TAG + '\n');
   }
 
   /** Overlay every saved chunk file onto the world. Returns the number loaded. */
