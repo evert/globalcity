@@ -29,7 +29,8 @@ BUILDINGS += [('PORT', 'Seaport', 'Special', 693, 4, AMBER), ('AIR', 'Airport', 
               ('STAD', 'Stadium (empty)', 'Special', 779, 4, WHITE), ('STAD2', 'Stadium (game on)', 'Special', 795, 4, WHITE),
               ('NUC', 'Nuclear power plant', 'Special', 811, 4, AMBER), ('HALL', 'City Hall', 'Civic', 960, 4, SOFT), ('SCH', 'Elementary school', 'Civic', 976, 3, SOFT)]
 # custom buildings: code, name, kind (image name), frames
-CUSTOMS = [('UNI', 'University', 'university', 1), ('GC', 'Grand Central', 'grandcentral', 8)]
+CUSTOMS = [('UNI', 'University', 'university', 1), ('GC', 'Grand Central', 'grandcentral', 8),
+           ('XMAS', 'Christmas tree', 'christmastree', 1)]
 
 def pix(p, x, y):
     r, g, b = p[x, y][:3]

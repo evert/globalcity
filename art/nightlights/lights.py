@@ -19,6 +19,7 @@
 #   ('row', x0, x1, y, step)          light every `step`th pixel from x0 to x1 on row y
 #   ('wash', x0, y0, x1, y1, a)       a wash of light over the rectangle, alpha a (0..255)
 #   ('pixwash', x0, y0, x1, y1, cols, a)  a wash only over the pixels whose day colour is in cols
+#   ('onlyat', path)                  drop lights where the image at path (from the repo root) is transparent
 #   ('colour', rgb)                   colour for the edits that follow (default: the building's)
 import sys
 from PIL import Image
@@ -31,6 +32,7 @@ TAN, DGREEN, GREEN, YELLOW, ORANGE = 0x997f4c, 0x007f00, 0x00e600, 0xffff00, 0xf
 NEON_RED = (255, 60, 70)
 RUNWAY, TAXI, GREEN_L, RED_L, FLOOD = (255, 248, 225), (90, 140, 255), (90, 255, 140), (255, 70, 60), (235, 245, 255)
 HALL_GLOW = (255, 214, 140)
+STAR, XMAS_GLOW, FAIRY = (255, 244, 150), (255, 200, 110), (255, 226, 150)
 
 def runway_edges():
     out = []
@@ -46,6 +48,19 @@ APPROVED = {'H01', 'H02', 'H03', 'H04', 'H06', 'R14', 'I01', 'I05',
             'AIR', 'C04', 'C05', 'C13', 'C16', 'HALL', 'R09', 'C15', 'C18', 'POL', 'C14', 'I08'}
 
 EDITS = {
+    # Christmas tree (art/prototype/seasonal/christmas_tree.py, 2x4 tiles): every bauble a coloured bulb, the tinsel
+    # amber, the star bright, warm fairy lights on a share of the lit needles and a faint warm wash over the boughs,
+    # all kept to the fir's own pixels (above its presents), then the four lamps round the square.
+    'XMAS': [('none',),
+             ('colour', RED_L), ('pix', 0, 8, 31, 52, {RED}, 1),
+             ('colour', TAXI), ('pix', 0, 8, 31, 52, {BLUE, LBLUE}, 1),
+             ('colour', WHITE), ('pix', 0, 8, 31, 52, {WHITE_}, 0.8),
+             ('colour', AMBER), ('pix', 0, 8, 31, 52, {YELLOW, ORANGE}, 0.6),
+             ('colour', FAIRY), ('pix', 0, 8, 31, 52, {GREEN}, 0.22),
+             ('colour', STAR), ('pix', 12, 2, 18, 7, {YELLOW, WHITE_, ORANGE}, 1),
+             ('colour', XMAS_GLOW), ('pixwash', 0, 8, 31, 52, {GREEN, DGREEN}, 70),
+             ('onlyat', 'art/prototype/seasonal/christmas_tree_ai.png'),
+             ('colour', SOFT), ('add', [(4, 38), (27, 38), (3, 52), (28, 52)])],
     # houses: no window dots in the art, so the windows are placed by hand on the walls
     'H05': [('add', [(3, 5), (3, 7), (7, 8), (10, 8)])],
     'H07': [('add', [(3, 3), (3, 6), (11, 8), (11, 11)])],
@@ -213,6 +228,9 @@ def render(code, day, colour, base, n):
             for y in range(y0, y1 + 1):
                 for x in range(x0, x1 + 1):
                     if pix(p, x, y) in cols and ((x, y) not in lit or lit[(x, y)][1] < 255): lit[(x, y)] = (col, a)
+        elif op == 'onlyat':
+            m = Image.open(f'{ROOT}/{e[1]}').convert('RGBA')
+            lit = {xy: v for xy, v in lit.items() if m.getpixel(xy)[3]}
         elif op == 'colour': col = e[1]
         else: raise ValueError(f'{code}: unknown edit {op}')
     return lit
