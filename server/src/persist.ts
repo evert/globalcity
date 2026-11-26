@@ -1,4 +1,4 @@
-// Persistence: edited chunks as raw little-endian u16 files and players/claims as state.json.
+// Persistence: edited chunks as raw little-endian u16 files (tile kind + flags; looks follow from the map) and players/claims as state.json.
 // Writes are atomic (temp file + rename). Flushed every 10 s if dirty and on shutdown.
 
 import fs from 'node:fs';
@@ -32,7 +32,7 @@ export class Persist {
   /** Overlay every saved chunk file onto the world. Returns the number loaded. */
   loadChunks(): number {
     let n = 0;
-    const expected = CHUNK * CHUNK * 2;
+    const expected = CHUNK * CHUNK * 2; // kind + flags only: looks are stamped again on load
     for (const name of fs.readdirSync(this.chunksDir)) {
       const m = /^(\d+)_(\d+)\.bin$/.exec(name);
       if (!m) continue;
@@ -40,7 +40,7 @@ export class Persist {
       if (!validChunk(cx, cy)) continue;
       const buf = fs.readFileSync(path.join(this.chunksDir, name));
       if (buf.length !== expected) { warn(`Skipping ${name}: size ${buf.length} != ${expected}`); continue; }
-      const data = new Uint16Array(CHUNK * CHUNK);
+      const data = new Uint32Array(CHUNK * CHUNK);
       for (let i = 0; i < data.length; i++) data[i] = buf.readUInt16LE(i * 2);
       this.world.loadChunk(cx, cy, data);
       n++;
@@ -72,7 +72,7 @@ export class Persist {
       const { cx, cy } = chunkCoords(ci);
       const view = this.world.chunkView(cx, cy);
       const buf = Buffer.allocUnsafe(view.length * 2);
-      for (let i = 0; i < view.length; i++) buf.writeUInt16LE(view[i], i * 2);
+      for (let i = 0; i < view.length; i++) buf.writeUInt16LE(view[i] & 0xffff, i * 2); // the look is not saved
       atomicWrite(path.join(this.chunksDir, `${cx}_${cy}.bin`), buf);
       chunks++;
     }

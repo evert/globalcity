@@ -30,7 +30,7 @@ class TestClient {
   id = '';
   stats: PlayerStats | null = null;
   toasts: { kind: string; msg: string; at?: { x: number; y: number } }[] = [];
-  chunks = new Map<string, Uint16Array>();
+  chunks = new Map<string, Uint32Array>();
   freeSpot: { cx: number | null; cy: number | null } | null = null;
   claims = new Set<string>();
   leaderboards: { entries: LeaderboardEntry[]; me?: { rank: number; population: number } }[] = [];
@@ -125,7 +125,7 @@ const SEEDS: [number, number][] = [
 //   B: wires cols 0,1 row Y+1; res zones cols 2-4, 5-7, 8-10 rows Y..Y+2; fire station cols 11..13; road row Y+4 cols 0..13
 const A_COLS = 6, A_ROWS = 8, B_COLS = 14, B_ROWS = 5;
 
-function findRow(aTiles: Uint16Array, bTiles: Uint16Array): number | null {
+function findRow(aTiles: Uint32Array, bTiles: Uint32Array): number | null {
   rows: for (let y = 1; y + A_ROWS < CHUNK - 1; y++) {
     for (let dy = 0; dy < A_ROWS; dy++) for (let dx = 0; dx < A_COLS; dx++) {
       if (isWater(aTiles[(y + dy) * CHUNK + CHUNK - A_COLS + dx])) continue rows;

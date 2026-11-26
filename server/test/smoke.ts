@@ -16,7 +16,7 @@ const WAIT_MS = 15_000;
 const ws = new WebSocket(url);
 const send = (m: ClientMsg): void => { ws.send(JSON.stringify(m)); };
 
-let chunk: { cx: number; cy: number; tiles: Uint16Array } | null = null;
+let chunk: { cx: number; cy: number; tiles: Uint32Array } | null = null;
 let statsCount = 0;
 let lastStats: PlayerStats | null = null;
 let tileUpdates = 0;

@@ -17,12 +17,15 @@ SimCity is a trademark of Electronic Arts; this project is not affiliated with E
   Natural Earth; biomes (desert, steppe, tundra, snowy boreal forest, ice sheets) from the
   Beck et al. Koppen-Geiger climate map; forests from 1 km satellite tree cover; frozen seas
   from 10 years of NSIDC sea ice (frozen where there was ice at least half of the time).
-  Frozen water is still water, but ships can't cross it. Biomes are the Micropolis art in
-  other colours (shared/src/biomeart.ts).
+  Frozen water is still water, but ships can't cross it.
+- Tiles are 32 bits: Micropolis' 16 (tile kind + flags) plus a look (shared/src/looks.ts): the
+  biome the tile is drawn in, frozen water, or a transition at a biome border or an ice edge.
+  The server stamps the look from the place; `npm run gen:sheet -w tools` bakes skins.png, the
+  sheet of every tile in every look (the Micropolis art in other colours, shared/src/biomeart.ts).
 - The grid is split into 64 x 64 tile chunks. A chunk is the unit players claim and the
   unit the client streams. Your first claim is free; each further plot costs more than the last
   ($25,000 for the second, rising 1.75x per plot, 10 plots max) and must touch a chunk you already own.
-- A Node server holds the world in memory (one `Uint16Array`, Micropolis tile encoding),
+- A Node server holds the world in memory (one `Uint32Array`, Micropolis tile encoding plus looks),
   runs a simplified Micropolis simulation for every active city once per game month
   (5 seconds), and pushes tile deltas over WebSockets to clients subscribed to those chunks.
 - Persistence is plain files under `data/save/` (edited chunks + players/claims JSON),

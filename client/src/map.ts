@@ -1,4 +1,4 @@
-// Client-side tile store: one Uint16Array per loaded chunk, plus dirty tracking for the renderer.
+// Client-side tile store: one Uint32Array of tile values per loaded chunk, plus dirty tracking for the renderer.
 import { CHUNK, chunkKey, chunkOf, inWorld } from '@globalcity/shared';
 import { Emitter } from './emitter.ts';
 
@@ -14,9 +14,7 @@ export type MapEvents = {
 };
 
 export class TileMap extends Emitter<MapEvents> {
-  readonly chunks = new Map<string, Uint16Array>();
-  /** the generated landscape under each loaded chunk (see shared/terrain.ts): biome, forest, water, frozen */
-  readonly terrain = new Map<string, Uint8Array>();
+  readonly chunks = new Map<string, Uint32Array>();
   /** chunkKey -> list of changed tile indices within the chunk, or [DIRTY_ALL] */
   readonly dirty = new Map<string, number[]>();
   private lastUse = new Map<string, number>();
@@ -26,7 +24,7 @@ export class TileMap extends Emitter<MapEvents> {
 
   has(cx: number, cy: number): boolean { return this.chunks.has(chunkKey(cx, cy)); }
 
-  getChunk(cx: number, cy: number): Uint16Array | undefined {
+  getChunk(cx: number, cy: number): Uint32Array | undefined {
     const key = chunkKey(cx, cy);
     const c = this.chunks.get(key);
     if (c) this.lastUse.set(key, ++this.tick);
@@ -42,17 +40,9 @@ export class TileMap extends Emitter<MapEvents> {
     return c[(y - cy * CHUNK) * CHUNK + (x - cx * CHUNK)];
   }
 
-  /** Terrain byte at world coords, or undefined if the chunk is not loaded. */
-  terrainAt(x: number, y: number): number | undefined {
-    if (!inWorld(x, y)) return undefined;
-    const { cx, cy } = chunkOf(x, y);
-    return this.terrain.get(chunkKey(cx, cy))?.[(y - cy * CHUNK) * CHUNK + (x - cx * CHUNK)];
-  }
-
-  setChunk(cx: number, cy: number, tiles: Uint16Array, terrain: Uint8Array = new Uint8Array(CHUNK * CHUNK)): void {
+  setChunk(cx: number, cy: number, tiles: Uint32Array): void {
     const key = chunkKey(cx, cy);
     this.chunks.set(key, tiles);
-    this.terrain.set(key, terrain);
     this.lastUse.set(key, ++this.tick);
     this.dirty.set(key, [DIRTY_ALL]);
     this.emit('chunk', { cx, cy });
@@ -99,7 +89,6 @@ export class TileMap extends Emitter<MapEvents> {
 
   drop(key: string): void {
     if (this.chunks.delete(key)) {
-      this.terrain.delete(key);
       this.dirty.delete(key);
       this.lastUse.delete(key);
       this.emit('drop', key);

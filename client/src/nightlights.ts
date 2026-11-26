@@ -106,7 +106,7 @@ export class NightLights {
 
   /** Lights image for a chunk (one pixel per art pixel), built or refreshed as needed; null before the art loads
    *  or when nothing in the chunk is lit. `frame` is the renderer's frame number: chunks used this frame stay cached. */
-  canvasFor(key: string, tiles: Uint16Array, frame: number): NightImage | null {
+  canvasFor(key: string, tiles: Uint32Array, frame: number): NightImage | null {
     if (!this.sheet) return null;
     let e = this.cache.get(key);
     if (e && !e.stale) { e.lastFrame = frame; return e.im; }
@@ -121,7 +121,7 @@ export class NightLights {
   }
 
   /** Hash of the chunk's lit, powered tiles (position and id); 0 when there are none. */
-  private signature(tiles: Uint16Array): number {
+  private signature(tiles: Uint32Array): number {
     let h = 0;
     for (let i = 0; i < tiles.length; i++) {
       const t = tiles[i];
@@ -133,7 +133,7 @@ export class NightLights {
   }
 
   /** Draw a chunk's lights (into `reuse` when given), and its glow from each lit tile's ready-made halos. */
-  private draw(tiles: Uint16Array, reuse: NightImage | null): NightImage {
+  private draw(tiles: Uint32Array, reuse: NightImage | null): NightImage {
     const sheet = this.sheet!, T = this.T, cols = this.cols;
     const canvas = reuse?.canvas ?? document.createElement('canvas');
     const glow = reuse?.glow ?? document.createElement('canvas');

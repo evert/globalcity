@@ -32,7 +32,7 @@ class TestClient {
   cityName = '';
   stats: PlayerStats | null = null;
   toasts: { kind: string; msg: string; at?: { x: number; y: number } }[] = [];
-  chunks = new Map<string, Uint16Array>();
+  chunks = new Map<string, Uint32Array>();
   freeSpot: { cx: number | null; cy: number | null } | null = null;
   /** every claim this client knows about, by chunk key (welcome + 'claim' + 'claims') */
   claims = new Map<string, ClaimInfo>();
@@ -153,7 +153,7 @@ const INTERIOR: [number, number][] = [[65.0, 48.0], [-100.0, 45.0], [25.0, 55.0]
 //      rail row Y+5 cols BX..BX+2 then north BX+2 rows Y+4, Y+3 (touching the zone's bottom row Y+2)
 const A_COLS = 6, A_ROWS = 8, B_COLS = 8, B_ROWS = 6;
 
-function findRow(aTiles: Uint16Array, bTiles: Uint16Array): number | null {
+function findRow(aTiles: Uint32Array, bTiles: Uint32Array): number | null {
   rows: for (let y = 1; y + A_ROWS < CHUNK - 1; y++) {
     for (let dy = 0; dy < A_ROWS; dy++) for (let dx = 0; dx < A_COLS; dx++) {
       if (isWater(aTiles[(y + dy) * CHUNK + CHUNK - A_COLS + dx])) continue rows;
@@ -167,7 +167,7 @@ function findRow(aTiles: Uint16Array, bTiles: Uint16Array): number | null {
 }
 
 /** Top-left of a w x h all-land rectangle inside a chunk (local coords), or null. */
-function findRect(tiles: Uint16Array, w: number, h: number): { x: number; y: number } | null {
+function findRect(tiles: Uint32Array, w: number, h: number): { x: number; y: number } | null {
   for (let oy = 1; oy + h < CHUNK - 1; oy++) {
     cols: for (let ox = 1; ox + w < CHUNK - 1; ox++) {
       for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) if (isWater(tiles[(oy + dy) * CHUNK + ox + dx])) continue cols;

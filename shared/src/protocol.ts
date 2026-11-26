@@ -204,25 +204,20 @@ export type ServerMsg =
   | { t: 'pong' };
 
 // ---------- binary frames (server -> client) ----------
-// Full chunk: u8 kind=2, u16 cx, u16 cy, u8 flags, then the CHUNK*CHUNK tiles, then the chunk's terrain
-// (base.bin bytes: biome, frozen, ...), all little-endian. Tiles are raw u16 (flags & 1 clear) or runs of
-// (u8 count 1..255, u16 value) when that is smaller; terrain is always runs of (u8 count, u8 value). Most of
-// the world is untouched landscape, so a typical chunk is a few hundred bytes instead of 8 KB.
-export const BIN_CHUNK = 2;
+// Full chunk: u8 kind=3, u16 cx, u16 cy, u8 flags, then the CHUNK*CHUNK tile values (kind, flags and look; see
+// looks.ts), all little-endian: raw u32 (flags & 1 clear) or runs of (u8 count 1..255, u32 value) when that is
+// smaller. Most of the world is untouched landscape, so a typical chunk is a few hundred bytes.
+export const BIN_CHUNK = 3;
 const CHUNK_TILES = CHUNK * CHUNK;
 
-export interface ChunkFrame { cx: number; cy: number; tiles: Uint16Array; terrain: Uint8Array }
+export interface ChunkFrame { cx: number; cy: number; tiles: Uint32Array }
 
-export function encodeChunk(cx: number, cy: number, tiles: Uint16Array, terrain: Uint8Array): ArrayBuffer {
-  // tile runs
-  let tileRuns = 0;
-  for (let i = 0; i < CHUNK_TILES; ) { let j = i + 1; while (j < CHUNK_TILES && j - i < 255 && tiles[j] === tiles[i]) j++; tileRuns++; i = j; }
-  let terrRuns = 0;
-  for (let i = 0; i < CHUNK_TILES; ) { let j = i + 1; while (j < CHUNK_TILES && j - i < 255 && terrain[j] === terrain[i]) j++; terrRuns++; i = j; }
-  const rle = tileRuns * 3 < CHUNK_TILES * 2;
-  const buf = new ArrayBuffer(6 + (rle ? tileRuns * 3 : CHUNK_TILES * 2) + terrRuns * 2);
+export function encodeChunk(cx: number, cy: number, tiles: Uint32Array): ArrayBuffer {
+  let runs = 0;
+  for (let i = 0; i < CHUNK_TILES; ) { let j = i + 1; while (j < CHUNK_TILES && j - i < 255 && tiles[j] === tiles[i]) j++; runs++; i = j; }
+  const rle = runs * 5 < CHUNK_TILES * 4;
+  const buf = new ArrayBuffer(6 + (rle ? runs * 5 : CHUNK_TILES * 4));
   const dv = new DataView(buf);
-  const out = new Uint8Array(buf);
   dv.setUint8(0, BIN_CHUNK);
   dv.setUint16(1, cx, true);
   dv.setUint16(3, cy, true);
@@ -231,14 +226,10 @@ export function encodeChunk(cx: number, cy: number, tiles: Uint16Array, terrain:
   if (rle) {
     for (let i = 0; i < CHUNK_TILES; ) {
       let j = i + 1; while (j < CHUNK_TILES && j - i < 255 && tiles[j] === tiles[i]) j++;
-      out[o] = j - i; out[o + 1] = tiles[i] & 0xff; out[o + 2] = tiles[i] >> 8; o += 3; i = j;
+      dv.setUint8(o, j - i); dv.setUint32(o + 1, tiles[i], true); o += 5; i = j;
     }
   } else {
-    for (let i = 0; i < CHUNK_TILES; i++) { out[o] = tiles[i] & 0xff; out[o + 1] = tiles[i] >> 8; o += 2; }
-  }
-  for (let i = 0; i < CHUNK_TILES; ) {
-    let j = i + 1; while (j < CHUNK_TILES && j - i < 255 && terrain[j] === terrain[i]) j++;
-    out[o] = j - i; out[o + 1] = terrain[i]; o += 2; i = j;
+    for (let i = 0; i < CHUNK_TILES; i++, o += 4) dv.setUint32(o, tiles[i], true);
   }
   return buf;
 }
@@ -247,28 +238,21 @@ export function decodeChunk(buf: ArrayBuffer): ChunkFrame | null {
   if (buf.byteLength < 6) return null;
   const dv = new DataView(buf);
   if (dv.getUint8(0) !== BIN_CHUNK) return null;
-  const src = new Uint8Array(buf);
-  const cx = dv.getUint16(1, true), cy = dv.getUint16(3, true), rle = (src[5] & 1) !== 0;
-  const tiles = new Uint16Array(CHUNK_TILES), terrain = new Uint8Array(CHUNK_TILES);
+  const cx = dv.getUint16(1, true), cy = dv.getUint16(3, true), rle = (dv.getUint8(5) & 1) !== 0;
+  const tiles = new Uint32Array(CHUNK_TILES);
   let o = 6;
   if (rle) {
     for (let i = 0; i < CHUNK_TILES; ) {
-      if (o + 3 > src.length) return null;
-      const n = src[o], v = src[o + 1] | (src[o + 2] << 8); o += 3;
+      if (o + 5 > buf.byteLength) return null;
+      const n = dv.getUint8(o), v = dv.getUint32(o + 1, true); o += 5;
       if (!n || i + n > CHUNK_TILES) return null;
       tiles.fill(v, i, i + n); i += n;
     }
   } else {
-    if (o + CHUNK_TILES * 2 > src.length) return null;
-    for (let i = 0; i < CHUNK_TILES; i++, o += 2) tiles[i] = src[o] | (src[o + 1] << 8);
+    if (o + CHUNK_TILES * 4 > buf.byteLength) return null;
+    for (let i = 0; i < CHUNK_TILES; i++, o += 4) tiles[i] = dv.getUint32(o, true);
   }
-  for (let i = 0; i < CHUNK_TILES; ) {
-    if (o + 2 > src.length) return null;
-    const n = src[o], v = src[o + 1]; o += 2;
-    if (!n || i + n > CHUNK_TILES) return null;
-    terrain.fill(v, i, i + n); i += n;
-  }
-  return o === src.length ? { cx, cy, tiles, terrain } : null;
+  return o === buf.byteLength ? { cx, cy, tiles } : null;
 }
 
 /** Deterministic player colour from id. */

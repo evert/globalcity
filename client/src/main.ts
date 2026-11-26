@@ -3,7 +3,7 @@ import type { ServerMsg } from '@globalcity/shared';
 import { chunkKey } from '@globalcity/shared';
 import { Actions } from './actions.ts';
 import { handleServerMsg } from './dispatch.ts';
-import { loadSpriteSheet, proceduralMinimap } from './assets.ts';
+import { loadSpriteSheet, loadSkinSheet, proceduralMinimap } from './assets.ts';
 import { Updater } from './updater.ts';
 import { Input, PAINT_TOOLS, ZONE_TOOLS } from './input.ts';
 import { TileMap } from './map.ts';
@@ -42,7 +42,7 @@ async function boot(): Promise<void> {
   const canvas = document.getElementById('map') as HTMLCanvasElement | null;
   if (!canvas) throw new Error('#map canvas missing');
 
-  const [sheet, spriteAssets] = await Promise.all([loadSpriteSheet(), loadSprites()]);
+  const [sheet, skins, spriteAssets] = await Promise.all([loadSpriteSheet(), loadSkinSheet(), loadSprites()]);
   // the corner minimap starts plain and becomes the server's whole-world map image once that loads
   const minimap = proceduralMinimap();
 
@@ -50,6 +50,7 @@ async function boot(): Promise<void> {
   const map = new TileMap();
   const net = new Net();
   const renderer = new Renderer(canvas, sheet, minimap, map, state);
+  renderer.skins = skins;
   renderer.sprites = new SpriteEngine(map, spriteAssets);
   document.addEventListener('visibilitychange', () => renderer.invalidate()); // sprites pause while hidden, resume on return
   renderer.resizeToWindow();
@@ -115,7 +116,7 @@ async function boot(): Promise<void> {
   // Net re-sends hello + the stored subscription itself on (re)connect; just refresh the desired set.
   net.on('open', () => { state.setConnected(true); updateSubscription(); });
   net.on('close', () => state.setConnected(false));
-  net.on('chunk', ({ cx, cy, tiles, terrain }) => map.setChunk(cx, cy, tiles, terrain));
+  net.on('chunk', ({ cx, cy, tiles }) => map.setChunk(cx, cy, tiles));
   const updater = new Updater(__BUILD_VERSION__, (reload) => ui.showUpdateBanner(reload));
   const targets = { state, map, renderer, ui, updater };
   net.on('msg', (msg: ServerMsg) => handleServerMsg(msg, targets));

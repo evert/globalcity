@@ -7,6 +7,7 @@
     "gen": "tsx src/gen-world.ts",
     "gen:world": "tsx src/gen-world.ts",
     "gen:places": "tsx src/gen-places.ts",
+    "gen:sheet": "tsx src/gen-sheet.ts",
     "stats": "tsx src/stats.ts",
     "typecheck": "tsc -p tsconfig.json"
   },

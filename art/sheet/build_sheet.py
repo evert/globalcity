@@ -2,7 +2,8 @@
 plus GlobalCity additions appended as extra rows. Each addition is a footprint image whose tiles are laid
 out row-major (dy*size+dx) starting at its base tile id, matching shared/src/tiles.ts.
 
-Run: python3 art/sheet/build_sheet.py
+Run: python3 art/sheet/build_sheet.py, then `npm run gen:sheet -w tools` to rebuild skins.png (every tile in every
+biome, frozen and border look; see shared/src/looks.ts) from the new tiles.png.
 """
 import json, os
 from PIL import Image

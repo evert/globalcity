@@ -3,11 +3,11 @@
 import {
   CHUNK, CHUNKS_X, CHUNKS_Y, WORLD_W, WORLD_H, TILE_PX, MAX_SUBSCRIBED_CHUNKS,
   LOMASK, ZONEBIT, PWRBIT, ANIMBIT, LIGHTNINGBOLT, FIRE, LASTFIRE, TOOLS, CUSTOM_BUILDINGS, footprintOrigin, toolW, toolH, chunkKey, parseChunkKey, clamp, inWorld,
-  terrainVariant,
+  sheetIndex,
 } from '@globalcity/shared';
 import type { ClaimInfo, Flight, ToolId, Voyage } from '@globalcity/shared';
 import type { SpriteSheet, Minimap } from './assets.ts';
-import { drawTile, TerrainSheets } from './assets.ts';
+import { drawTile } from './assets.ts';
 import { ANI_TILE, isAnimatedId } from './anim.ts';
 import { TileMap, DIRTY_ALL } from './map.ts';
 import type { AppState, ClaimIdle } from './state.ts';
@@ -50,7 +50,7 @@ type RendererEvents = { camera: Camera; settle: Camera; hover: TilePos | null; t
 
 /** `anim`: tile indices in this chunk that animate (ANIMBIT set, or an animated id for old servers);
  *  `frame`: the tile id currently drawn for each of them (advanced through ANI_TILE every ANIM_MS while on screen). */
-interface ChunkCanvas { key: string; canvas: HTMLCanvasElement; g: CanvasRenderingContext2D; lastUse: number; anim: Set<number>; frame: Map<number, number>; terrain: Uint8Array | undefined; res: number }
+interface ChunkCanvas { key: string; canvas: HTMLCanvasElement; g: CanvasRenderingContext2D; lastUse: number; anim: Set<number>; frame: Map<number, number>; res: number }
 
 export function isFireTile(v: number): boolean { const id = v & LOMASK; return id >= FIRE && id <= LASTFIRE; }
 /** True when the tile value animates: the server flags animated tiles with ANIMBIT; old servers do not, so animated ids count too. */
@@ -142,6 +142,8 @@ export class Renderer extends Emitter<RendererEvents> {
   private customAnimTimer: ReturnType<typeof setTimeout> | null = null;
   /** zoomed-out map view: per-plot pixel images + tile-coloured terrain with specks */
   readonly mapTiles = new MapTileLayer();
+  /** every tile in every look (shared/src/looks.ts); until it loads, tiles are drawn from the plain sheet */
+  skins: SpriteSheet | null = null;
   /** scratch canvas the zoomed-out map's night lights are drawn into before the night mask is applied */
   private lightsLayer: HTMLCanvasElement | null = null;
   /** real-time day and night (the actual sun over the actual Earth) */
@@ -1087,34 +1089,29 @@ export class Renderer extends Emitter<RendererEvents> {
     return own && (v & ZONEBIT) !== 0 && (v & PWRBIT) === 0;
   }
 
-  private terrainSheets: TerrainSheets | null = null;
-  /** The tile sheet recoloured for a terrain byte's biome and ice (see shared/biomeart.ts). */
-  private sheetFor(terrain: number): SpriteSheet {
-    if (this.terrainSheets?.base !== this.sheet) this.terrainSheets = new TerrainSheets(this.sheet);
-    return this.terrainSheets.get(terrainVariant(terrain));
-  }
-
   /** Blit sprite `frameId` (plus the power-bolt overlay for tile value `v`) at chunk index `idx`. */
   private drawFrame(cc: ChunkCanvas, v: number, idx: number, frameId: number, own: boolean): void {
     const r = cc.res, tx = (idx % CHUNK) * r, ty = Math.floor(idx / CHUNK) * r;
-    drawTile(cc.g, cc.terrain ? this.sheetFor(cc.terrain[idx]) : this.sheet, frameId, tx, ty, r, r);
+    // the tile in its look (biome, ice, border); the plain sheet until the skins sheet is there
+    if (this.skins) drawTile(cc.g, this.skins, sheetIndex(v, frameId), tx, ty, r, r);
+    else drawTile(cc.g, this.sheet, frameId, tx, ty, r, r);
     if (this.shouldBolt(v, own)) drawTile(cc.g, this.sheet, LIGHTNINGBOLT, tx, ty, r, r);
   }
 
   /** Draw the stored tile at `idx` (first frame) and re-evaluate its animation membership. */
-  private drawTileAt(cc: ChunkCanvas, tiles: Uint16Array, idx: number, own: boolean): void {
+  private drawTileAt(cc: ChunkCanvas, tiles: Uint32Array, idx: number, own: boolean): void {
     const v = tiles[idx];
     this.drawFrame(cc, v, idx, v & LOMASK, own);
     if (isAnimatedTile(v)) { cc.anim.add(idx); cc.frame.set(idx, v & LOMASK); }
     else if (cc.anim.size) { cc.anim.delete(idx); cc.frame.delete(idx); }
   }
 
-  private buildChunkCanvas(key: string, cx: number, cy: number, tiles: Uint16Array, res = TILE_PX): ChunkCanvas {
+  private buildChunkCanvas(key: string, cx: number, cy: number, tiles: Uint32Array, res = TILE_PX): ChunkCanvas {
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = CHUNK * res;
     const g = canvas.getContext('2d', { alpha: false })!;
     g.imageSmoothingEnabled = false;
-    const cc: ChunkCanvas = { key, canvas, g, lastUse: this.frame, anim: new Set(), frame: new Map(), terrain: this.map.terrain.get(key), res };
+    const cc: ChunkCanvas = { key, canvas, g, lastUse: this.frame, anim: new Set(), frame: new Map(), res };
     const own = this.state.ownsChunk(cx, cy);
     for (let i = 0; i < CHUNK * CHUNK; i++) this.drawTileAt(cc, tiles, i, own);
     this.chunkCanvases.set(key, cc);

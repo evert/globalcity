@@ -41,8 +41,8 @@ export function claim(cx: number, cy: number, ownerId: string, ownerName: string
   return { cx, cy, ownerId, ownerName, cityName: '', color, pop, idleDays: 0, ...over };
 }
 
-function syntheticChunk(cx: number, cy: number): Uint16Array {
-  const t = new Uint16Array(CHUNK * CHUNK);
+function syntheticChunk(cx: number, cy: number): Uint32Array {
+  const t = new Uint32Array(CHUNK * CHUNK);
   for (let y = 0; y < CHUNK; y++) for (let x = 0; x < CHUNK; x++) {
     let v = DIRT;
     if ((x + y + cx) % 7 === 0) v = WOODS | BULLBIT;
@@ -139,7 +139,7 @@ export function demoAmbient(t: DispatchTargets): void {
   const feed = (m: ServerMsg) => handleServerMsg(m, t);
   const CX = 30, CY = 22;
   for (let cy = CY - 1; cy <= CY + 1; cy++) for (let cx = CX - 1; cx <= CX + 1; cx++) t.map.setChunk(cx, cy, syntheticChunk(cx, cy));
-  const c = new Uint16Array(CHUNK * CHUNK);
+  const c = new Uint32Array(CHUNK * CHUNK);
   const set = (x: number, y: number, v: number) => { c[y * CHUNK + x] = v; };
   for (let y = 0; y < CHUNK; y++) for (let x = 0; x < CHUNK; x++) set(x, y, (x * 7 + y * 3) % 11 === 0 ? WOODS | BULLBIT : DIRT);
   // harbour water: top-right corner

@@ -1,5 +1,6 @@
-// World state: one Uint16Array of Micropolis tile values for the whole Earth.
-// Low 10 bits = tile id, upper 6 bits = flags (ZONEBIT, PWRBIT, ...), exactly as Micropolis.
+// World state: one Uint32Array of tile values for the whole Earth. The low 16 bits are Micropolis' own (bits
+// 0-9 the tile kind, 10-15 flags: ZONEBIT, PWRBIT, ...); bits 16-24 are the tile's look (shared/src/looks.ts),
+// which set() stamps from the place and the kind, so the rest of the server never deals with it.
 
 import fs from 'node:fs';
 import { Buildings } from './buildings.ts';
@@ -7,7 +8,7 @@ import {
   WORLD_W, WORLD_H, CHUNK, CHUNKS_X, CHUNKS_Y, MIN_LAND_TILES_TO_CLAIM,
   RIVER, DIRT, WOODS, BLBNBIT, LOMASK, WATER_LOW, WATER_HIGH, WOODS_LOW, WOODS_HIGH,
   RIVER_EDGE_TABLE, TREE_EDGE_TABLE, isRail, isZoneTile, isHouse,
-  BASE_WATER, BASE_TREES, Biome, baseIsFrozen, baseIsForest,
+  BASE_WATER, BASE_TREES, Biome, baseIsFrozen, baseIsForest, lookAt, LOOK_SHIFT,
 } from '@globalcity/shared';
 import { log, warn, timed } from './util.ts';
 
@@ -20,7 +21,7 @@ export const validChunk = (cx: number, cy: number): boolean =>
 const zoneLike = (v: number): boolean => isZoneTile(v) || isHouse(v);
 
 export class World {
-  readonly tiles = new Uint16Array(WORLD_W * WORLD_H);
+  readonly tiles = new Uint32Array(WORLD_W * WORLD_H);
   /** The generated landscape (base.bin, see shared/terrain.ts): biome, forest, water, frozen. Never changes. */
   base: Uint8Array = new Uint8Array(WORLD_W * WORLD_H);
   /** custom-building layer (non-square buildings drawn as images) */
@@ -37,7 +38,7 @@ export class World {
   readonly loaded = new Set<ChunkIndex>();
   /** The untouched landscape of every chunk that has been built on, copied just before its first change
    *  (so rubble can grow back into what was there). Rebuilt each boot from the base map. */
-  readonly pristine = new Map<ChunkIndex, Uint16Array>();
+  readonly pristine = new Map<ChunkIndex, Uint32Array>();
   private landCache = new Int32Array(CHUNKS_X * CHUNKS_Y).fill(-1);
 
   get(x: number, y: number): number {
@@ -57,9 +58,15 @@ export class World {
     return false;
   }
 
-  /** Set a tile; marks the chunk dirty and queues the change for broadcast. No-op if unchanged. */
+  /** The value tile `v` (kind + flags) has at (x, y): with the look for that place stamped on. */
+  withLook(x: number, y: number, v: number): number {
+    return ((v & 0xffff) | (lookAt(this.base, x, y, v & LOMASK) << LOOK_SHIFT)) >>> 0;
+  }
+
+  /** Set a tile (its look is stamped here); marks the chunk dirty and queues the change for broadcast. No-op if unchanged. */
   set(x: number, y: number, v: number): void {
     const i = y * WORLD_W + x;
+    v = this.withLook(x, y, v);
     const old = this.tiles[i];
     if (old === v) return;
     const cx = Math.floor(x / CHUNK), cy = Math.floor(y / CHUNK);
@@ -78,20 +85,12 @@ export class World {
   }
 
   /** Copy of a chunk's tiles, row-major CHUNK*CHUNK, for sending/saving. */
-  chunkView(cx: number, cy: number): Uint16Array {
-    const out = new Uint16Array(CHUNK * CHUNK);
+  chunkView(cx: number, cy: number): Uint32Array {
+    const out = new Uint32Array(CHUNK * CHUNK);
     const base = cy * CHUNK * WORLD_W + cx * CHUNK;
     for (let dy = 0; dy < CHUNK; dy++) {
       out.set(this.tiles.subarray(base + dy * WORLD_W, base + dy * WORLD_W + CHUNK), dy * CHUNK);
     }
-    return out;
-  }
-
-  /** Copy of a chunk's terrain bytes, row-major CHUNK*CHUNK. */
-  terrainView(cx: number, cy: number): Uint8Array {
-    const out = new Uint8Array(CHUNK * CHUNK);
-    const base = cy * CHUNK * WORLD_W + cx * CHUNK;
-    for (let dy = 0; dy < CHUNK; dy++) out.set(this.base.subarray(base + dy * WORLD_W, base + dy * WORLD_W + CHUNK), dy * CHUNK);
     return out;
   }
 
@@ -101,14 +100,24 @@ export class World {
   }
 
   /** Overlay saved chunk data without marking dirty or broadcasting (boot only). */
-  loadChunk(cx: number, cy: number, data: Uint16Array): void {
+  loadChunk(cx: number, cy: number, data: Uint32Array): void {
     if (!this.pristine.has(chunkIndex(cx, cy))) this.pristine.set(chunkIndex(cx, cy), this.chunkView(cx, cy));
     const base = cy * CHUNK * WORLD_W + cx * CHUNK;
     for (let dy = 0; dy < CHUNK; dy++) {
       this.tiles.set(data.subarray(dy * CHUNK, dy * CHUNK + CHUNK), base + dy * WORLD_W);
     }
+    this.stampLooks(cx * CHUNK, cy * CHUNK, CHUNK, CHUNK); // saves made before a look change still draw right
     this.landCache[chunkIndex(cx, cy)] = -1;
     this.loaded.add(chunkIndex(cx, cy));
+  }
+
+  /** Stamp the right look on every tile of a rectangle (boot: after building the landscape, and on loaded chunks). */
+  stampLooks(x0: number, y0: number, w: number, h: number): void {
+    const t = this.tiles;
+    for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) {
+      const i = y * WORLD_W + x;
+      t[i] = this.withLook(x, y, t[i]);
+    }
   }
 
   /** Number of non-water tiles in a chunk (lazily cached). */
@@ -252,5 +261,6 @@ export function bootWorld(baseFile: string): World {
   timed('Base -> tiles', () => buildFromBase(world, base));
   timed('Shoreline smoothing', () => smoothRivers(world));
   timed('Tree smoothing', () => smoothTrees(world));
+  timed('Looks', () => world.stampLooks(0, 0, WORLD_W, WORLD_H));
   return world;
 }

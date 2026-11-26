@@ -161,7 +161,7 @@ for (const city of picked) {
   });
   for (const k of keys) { state.claims.push([k, id]); claimed.add(k); }
   for (const c of chunks) {
-    const buf = Buffer.from(world.chunkView(c.cx, c.cy).buffer);
+    const buf = Buffer.from(Uint16Array.from(world.chunkView(c.cx, c.cy), (v) => v & 0xffff).buffer); // saves hold kind + flags
     fs.writeFileSync(path.join(saveDir, 'chunks', `${c.cx}_${c.cy}.bin`), buf);
   }
   made++;

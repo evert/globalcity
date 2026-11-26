@@ -1,7 +1,6 @@
-// The landscape the world was generated with (data/world/base.bin, one byte per tile). The tile grid only
-// stores Micropolis tile ids (dirt, water, trees, ...); this layer says what that ground looks like and how
-// it behaves: which biome's colours to draw it in, and whether water is frozen. It never changes after
-// generation, so the server keeps it next to the tiles and sends it with every chunk.
+// The landscape the world was generated with (data/world-*/base.bin, one byte per tile): biome, forest, water,
+// frozen. It never changes after generation. The server keeps it next to the tiles: it decides each tile's
+// look (looks.ts), whether water is frozen (ships, ports), and what grows back on rubble.
 
 /** Ground palettes. Water tiles carry the biome of the land next to them, so shorelines draw that ground. */
 export enum Biome {
@@ -36,6 +35,5 @@ export const baseIsWater = (b: number): boolean => (b & BASE_WATER) !== 0;
 export const baseIsFrozen = (b: number): boolean => (b & (BASE_WATER | BASE_FROZEN)) === (BASE_WATER | BASE_FROZEN);
 export const baseIsForest = (b: number): boolean => (b & (BASE_WATER | BASE_TREES)) === BASE_TREES;
 
-/** The art variant a tile is drawn with: its ground palette, plus whether its water is ice. */
-export const terrainVariant = (b: number): number => (b & BASE_BIOME_MASK) * 2 + (baseIsFrozen(b) ? 1 : 0);
+/** Biome palettes times frozen or not: the skins of the tile art (see looks.ts and biomeart.ts). */
 export const TERRAIN_VARIANTS = BIOME_COUNT * 2;

@@ -114,7 +114,7 @@ export class OverlayLayer {
     return out;
   }
 
-  private build(cx: number, cy: number, tiles: Uint16Array): HTMLCanvasElement {
+  private build(cx: number, cy: number, tiles: Uint32Array): HTMLCanvasElement {
     const c = document.createElement('canvas');
     c.width = CHUNK; c.height = CHUNK;
     const g = c.getContext('2d')!;

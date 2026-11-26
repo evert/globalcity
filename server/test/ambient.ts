@@ -33,7 +33,7 @@ class TestClient {
   id = '';
   stats: PlayerStats | null = null;
   toasts: { kind: string; msg: string; at?: { x: number; y: number } }[] = [];
-  chunks = new Map<string, Uint16Array>();
+  chunks = new Map<string, Uint32Array>();
   freeSpot: { cx: number | null; cy: number | null } | null = null;
   claims = new Set<string>();
   queries: QueryInfo[] = [];
@@ -141,7 +141,7 @@ const SEEDS: [number, number][] = [
 //   row Y+11      : road X..X+24 ; row Y+12 free (a branch road is added during the test)
 const RW = 25, RH = 13;
 
-function findRect(tiles: Uint16Array): { ox: number; oy: number } | null {
+function findRect(tiles: Uint32Array): { ox: number; oy: number } | null {
   for (let oy = 1; oy + RH < CHUNK - 1; oy++) {
     cols: for (let ox = 1; ox + RW < CHUNK - 1; ox++) {
       for (let dy = 0; dy < RH; dy++) for (let dx = 0; dx < RW; dx++) {

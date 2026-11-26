@@ -13,3 +13,4 @@ export * from './sun.ts';
 export * from './terrain.ts';
 export * from './biomeart.ts';
 export * from './maptiles.ts';
+export * from './looks.ts';
