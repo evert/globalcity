@@ -139,9 +139,9 @@ export class World {
     return n;
   }
 
-  /** Terrain-wise claimable (enough land). Ownership is checked by Players. */
-  hasEnoughLand(cx: number, cy: number): boolean {
-    return this.landCount(cx, cy) >= MIN_LAND_TILES_TO_CLAIM;
+  /** Terrain-wise claimable (at least `min` land tiles; see minLandToClaim). Ownership is checked by Players. */
+  hasEnoughLand(cx: number, cy: number, min = MIN_LAND_TILES_TO_CLAIM): boolean {
+    return this.landCount(cx, cy) >= min;
   }
 }
 

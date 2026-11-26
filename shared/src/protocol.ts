@@ -201,7 +201,7 @@ export type ClientMsg =
   | { t: 'claim'; cx: number; cy: number }
   | { t: 'build'; tool: ToolId; x: number; y: number }
   | { t: 'query'; x: number; y: number }
-  | { t: 'findFree'; cx: number; cy: number } // nearest claimable chunk to (cx,cy)
+  | { t: 'findFree'; cx: number; cy: number } // nearest chunk to (cx,cy) a new city can be founded on
   | { t: 'rename'; name: string }
   | { t: 'renameCity'; name: string }
   | { t: 'view'; x: number; y: number; zoom: number; cx?: number; cy?: number } // throttled by the client (~4/s)

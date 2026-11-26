@@ -1,8 +1,8 @@
 // DOM overlay: top bar, toolbar, RCI, toasts, query popover, welcome/about panels, minimap widget.
 import type { BudgetYear, ClaimInfo, Demand, LeaderboardEntry, MonumentEntry, QueryInfo, ToolId } from '@globalcity/shared';
 import { OVERLAY_INFO, OVERLAY_MODES, type OverlayMode } from './overlays.ts';
-import { budgetTotals, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, STARTING_FUNDS, LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, LIFELINE_REPAY_SHARE, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT, LOMASK, FIRESTBASE, POLICESTBASE, CITYHALLBASE, LASTCITYHALL, chunkKey, shipCargo, flightLoad } from '@globalcity/shared';
-import { CHUNK, claimCost, MILESTONE_BUILDINGS, MILESTONE_ORDER, isMilestoneTool, nextMilestone, type MilestoneBuilding, MAX_CHUNKS_PER_PLAYER, POWER_PRICE_PER_UNIT, TOOLS, TOOL_ORDER, PLANT_OUTPUT, CUSTOM_BUILDINGS, GRAND_CENTRAL, WORLD_H, WORLD_W, chunkOf, lonLatToTile } from '@globalcity/shared';
+import { budgetTotals, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, ABANDON_RECLAIM_DAYS, MAX_MAYOR_NAME, MAX_CITY_NAME, STARTING_FUNDS, LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, LIFELINE_REPAY_SHARE, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT, LOMASK, FIRESTBASE, POLICESTBASE, CITYHALLBASE, LASTCITYHALL, chunkKey, shipCargo, flightLoad } from '@globalcity/shared';
+import { CHUNK, claimCost, chunkLandCount, minLandToClaim, MILESTONE_BUILDINGS, MILESTONE_ORDER, isMilestoneTool, nextMilestone, type MilestoneBuilding, MAX_CHUNKS_PER_PLAYER, POWER_PRICE_PER_UNIT, TOOLS, TOOL_ORDER, PLANT_OUTPUT, CUSTOM_BUILDINGS, GRAND_CENTRAL, WORLD_H, WORLD_W, chunkOf, lonLatToTile } from '@globalcity/shared';
 import { DISASTERS, Disaster, type WorldStats } from '@globalcity/shared';
 import type { Actions } from './actions.ts';
 import type { Minimap, SpriteSheet } from './assets.ts';
@@ -13,6 +13,7 @@ import { ZONE_TOOLS, type TouchPlan } from './input.ts';
 import { NIGHT_REFRESH_MS } from './night.ts';
 import { isFireTile, withAlpha } from './renderer.ts';
 import type { AppState } from './state.ts';
+import { fetchWorldReset, pushState, enablePush, disablePush, type PushState } from './push.ts';
 
 /** Toolbar groups: members share one button with a flyout once two or more of them are unlocked. */
 const TOOL_GROUPS: { id: string; name: string; members: ToolId[] }[] = [
@@ -46,6 +47,13 @@ const WELCOMED_KEY = 'globalcity.welcomed';
 /** how many times this browser has opened the game, and whether it has been invited to the Discord yet */
 const VISITS_KEY = 'globalcity.visits';
 const DISCORD_ASKED_KEY = 'globalcity.discordAsked';
+/** The Discord invite is off while the world reset dialog (which links the Discord too) takes its place. */
+const DISCORD_INVITE_ENABLED = false;
+/** the world reset time this browser last opened the world reset dialog for (it opens once by itself per date) */
+const RESET_SEEN_KEY = 'globalcity.resetSeen';
+/** how long after the reset time the top bar still says it is happening */
+const RESET_GRACE_MS = 6 * 3600_000;
+const RESET_REFRESH_MS = 15 * 60_000;
 const TOAST_DEDUP_MS = 3000;
 const POWER_TRADE_HELP = 'Power flows over wires across plot borders; surplus is sold at $1 per unit per month.';
 export const NEIGHBOUR_HELP = "Neighbouring cities' jobs and shoppers add demand across the border; rail connecting your zones to theirs boosts commerce.";
@@ -117,7 +125,13 @@ export class UI {
   private toasts!: HTMLElement; private lastToast: { msg: string; kind: ToastKind; el: HTMLElement; at: number; timer: ReturnType<typeof setTimeout> } | null = null;
   private lifelineBtn!: HTMLButtonElement; private lifelinePanel!: HTMLElement;
   private monumentBtn!: HTMLButtonElement; private monumentPanel!: HTMLElement; private monumentCity!: HTMLElement;
-  private abandonBtn!: HTMLButtonElement; private abandonPanel!: HTMLElement; private abandonCity!: HTMLElement;
+  private abandonBtn!: HTMLButtonElement;
+  /** the mayor dialog (behind the mayor name): rename the mayor and the city, and abandon the city to start over */
+  private mayorPanel!: HTMLElement; private mayorName!: HTMLInputElement; private mayorCity!: HTMLInputElement; private mayorCityRow!: HTMLElement;
+  private mayorStart!: HTMLElement; private mayorStartText!: HTMLElement; private mayorAbandonBtn!: HTMLButtonElement;
+  /** when this mayor last abandoned their city: the plots it releases are not "released after inactivity" */
+  private abandonedAt = 0;
+  private mayorConfirm!: HTMLElement; private mayorConfirmList!: HTMLElement; private mayorMonumentBtn!: HTMLButtonElement; private mayorConfirmBtn!: HTMLButtonElement;
   private budgetBtn!: HTMLButtonElement; private budgetPanel!: HTMLElement; private budgetTable!: HTMLElement;
   private milestones!: HTMLElement; private msRows!: HTMLElement; private msBtn!: HTMLButtonElement;
   private leaderboard!: HTMLElement; private lbRows!: HTMLElement; private lbMe!: HTMLElement; private lbBtn!: HTMLButtonElement;
@@ -129,6 +143,9 @@ export class UI {
   /** we saw this player with zero plots this session, so the next plot is a founding */
   private sawNoPlots = false; private foundedToastShown = false;
   private discordInvite!: HTMLElement;
+  private resetBtn!: HTMLButtonElement; private resetPanel!: HTMLElement; private resetTitle!: HTMLElement; private resetWhen!: HTMLElement;
+  private resetNums!: HTMLElement[]; private resetNotifyBtn!: HTMLButtonElement; private resetNote!: HTMLElement;
+  private resetAt: number | null = null; private vapidKey = ''; private pushState: PushState = 'unsupported';
   private about!: HTMLElement;
   private mini!: HTMLCanvasElement; private miniDirty = true;
 
@@ -156,9 +173,10 @@ export class UI {
     this.buildOverlayBar();
     this.buildLifeline();
     this.buildMonument();
-    this.buildAbandon();
+    this.buildMayor();
     this.buildBudget();
     this.buildDiscordInvite();
+    this.buildWorldReset();
     this.buildMinimap();
     this.root.append(this.toasts, this.query, this.touchBar, this.banners);
     this.bind();
@@ -175,10 +193,10 @@ export class UI {
     this.online = el('span', { class: 'val', text: '0' });
     this.worldPop = el('span', { class: 'val', text: '0' });
     this.status = el('span', { id: 'status', class: 'status', text: 'Connecting…' });
-    this.nameBtn = el('button', { class: 'btn ghost', id: 'nameBtn', title: 'Click to rename' }, '…');
-    this.nameBtn.onclick = () => this.promptRename();
+    this.nameBtn = el('button', { class: 'btn ghost', id: 'nameBtn', title: 'You, the mayor: rename yourself or your city, or start over' }, '…');
+    this.nameBtn.onclick = () => this.toggleMayor('mayor');
     this.cityNameBtn = el('button', { class: 'btn ghost city hidden', id: 'cityNameBtn', title: 'Your city — click to rename' }, '');
-    this.cityNameBtn.onclick = () => this.promptRenameCity();
+    this.cityNameBtn.onclick = () => this.toggleMayor('city');
     this.plots = el('span', { class: 'val', text: `0/${MAX_CHUNKS_PER_PLAYER}` });
     this.plotsStat = el('div', { class: 'stat hidden', id: 'plots', title: `Plots claimed (a city is at most ${MAX_CHUNKS_PER_PLAYER} plots)` }, el('span', { class: 'ico' }, 'Plots'), this.plots);
     this.claimBtn = el('button', { class: 'btn primary hidden', id: 'claimBtn' }, 'Claim this plot');
@@ -200,9 +218,11 @@ export class UI {
     this.monumentBtn = el('button', { class: 'btn hidden', id: 'monumentBtn', title: `Your city has over ${MONUMENT_MIN_POP.toLocaleString('en-US')} people: you can retire it as a monument and start over` }, '🏛 Monument');
     this.monumentBtn.onclick = () => this.toggleMonument();
     this.abandonBtn = el('button', { class: 'btn hidden', id: 'abandonBtn', title: 'Your city is broke and already used its lifeline: you can abandon it and start over' }, '🏳 Abandon city');
-    this.abandonBtn.onclick = () => this.toggleAbandon();
+    this.abandonBtn.onclick = () => this.toggleMayor('abandon');
     this.fireBtn = el('button', { class: 'btn fire hidden', id: 'fireBtn', title: 'Your city is burning! Click to jump to the next fire.' }, '🔥 0 fires');
     this.fireBtn.onclick = () => this.nextFire();
+    this.resetBtn = el('button', { class: 'btn hidden', id: 'resetBtn', title: 'The world resets soon: click to see what the new world brings' }, '⏳');
+    this.resetBtn.onclick = () => this.toggleWorldReset();
     const discordBtn = discordLink('', 'btn ghost discord-btn');
     discordBtn.append(discordIcon(), el('span', { class: 'discord-label' }, 'Discord'));
     discordBtn.setAttribute('aria-label', 'GlobalCity Discord');
@@ -219,7 +239,7 @@ export class UI {
       el('div', { class: 'stat', title: 'Players online' }, el('span', { class: 'ico online-dot' }, '●'), this.online),
       this.worldPopStat = el('div', { class: 'stat world-pop clickable', title: 'World population: every city on the planet combined. Click for the world stats', role: 'button', tabindex: '0' }, el('span', { class: 'ico' }, '🌍'), this.worldPop),
       this.plotsStat,
-      this.claimBtn, this.findBtn, this.cityBtn, this.worldBtn, this.msBtn, this.budgetBtn, this.lbBtn, this.lifelineBtn, this.abandonBtn, this.monumentBtn, this.fireBtn,
+      this.claimBtn, this.findBtn, this.cityBtn, this.worldBtn, this.msBtn, this.budgetBtn, this.lbBtn, this.lifelineBtn, this.abandonBtn, this.monumentBtn, this.fireBtn, this.resetBtn,
       el('div', { class: 'spacer' }),
       this.status, this.cityNameBtn, this.nameBtn, discordBtn, aboutBtn,
     );
@@ -578,6 +598,12 @@ export class UI {
     this.net.on('status', (s) => { this.status.textContent = s; this.offline.textContent = s; });
     this.renderer.on('camera', () => { this.hideQuery(); this.miniDirty = true; this.scheduleMini(); });
     this.renderer.on('settle', () => this.refreshClaimButtons());
+    // the land check needs the centre chunk's tiles, which may arrive after the camera settled
+    this.renderer.map.on('chunk', ({ cx, cy }) => {
+      if (!this.renderer.isTileMode()) return;
+      const c = this.renderer.centerChunk();
+      if (c.cx === cx && c.cy === cy) this.refreshClaimButtons();
+    });
   }
 
   private refreshAll(): void {
@@ -615,7 +641,7 @@ export class UI {
     if (!canRetire) this.monumentPanel?.classList.add('hidden');
     const canAbandon = this.state.ownedChunkCount() > 0 && (s?.funds ?? Infinity) < ABANDON_MAX_FUNDS && (s?.debt ?? 0) > 0;
     this.abandonBtn.classList.toggle('hidden', !canAbandon);
-    if (!canAbandon) this.abandonPanel?.classList.add('hidden');
+    if (this.mayorPanel && !this.mayorPanel.classList.contains('hidden')) this.refreshMayorStart();
     if (!s?.lifelineAvailable) this.lifelinePanel?.classList.add('hidden');
     this.budgetText.classList.toggle('bad', net < 0);
     this.budgetText.classList.toggle('hidden', !s);
@@ -733,7 +759,7 @@ export class UI {
       localStorage.setItem(VISITS_KEY, String(visits));
       asked = localStorage.getItem(DISCORD_ASKED_KEY) === '1';
     } catch { return; } // no storage: we can't tell a second visit from the first
-    if (visits < 2 || asked) return;
+    if (!DISCORD_INVITE_ENABLED || visits < 2 || asked) return;
     // a few seconds in, once nothing else (the welcome, a budget screen, ...) is open; give up after a minute
     let tries = 0;
     const attempt = (): void => {
@@ -743,6 +769,130 @@ export class UI {
       this.show(this.discordInvite);
     };
     setTimeout(attempt, 4000);
+  }
+
+  // ---------- world reset ----------
+  /** The countdown to the world reset in the top bar, and the dialog behind it: what the new world brings, a
+   *  "Notify me" button (Web Push, see push.ts) and the Discord. Opens by itself once per reset date. */
+  private buildWorldReset(): void {
+    const close = el('button', { class: 'btn ghost round close', title: 'Close' }, '×');
+    close.onclick = () => this.hide(this.resetPanel);
+    this.resetTitle = el('h2', { text: 'A new world is coming' });
+    this.resetWhen = el('p', { class: 'wr-when' });
+    const seg = (label: string): [HTMLElement, HTMLElement] => {
+      const num = el('span', { class: 'num', text: '--' });
+      return [el('div', { class: 'seg' }, num, el('span', { class: 'lbl', text: label })), num];
+    };
+    const segs = [seg('days'), seg('hours'), seg('min'), seg('sec')];
+    this.resetNums = segs.map((s) => s[1]);
+    const map = el('figure', { class: 'wr-map' },
+      el('img', { src: '/assets/new-world.png', width: '512', height: '256', alt: 'Map of the new world, coloured by biome: deserts, grassland, forests, tundra and ice', loading: 'lazy' }),
+      el('figcaption', { class: 'muted', text: 'The new world, coloured by its biomes' }));
+    const item = (ico: string, head: string, text: string): HTMLElement =>
+      el('li', {}, el('span', { class: 'wr-ico' }, ico), el('span', {}, el('b', { text: head }), ' ', text));
+    this.resetNotifyBtn = el('button', { class: 'btn primary', type: 'button' }, '🔔 Notify me');
+    this.resetNotifyBtn.onclick = () => void this.toggleResetPush();
+    const discord = el('a', { class: 'btn discord-btn', href: DISCORD_URL, target: '_blank', rel: 'noopener noreferrer' }, discordIcon(), el('span', {}, 'Join the Discord'));
+    this.resetNote = el('p', { class: 'wr-note muted hidden' });
+    this.resetPanel = el('div', { id: 'worldReset', class: 'panel card hidden', role: 'dialog', 'aria-label': 'World reset' },
+      close,
+      this.resetTitle,
+      el('div', { class: 'wr-count' }, ...segs.map((s) => s[0])),
+      this.resetWhen,
+      map,
+      el('ul', { class: 'wr-list' },
+        item('🌍', '4× the size.', 'The map is twice as wide and twice as tall, with room for many more cities.'),
+        item('🏜', 'More biomes.', "Deserts, savanna, rainforest, tundra, ice sheets and frozen seas, drawn from Earth's real climate."),
+        item('🌪', 'Natural disasters', 'where they happen on Earth: earthquakes, floods, tornadoes, tropical storms, wildfires and blizzards.'),
+      ),
+      el('p', { class: 'muted', text: 'When the countdown ends, the current world is retired and every mayor starts fresh on the new map.' }),
+      el('div', { class: 'row' }, this.resetNotifyBtn, discord),
+      this.resetNote,
+    );
+    this.root.append(this.resetPanel);
+    if (location.hash.startsWith('#selftest')) return;
+    const load = async (): Promise<void> => {
+      const r = await fetchWorldReset();
+      if (!r) return;
+      this.resetAt = r.at; this.vapidKey = r.vapidKey;
+      this.tickWorldReset();
+      if (this.resetAt !== null && Date.now() < this.resetAt) this.autoOpenWorldReset(this.resetAt);
+    };
+    void load();
+    setInterval(() => void load(), RESET_REFRESH_MS);
+    setInterval(() => this.tickWorldReset(), 1000);
+  }
+
+  /** Open the dialog once per reset date, a few seconds in and once nothing else is open; give up after a minute. */
+  private autoOpenWorldReset(at: number): void {
+    try { if (localStorage.getItem(RESET_SEEN_KEY) === String(at)) return; } catch { return; }
+    let tries = 0;
+    const attempt = (): void => {
+      if (this.resetAt !== at) return;
+      const busy = !this.state.me || [...this.root.querySelectorAll('.card')].some((c) => !c.classList.contains('hidden'));
+      if (busy) { if (++tries < 12) setTimeout(attempt, 5000); return; }
+      this.openWorldReset();
+    };
+    setTimeout(attempt, 4000);
+  }
+
+  private toggleWorldReset(): void {
+    if (this.resetPanel.classList.contains('hidden')) this.openWorldReset(); else this.hide(this.resetPanel);
+  }
+
+  private openWorldReset(): void {
+    try { if (this.resetAt !== null) localStorage.setItem(RESET_SEEN_KEY, String(this.resetAt)); } catch { /* ignore */ }
+    this.tickWorldReset();
+    this.show(this.resetPanel);
+    void pushState(this.vapidKey).then((st) => this.showResetPush(st));
+  }
+
+  /** Update the top bar countdown (and the dialog's, while open) once a second. */
+  private tickWorldReset(): void {
+    const at = this.resetAt, now = Date.now();
+    const active = at !== null && now < at + RESET_GRACE_MS;
+    this.resetBtn.classList.toggle('hidden', !active);
+    if (!active) { this.hide(this.resetPanel); return; }
+    const left = Math.max(0, at - now);
+    const s = Math.floor(left / 1000), d = Math.floor(s / 86400), h = Math.floor(s / 3600) % 24, m = Math.floor(s / 60) % 60, sec = s % 60;
+    const p2 = (n: number): string => String(n).padStart(2, '0');
+    this.resetBtn.textContent = left === 0 ? '🌍 New world!' : d > 0 ? `⏳ ${d}d ${p2(h)}h ${p2(m)}m` : `⏳ ${p2(h)}:${p2(m)}:${p2(sec)}`;
+    this.resetBtn.classList.toggle('soon', left > 0 && left < 86_400_000);
+    if (this.resetPanel.classList.contains('hidden')) return;
+    [d, h, m, sec].forEach((n, i) => { this.resetNums[i].textContent = i === 0 ? String(n) : p2(n); });
+    this.resetTitle.textContent = left === 0 ? 'The world is resetting now' : 'A new world is coming';
+    this.resetWhen.textContent = `${left === 0 ? 'The reset started' : 'The world resets'} ${new Date(at).toLocaleString(undefined, { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}.`;
+  }
+
+  private showResetPush(st: PushState, error = ''): void {
+    this.pushState = st;
+    const btn = this.resetNotifyBtn;
+    btn.disabled = st === 'denied';
+    btn.classList.toggle('hidden', st === 'unsupported' || st === 'ios-install');
+    btn.classList.toggle('primary', st !== 'on');
+    btn.textContent = st === 'on' ? '🔕 Turn off notification' : '🔔 Notify me';
+    const note = error || {
+      unsupported: "This browser can't show notifications. Join the Discord to hear the moment the new world opens.",
+      'ios-install': 'On iPhone or iPad, tap Share, then "Add to Home Screen", open GlobalCity from there and tap Notify me. Or join the Discord.',
+      denied: "Notifications are blocked for GlobalCity. Allow them in your browser's site settings, or join the Discord.",
+      off: '',
+      on: "✓ You're on the list: we'll send you a notification when the new world opens.",
+    }[st];
+    this.resetNote.textContent = note;
+    this.resetNote.classList.toggle('hidden', !note);
+  }
+
+  private async toggleResetPush(): Promise<void> {
+    const btn = this.resetNotifyBtn;
+    btn.disabled = true;
+    try {
+      this.showResetPush(this.pushState === 'on' ? await disablePush() : await enablePush(this.vapidKey));
+    } catch (e) {
+      // e.g. a private window, where Chrome has no Push API but can't say so up front
+      const why = (e as Error).message;
+      this.showResetPush(await pushState(this.vapidKey).catch(() => 'off' as const),
+        `Couldn't turn on notifications in this browser${why ? ` (${why})` : ''}. Private windows can't get them; join the Discord instead.`);
+    }
   }
 
   private buildLifeline(): void {
@@ -788,34 +938,103 @@ export class UI {
     );
     this.root.append(this.monumentPanel);
   }
-  private buildAbandon(): void {
-    const close = el('button', { class: 'btn ghost round close', title: 'Close' }, '×');
-    close.onclick = () => this.hide(this.abandonPanel);
-    const go = el('button', { class: 'btn danger', type: 'button' }, 'Abandon my city and start over');
-    go.onclick = () => { this.actions.abandon(); this.hide(this.abandonPanel); };
-    const later = el('button', { class: 'btn', type: 'button' }, 'Keep trying');
-    later.onclick = () => this.hide(this.abandonPanel);
-    this.abandonCity = el('p');
-    this.abandonPanel = el('div', { id: 'abandon', class: 'panel card hidden' },
+  private buildMayor(): void {
+    const close = el('button', { class: 'btn ghost round close', title: 'Close', type: 'button' }, '×');
+    close.onclick = () => this.hide(this.mayorPanel);
+    this.mayorName = el('input', { type: 'text', maxlength: String(MAX_MAYOR_NAME), autocomplete: 'off', spellcheck: 'false' });
+    this.mayorCity = el('input', { type: 'text', maxlength: String(MAX_CITY_NAME), autocomplete: 'off', spellcheck: 'false' });
+    this.mayorCityRow = el('label', { class: 'mp-field' }, el('span', { text: 'City name' }), this.mayorCity);
+    const save = el('button', { class: 'btn primary', type: 'submit' }, 'Save');
+    const cancel = el('button', { class: 'btn', type: 'button' }, 'Close');
+    cancel.onclick = () => this.hide(this.mayorPanel);
+    const form = el('form', { class: 'mp-form' },
+      el('label', { class: 'mp-field' }, el('span', { text: 'Mayor name' }), this.mayorName),
+      this.mayorCityRow,
+      el('div', { class: 'row' }, save, cancel));
+    form.onsubmit = (e) => { e.preventDefault(); this.saveMayor(); };
+
+    this.mayorStartText = el('p');
+    this.mayorAbandonBtn = el('button', { class: 'btn danger', type: 'button' }, '🏳 Abandon my city…');
+    this.mayorAbandonBtn.onclick = () => this.showAbandonConfirm(true);
+    this.mayorConfirmList = el('ul', { class: 'ms-benefits' });
+    this.mayorConfirmBtn = el('button', { class: 'btn danger', type: 'button' }, 'Yes, abandon it');
+    this.mayorConfirmBtn.onclick = () => {
+      if (!this.actions.abandon()) { this.toast('Not connected — try again in a moment.', 'error'); return; }
+      this.abandonedAt = Date.now();
+      this.hide(this.mayorPanel);
+    };
+    const keep = el('button', { class: 'btn', type: 'button' }, 'Keep my city');
+    keep.onclick = () => this.showAbandonConfirm(false);
+    this.mayorMonumentBtn = el('button', { class: 'btn hidden', type: 'button' }, '🏛 Retire it as a monument instead');
+    this.mayorMonumentBtn.onclick = () => { this.hide(this.mayorPanel); this.toggleMonument(); };
+    this.mayorConfirm = el('div', { class: 'mp-confirm hidden' },
+      this.mayorConfirmList,
+      el('div', { class: 'row' }, this.mayorConfirmBtn, keep, this.mayorMonumentBtn));
+    this.mayorStart = el('div', { class: 'mp-start' },
+      el('h3', { text: 'Start over' }),
+      this.mayorStartText,
+      el('div', { class: 'row' }, this.mayorAbandonBtn),
+      this.mayorConfirm);
+
+    this.mayorPanel = el('div', { id: 'mayorPanel', class: 'panel card hidden', role: 'dialog', 'aria-label': 'Mayor' },
       close,
-      el('h2', { text: '🏳 Abandon your city' }),
-      this.abandonCity,
-      el('ul', { class: 'ms-benefits' },
-        el('li', { text: 'All your plots are released: anyone can claim them' }),
-        el('li', { text: 'Everything you built stays standing: whoever claims a plot gets its buildings' }),
-        el('li', { text: `You start over with ${fmtMoney(STARTING_FUNDS)} and claim a new first plot anywhere; your lifeline debt is written off` }),
-        el('li', { text: 'Milestones start again from zero' }),
-        el('li', { text: 'This cannot be undone' })),
-      el('div', { class: 'row' }, go, later),
-    );
-    this.root.append(this.abandonPanel);
+      el('h2', { text: '🎩 Mayor' }),
+      form,
+      this.mayorStart);
+    this.root.append(this.mayorPanel);
   }
-  private toggleAbandon(): void {
-    if (!this.abandonPanel.classList.contains('hidden')) { this.hide(this.abandonPanel); return; }
+
+  /** Open (or close) the mayor dialog, focused on the mayor name, the city name, or the abandon confirmation. */
+  private toggleMayor(focus: 'mayor' | 'city' | 'abandon'): void {
+    if (!this.mayorPanel.classList.contains('hidden') && focus !== 'abandon') { this.hide(this.mayorPanel); return; }
     this.hide(this.milestones); this.hide(this.leaderboard); this.hide(this.about); this.hide(this.lifelinePanel); this.hide(this.monumentPanel); this.hide(this.budgetPanel);
-    const s = this.state.stats, city = this.state.cityName || 'Your city';
-    this.abandonCity.textContent = `${city} has run out of money and still owes ${fmtMoney(s?.debt ?? 0)} on its lifeline. If it can't recover, you can leave it behind and found a new city.`;
-    this.abandonPanel.classList.remove('hidden');
+    this.mayorName.value = this.state.me?.name ?? this.net.identity.name ?? '';
+    this.mayorCity.value = this.state.cityName;
+    this.mayorCityRow.classList.toggle('hidden', !this.state.cityName);
+    this.showAbandonConfirm(focus === 'abandon');
+    this.show(this.mayorPanel);
+    if (focus === 'abandon') this.mayorConfirmBtn.focus();
+    else (focus === 'city' && this.state.cityName ? this.mayorCity : this.mayorName).select();
+  }
+
+  private saveMayor(): void {
+    const name = this.mayorName.value.trim(), city = this.mayorCity.value.trim();
+    const curName = this.state.me?.name ?? this.net.identity.name ?? '', curCity = this.state.cityName;
+    if (!name) { this.toast('Your mayor needs a name', 'error'); this.mayorName.focus(); return; }
+    let ok = true;
+    if (name !== curName) ok = this.actions.rename(name) && ok;
+    if (curCity && city && city !== curCity) ok = this.actions.renameCity(city) && ok;
+    if (!ok) { this.toast('Not connected — try again in a moment.', 'error'); return; }
+    this.refreshName();
+    this.hide(this.mayorPanel);
+  }
+
+  private showAbandonConfirm(on: boolean): void {
+    this.mayorConfirm.classList.toggle('hidden', !on);
+    this.mayorAbandonBtn.classList.toggle('hidden', on);
+    this.refreshMayorStart();
+  }
+
+  /** The "Start over" part of the mayor dialog: only with a city, and worded for a broke city or a healthy one. */
+  private refreshMayorStart(): void {
+    const owned = this.state.ownedChunkCount(), s = this.state.stats, city = this.state.cityName || 'your city';
+    this.mayorStart.classList.toggle('hidden', owned === 0);
+    if (owned === 0) return;
+    const funds = s?.funds ?? 0, debt = s?.debt ?? 0;
+    this.mayorStartText.textContent = funds < ABANDON_MAX_FUNDS && debt > 0
+      ? `${city} has run out of money and still owes ${fmtMoney(debt)} on its lifeline. If it can't recover, you can leave it behind and found a new city.`
+      : `Stuck, or want to build somewhere else? You can leave ${city} behind and found a new city anywhere in the world.`;
+    this.mayorConfirmBtn.textContent = `Yes, abandon ${this.state.cityName || 'my city'}`;
+    const canRetire = (s?.population ?? 0) >= MONUMENT_MIN_POP;
+    this.mayorMonumentBtn.classList.toggle('hidden', !canRetire);
+    const plots = owned === 1 ? 'Your plot is released: anyone can claim it' : `All ${owned} of your plots are released: anyone can claim them`;
+    this.mayorConfirmList.replaceChildren(
+      el('li', { text: `${plots}, with everything you built still standing` }),
+      el('li', { text: `You start over with ${fmtMoney(STARTING_FUNDS)}${funds > STARTING_FUNDS ? ` (you have ${fmtMoney(funds)} now)` : ''} and claim a new first plot for free${debt > 0 ? '; your lifeline debt is written off' : ''}` }),
+      el('li', { text: `You can't claim your old plots back for ${ABANDON_RECLAIM_DAYS} days` }),
+      el('li', { text: 'Milestones start again from zero' }),
+      el('li', { text: 'This cannot be undone' }),
+    );
   }
 
   private toggleMonument(): void {
@@ -912,7 +1131,7 @@ export class UI {
   }
   toggleBudget(): void {
     if (!this.budgetPanel.classList.contains('hidden')) { this.hide(this.budgetPanel); return; }
-    this.hide(this.about); this.hide(this.leaderboard); this.hide(this.milestones); this.hide(this.lifelinePanel); this.hide(this.monumentPanel); this.hide(this.abandonPanel);
+    this.hide(this.about); this.hide(this.leaderboard); this.hide(this.milestones); this.hide(this.lifelinePanel); this.hide(this.monumentPanel); this.hide(this.mayorPanel);
     this.budgetPanel.classList.remove('hidden');
     this.refreshBudget();
   }
@@ -1047,9 +1266,20 @@ export class UI {
       : `Plots claimed (a city is at most ${MAX_CHUNKS_PER_PLAYER} plots)`;
     const tileMode = this.renderer.isTileMode();
     let showClaim = false, showFind = false;
+    let findTitle = 'Ask the server for the nearest free plot';
     if (tileMode && this.state.me) {
       const { cx, cy } = this.renderer.centerChunk();
-      if (this.state.canClaim(cx, cy)) {
+      // Same land rule as the server (a founding plot needs much more land than an extra one). Hint only: an
+      // unloaded chunk counts as fine and the server has the final say.
+      const minLand = minLandToClaim(owned);
+      const tiles = this.renderer.map.getChunk(cx, cy);
+      const land = tiles ? chunkLandCount(tiles) : Infinity;
+      if (this.state.canClaim(cx, cy) && land < minLand) {
+        if (owned === 0) {
+          showFind = true;
+          findTitle = `Too little land here for a first plot: it needs at least ${minLand.toLocaleString('en-US')} land tiles, this one has ${land.toLocaleString('en-US')}. Ask the server for the nearest plot with enough land.`;
+        }
+      } else if (this.state.canClaim(cx, cy)) {
         showClaim = true;
         const cost = claimCost(owned);
         this.claimBtn.textContent = owned === 0 ? 'Claim this plot (free)' : `Claim plot #${owned + 1} (${fmtMoney(cost)})`;
@@ -1061,6 +1291,7 @@ export class UI {
     }
     this.claimBtn.classList.toggle('hidden', !showClaim);
     this.findBtn.classList.toggle('hidden', !showFind);
+    this.findBtn.title = findTitle;
   }
 
   private refreshWelcome(): void {
@@ -1089,22 +1320,6 @@ export class UI {
   }
 
   // ---------- behaviours ----------
-  private promptRename(): void {
-    const cur = this.state.me?.name ?? this.net.identity.name ?? '';
-    const name = window.prompt('Your mayor name:', cur);
-    if (name === null) return;
-    if (!this.actions.rename(name)) this.toast('Not connected — try again in a moment.', 'error');
-    this.refreshName();
-  }
-
-  private promptRenameCity(): void {
-    const cur = this.state.cityName;
-    const name = window.prompt('Name your city:', cur);
-    if (name === null) return;
-    if (!this.actions.renameCity(name)) this.toast('Not connected — try again in a moment.', 'error');
-    this.refreshName();
-  }
-
   private claimCenter(): void {
     const { cx, cy } = this.renderer.centerChunk();
     if (!this.actions.claim(cx, cy)) this.toast('Not connected — cannot claim right now.', 'error');
@@ -1133,7 +1348,7 @@ export class UI {
         if (claim) {
           this.setWelcomeStatus(`The plot at your location belongs to ${claim.ownerName}. Try "Find nearest free plot".`, true);
         } else {
-          this.setWelcomeStatus('Found you! Use "Claim this plot" in the top bar once the map has loaded. If the server rejects it (e.g. open ocean), try "Find nearest free plot".');
+          this.setWelcomeStatus('Found you! Use "Claim this plot" in the top bar once the map has loaded. If there is too little land there (a first plot needs plenty), try "Find nearest free plot".');
           this.welcomeDismissed = true;
           setTimeout(() => this.hide(this.welcome), 1500);
         }
@@ -1443,7 +1658,7 @@ export class UI {
     if (info.owner) (q.firstElementChild as HTMLElement).style.color = info.owner.color;
     if (id >= CITYHALLBASE && id <= LASTCITYHALL && info.owner && info.owner.id === this.state.me?.id) {
       const rename = el('button', { class: 'btn', type: 'button' }, '✎ Rename city');
-      rename.onclick = () => { this.hideQuery(); this.promptRenameCity(); };
+      rename.onclick = () => { this.hideQuery(); this.toggleMayor('city'); };
       q.append(el('div', { class: 'qrow qactions' }, rename));
     }
     this.placeQuery();
@@ -1567,7 +1782,7 @@ export class UI {
 
   /** A chunk was released after its owner went idle (state already dropped it; its buildings stay on the map). */
   onUnclaim(prev: ClaimInfo): void {
-    if (this.state.me && prev.ownerId === this.state.me.id) {
+    if (this.state.me && prev.ownerId === this.state.me.id && Date.now() - this.abandonedAt > 30_000) {
       this.toast(`Your plot ${prev.cx},${prev.cy} was released after inactivity. Anyone can now claim it with what you built there.`, 'error', 8000, { x: prev.cx * CHUNK + CHUNK / 2, y: prev.cy * CHUNK + CHUNK / 2 });
     }
   }

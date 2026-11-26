@@ -5,6 +5,8 @@
 //
 // Announcements: POST /admin/announce {msg, minutes?, level?}, POST /admin/clear, GET /admin/status.
 // Grants: POST /admin/grant {name | id (prefix), amount}: add cash to one city, live (no restart).
+// World reset (notify.ts): GET /admin/notify (sign-ups), POST /admin/reset-at {at: ISO date | epoch ms | null},
+// POST /admin/notify-reset {again?}: send the "new world is open" notification to everyone who signed up.
 // Only from the machine itself (loopback, and never through the Cloudflare tunnel, which also connects
 // from loopback but adds cf-* headers) and with the token in <data dir>/admin-token (created at boot, 0600).
 import fs from 'node:fs';
@@ -12,6 +14,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import type http from 'node:http';
 import { log, warn } from './util.ts';
+import type { Notify } from './notify.ts';
 
 export interface Announcement { id: string; msg: string; level: 'info' | 'warn'; until: number }
 export type GrantResult = { ok: true; id: string; name: string; cityName: string; funds: number } | { ok: false; error: string };
@@ -24,7 +27,8 @@ export class Admin {
 
   constructor(clientDist: string, dataDir: string, private readonly onVersion: (v: string) => void,
     private readonly onAnnounce: (a: Announcement | null) => void,
-    private readonly onGrant: (who: { id?: string; name?: string }, amount: number) => GrantResult = () => ({ ok: false, error: 'grants not available' })) {
+    private readonly onGrant: (who: { id?: string; name?: string }, amount: number) => GrantResult = () => ({ ok: false, error: 'grants not available' }),
+    private readonly notify: Notify | null = null) {
     this.versionFile = path.join(clientDist, 'version.json');
     this.readVersion();
     fs.watchFile(this.versionFile, { interval: 5000 }, () => {
@@ -67,7 +71,38 @@ export class Admin {
       res.writeHead(404, { 'content-type': 'text/plain' }); res.end('Not found'); return true;
     }
     const reply = (code: number, body: unknown) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
-    if (req.method === 'GET' && pathname === '/admin/status') { reply(200, { version: this.version, announcement: this.active() }); return true; }
+    if (req.method === 'GET' && pathname === '/admin/status') {
+      reply(200, { version: this.version, announcement: this.active(), worldReset: this.notify ? { at: this.notify.resetAt, signups: this.notify.stats().total } : null });
+      return true;
+    }
+    if (pathname === '/admin/notify' || pathname === '/admin/reset-at' || pathname === '/admin/notify-reset') {
+      const notify = this.notify;
+      if (!notify) { reply(404, { error: 'notifications not available' }); return true; }
+      if (req.method === 'GET' && pathname === '/admin/notify') {
+        const at = notify.resetAt;
+        reply(200, { resetAt: at === null ? null : new Date(at).toISOString(), ...notify.stats() });
+        return true;
+      }
+      if (req.method !== 'POST') { reply(405, { error: 'POST only' }); return true; }
+      let body = '';
+      req.on('data', (c) => { body += c; if (body.length > 4096) req.destroy(); });
+      req.on('end', () => {
+        let j: { at?: unknown; again?: unknown };
+        try { j = body.trim() ? JSON.parse(body) : {}; } catch { reply(400, { error: 'invalid JSON' }); return; }
+        if (pathname === '/admin/reset-at') {
+          const at = j.at === null || j.at === 'none' ? null : typeof j.at === 'number' ? j.at : typeof j.at === 'string' ? Date.parse(j.at) : NaN;
+          if (at !== null && !Number.isFinite(at)) { reply(400, { error: 'at must be an ISO date (with time zone), epoch ms, or null/"none"' }); return; }
+          notify.resetAt = at;
+          log(`admin: world reset ${at === null ? 'cleared' : `set to ${new Date(at).toISOString()}`}`);
+          reply(200, { ok: true, resetAt: at === null ? null : new Date(at).toISOString() });
+          return;
+        }
+        log(`admin: sending the world reset notification${j.again === true ? ' (again, to everyone)' : ''}`);
+        notify.sendAll(undefined, j.again === true).then((r) => reply(r.skipped < 0 ? 409 : 200, r.skipped < 0 ? { error: 'already sending' } : { ok: true, ...r }),
+          (e: Error) => reply(500, { error: e.message }));
+      });
+      return true;
+    }
     if (req.method === 'POST' && pathname === '/admin/clear') {
       this.announcement = null; this.onAnnounce(null); log('admin: announcement cleared'); reply(200, { ok: true }); return true;
     }

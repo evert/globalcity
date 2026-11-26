@@ -15,7 +15,7 @@ import {
   PRESENCE_INTERVAL_MS, PRESENCE_MAX,
   encodeChunk, inWorld, clamp, Disaster, DISASTERS, DISASTER_COUNT,
   type ClientMsg, type ServerMsg, type ToolId, type Presence,
-  LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, STARTING_FUNDS, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT,
+  LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, MONUMENT_MIN_POP, STARTING_FUNDS, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT,
 } from '@globalcity/shared';
 import type { MapTiles } from './maptiles.ts';
 import { WorldStatsCounter } from './worldstats.ts';
@@ -26,6 +26,7 @@ import { applyBuild, queryTile } from './tools.ts';
 import { Leaderboard } from './leaderboard.ts';
 import { log } from './util.ts';
 import { Admin, type Announcement, type GrantResult } from './admin.ts';
+import type { Notify } from './notify.ts';
 
 // Clients paint at most one build per 25 ms (40/s); allow headroom above that so painting is never throttled.
 const BUILD_RATE_PER_SEC = 60;
@@ -83,6 +84,8 @@ export interface NetOptions {
   dataDir?: string;
   /** the zoomed-out map images (/map/...) */
   mapTiles?: MapTiles;
+  /** world reset time and notification sign-ups (/api/world-reset, /api/notify) */
+  notify?: Notify;
 }
 
 export class Net {
@@ -90,6 +93,7 @@ export class Net {
   private httpServer: http.Server | null = null;
   private presenceTimer: NodeJS.Timeout | null = null;
   readonly admin: Admin;
+  private readonly notify: Notify | null;
   private readonly leaderboard: Leaderboard;
   private readonly worldStats: WorldStatsCounter;
   private readonly devHooks: boolean;
@@ -109,7 +113,8 @@ export class Net {
     this.admin = new Admin(clientDist, opts.dataDir ?? path.join(repoRoot, 'data/save'),
       (v) => this.broadcast({ t: 'version', version: v }),
       (a) => { for (const c of this.clients) if (c.player) this.sendAnnouncement(c, a); },
-      (who, amount) => this.adminGrant(who, amount));
+      (who, amount) => this.adminGrant(who, amount), opts.notify ?? null);
+    this.notify = opts.notify ?? null;
     this.leaderboard = new Leaderboard(players);
     this.worldStats = new WorldStatsCounter(world, players, sim);
     if (this.devHooks) log('DEV_HOOKS enabled: devIgnite/devFunds/devTraffic/devPeak/devRailLink/devPlace/devDisaster accepted');
@@ -192,6 +197,7 @@ export class Net {
   private handleHttp(req: http.IncomingMessage, res: http.ServerResponse): void {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (this.admin.handle(req, res, url.pathname)) return;
+    if (this.notify?.handle(req, res, url.pathname)) return;
     if (url.pathname.startsWith('/map/')) { this.serveMap(req, res, url); return; }
     if (url.pathname === '/health') {
       const body = JSON.stringify({
@@ -417,10 +423,7 @@ export class Net {
         break;
       }
       case 'abandon': {
-        if (p.chunks.length === 0 || p.funds >= ABANDON_MAX_FUNDS || (p.debt ?? 0) <= 0) {
-          this.toast(client, 'Only a broke city that has already used a lifeline can be abandoned', 'error');
-          break;
-        }
+        if (p.chunks.length === 0) { this.toast(client, 'You have no city to abandon', 'error'); break; }
         const city = p.cityName || `${p.name}'s city`;
         const released = this.players.abandon(p);
         this.sim.clearReleased(released);

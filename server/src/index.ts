@@ -9,6 +9,8 @@
 //              {t:'devFunds',amount} grants money, and random fire outbreaks are disabled so tests are
 //              deterministic. Never set in production.
 //   ABANDON_DAY_MS  length of an abandonment "day" in ms (default 86400000; tests use 1000)
+//   NOTIFY_DB  world reset notification sign-ups (SQLite; default notify.db beside the save directory, so it
+//              survives the world reset)
 
 import os from 'node:os';
 import path from 'node:path';
@@ -22,6 +24,7 @@ import { Net } from './net.ts';
 import { MapTiles } from './maptiles.ts';
 import { Elevation } from './elevation.ts';
 import fs from 'node:fs';
+import { Notify } from './notify.ts';
 import { log, warn, timed } from './util.ts';
 
 const TILE_FLUSH_MS = 100;
@@ -60,7 +63,8 @@ const hazards = (() => {
 })();
 const elevation = new Elevation(path.join(worldDir, 'elevation.bin'));
 const sim = new Sim(world, players, { randomFires: !devHooks, hazards, elevation });
-const net = new Net(world, players, sim, clientDist, root, { devHooks, dataDir: saveDir, mapTiles });
+const notify = new Notify(path.resolve(root, process.env.NOTIFY_DB || path.join(path.dirname(saveDir), 'notify.db')), devHooks);
+const net = new Net(world, players, sim, clientDist, root, { devHooks, dataDir: saveDir, mapTiles, notify });
 try {
   await net.listen(port, host);
 } catch (e) {
