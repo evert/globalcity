@@ -113,7 +113,7 @@ async function boot(): Promise<void> {
   // Net re-sends hello + the stored subscription itself on (re)connect; just refresh the desired set.
   net.on('open', () => { state.setConnected(true); updateSubscription(); });
   net.on('close', () => state.setConnected(false));
-  net.on('chunk', ({ cx, cy, tiles }) => map.setChunk(cx, cy, tiles));
+  net.on('chunk', ({ cx, cy, tiles, terrain }) => map.setChunk(cx, cy, tiles, terrain));
   const updater = new Updater(__BUILD_VERSION__, (reload) => ui.showUpdateBanner(reload));
   const targets = { state, map, renderer, ui, updater };
   net.on('msg', (msg: ServerMsg) => handleServerMsg(msg, targets));

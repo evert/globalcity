@@ -518,7 +518,7 @@ export class Net {
     for (const ci of next) {
       if (client.subs.has(ci)) continue;
       const { cx, cy } = chunkCoords(ci);
-      if (client.ws.readyState === WebSocket.OPEN) client.ws.send(encodeChunk(cx, cy, this.world.chunkView(cx, cy)));
+      if (client.ws.readyState === WebSocket.OPEN) client.ws.send(encodeChunk(cx, cy, this.world.chunkView(cx, cy), this.world.terrainView(cx, cy)));
     }
     client.subs = next;
   }

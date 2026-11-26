@@ -1,5 +1,5 @@
-// Sea routes between powered seaports. A coarse water grid (CELL x CELL tiles per cell, 1024 x 512 for the
-// whole planet, wrapping east-west at the date line) is built once; for each port one breadth-first search
+// Sea routes between powered seaports. A coarse grid of open water (CELL x CELL tiles per cell, 1024 x 512 for
+// the whole planet, wrapping east-west at the date line; frozen sea counts as land, ships go around the ice) is built once; for each port one breadth-first search
 // (8-neighbour) finds paths to every other port, which are then straightened (line-of-sight string pulling)
 // into a few waypoints. Searches run one per call to step(), so the tick never stalls. Ports whose water
 // doesn't connect (lakes) simply get no routes.
@@ -7,7 +7,7 @@ import { WORLD_W, WORLD_H, isWater, type PortInfo, type SeaRoute } from '@global
 import type { World } from './world.ts';
 import { log } from './util.ts';
 
-const CELL = 8;
+const CELL = WORLD_W / 1024; // 16 tiles: the same real distance as 8 tiles in the old 8192-wide world
 const GW = WORLD_W / CELL, GH = WORLD_H / CELL;
 const PORT_SEARCH_CELLS = 4; // a port uses the nearest water cell within this many cells
 
@@ -25,7 +25,7 @@ export class ShippingPlanner {
     const t0 = performance.now();
     for (let gy = 0; gy < GH; gy++) for (let gx = 0; gx < GW; gx++) {
       let n = 0;
-      for (let y = gy * CELL; y < gy * CELL + CELL; y++) for (let x = gx * CELL; x < gx * CELL + CELL; x++) if (isWater(world.tiles[y * WORLD_W + x])) n++;
+      for (let y = gy * CELL; y < gy * CELL + CELL; y++) for (let x = gx * CELL; x < gx * CELL + CELL; x++) if (isWater(world.tiles[y * WORLD_W + x]) && !world.frozen(x, y)) n++;
       this.water[gy * GW + gx] = n >= (CELL * CELL) / 2 ? 1 : 0;
     }
     log(`shipping: water grid ${GW}x${GH} built in ${(performance.now() - t0).toFixed(0)} ms`);

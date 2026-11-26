@@ -7,6 +7,7 @@ import {
   WORLD_W, WORLD_H, CHUNK, CHUNKS_X, CHUNKS_Y, MIN_LAND_TILES_TO_CLAIM,
   RIVER, DIRT, WOODS, BLBNBIT, LOMASK, WATER_LOW, WATER_HIGH, WOODS_LOW, WOODS_HIGH,
   RIVER_EDGE_TABLE, TREE_EDGE_TABLE, isRail, isZoneTile, isHouse,
+  BASE_WATER, BASE_TREES, Biome, baseIsFrozen, baseIsForest,
 } from '@globalcity/shared';
 import { log, warn, timed } from './util.ts';
 
@@ -20,6 +21,8 @@ const zoneLike = (v: number): boolean => isZoneTile(v) || isHouse(v);
 
 export class World {
   readonly tiles = new Uint16Array(WORLD_W * WORLD_H);
+  /** The generated landscape (base.bin, see shared/terrain.ts): biome, forest, water, frozen. Never changes. */
+  base: Uint8Array = new Uint8Array(WORLD_W * WORLD_H);
   /** custom-building layer (non-square buildings drawn as images) */
   readonly buildings = new Buildings();
   /** Chunks modified since the last save (only ever-edited chunks get a file). */
@@ -81,6 +84,19 @@ export class World {
     return out;
   }
 
+  /** Copy of a chunk's terrain bytes, row-major CHUNK*CHUNK. */
+  terrainView(cx: number, cy: number): Uint8Array {
+    const out = new Uint8Array(CHUNK * CHUNK);
+    const base = cy * CHUNK * WORLD_W + cx * CHUNK;
+    for (let dy = 0; dy < CHUNK; dy++) out.set(this.base.subarray(base + dy * WORLD_W, base + dy * WORLD_W + CHUNK), dy * CHUNK);
+    return out;
+  }
+
+  /** Water here is ice for at least half of the year: ships can't cross it and it isn't open water for ports or offshore wind. */
+  frozen(x: number, y: number): boolean {
+    return baseIsFrozen(this.base[y * WORLD_W + x]);
+  }
+
   /** Overlay saved chunk data without marking dirty or broadcasting (boot only). */
   loadChunk(cx: number, cy: number, data: Uint16Array): void {
     if (!this.pristine.has(chunkIndex(cx, cy))) this.pristine.set(chunkIndex(cx, cy), this.chunkView(cx, cy));
@@ -124,11 +140,9 @@ export class World {
 export function loadBaseOrFallback(file: string): Uint8Array {
   if (fs.existsSync(file)) {
     const buf = fs.readFileSync(file);
-    if (buf.length === WORLD_W * WORLD_H) {
-      log(`Loaded base world ${file} (${(buf.length / 1e6).toFixed(1)} MB)`);
-      return new Uint8Array(buf.buffer, buf.byteOffset, buf.length);
-    }
-    warn(`${file} has wrong size ${buf.length}, expected ${WORLD_W * WORLD_H}; using fallback world`);
+    if (buf.length !== WORLD_W * WORLD_H) throw new Error(`${file} has ${buf.length} bytes, expected ${WORLD_W * WORLD_H}: regenerate it with \`npm run gen:world\``);
+    log(`Loaded base world ${file} (${(buf.length / 1e6).toFixed(1)} MB)`);
+    return new Uint8Array(buf.buffer, buf.byteOffset, buf.length);
   } else {
     warn(`${file} not found. Run \`npm run gen:world\` to build the Earth map. Using a tiny deterministic noise world for now.`);
   }
@@ -156,9 +170,10 @@ export function generateFallbackBase(): Uint8Array {
     for (let x = 0; x < WORLD_W; x++) {
       const i = y * WORLD_W + x;
       const n = noise(x, y, 96, 1) * 0.6 + noise(x, y, 24, 2) * 0.3 + noise(x, y, 6, 3) * 0.1;
-      if (n + (polar > 0.9 ? 0.2 : 0) <= 0.52) { out[i] = 0; continue; }
+      const biome = polar > 0.85 ? Biome.Snow : polar > 0.7 ? Biome.Boreal : Biome.Temperate;
+      if (n + (polar > 0.9 ? 0.2 : 0) <= 0.52) { out[i] = BASE_WATER | biome; continue; }
       const f = noise(x, y, 20, 4);
-      out[i] = f > 0.58 ? 2 : 1;
+      out[i] = biome | (f > 0.58 && biome !== Biome.Snow ? BASE_TREES : 0);
     }
   }
   return out;
@@ -167,9 +182,10 @@ export function generateFallbackBase(): Uint8Array {
 export function buildFromBase(world: World, base: Uint8Array): void {
   const t = world.tiles;
   const woods = WOODS | BLBNBIT;
+  world.base = base;
   for (let i = 0; i < t.length; i++) {
     const b = base[i];
-    t[i] = b === 0 ? RIVER : b === 2 ? woods : DIRT;
+    t[i] = b & BASE_WATER ? RIVER : baseIsForest(b) ? woods : DIRT;
   }
 }
 

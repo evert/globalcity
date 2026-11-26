@@ -1,7 +1,7 @@
 // Applying build tools (the 'build' client message). Rules are a simplified Micropolis tool.cpp.
 
 import {
-  TOOLS, type ToolId, type QueryInfo, WORLD_W, WORLD_H,
+  TOOLS, type ToolId, type QueryInfo, WORLD_W, WORLD_H, Biome, baseBiome, baseIsFrozen,
   LOMASK, ZONEBIT, ANIMBIT, BULLBIT, BURNBIT, CONDBIT, PWRBIT, BLBNBIT, BLBNCNBIT, BNCNBIT,
   DIRT, RUBBLE, WOODS2, FOUNTAIN, FIRE, LASTFIRE, FLOOD, LASTFLOOD, RADTILE, FIRSTRIVEDGE, LASTRIVEDGE,
   HBRIDGE, VBRIDGE, ROADBASE, ROADS, HROADPOWER, VROADPOWER, LTRFBASE, HTRFBASE, LASTROAD, POLICE_RANGE,
@@ -420,7 +420,7 @@ function placeZone(world: World, p: PlayerRecord, base: number, size: number, ba
     }
   }
   if (base === PORTBASE && !waterNear(world, x0, y0, size, SEAPORT_WATER_RANGE)) {
-    return { ok: true, cost, msg: 'Your seaport needs to be near water to attract industry' };
+    return { ok: true, cost, msg: 'Your seaport needs to be near open water (not ice) to attract industry' };
   }
   return { ok: true, cost };
 }
@@ -466,6 +466,7 @@ function placeCustom(world: World, p: PlayerRecord, kind: string, baseCost: numb
 function placeOffshore(world: World, p: PlayerRecord, base: number, size: number, cost: number, x0: number, y0: number): BuildResult {
   for (let dy = 0; dy < size; dy++) for (let dx = 0; dx < size; dx++) {
     if (!isWater(world.get(x0 + dx, y0 + dy))) return fail('An offshore wind farm must be placed entirely on water');
+    if (world.frozen(x0 + dx, y0 + dy)) return fail('An offshore wind farm needs open water, not ice');
   }
   if (p.funds < cost) return fail('Not enough funds');
   let t = base;
@@ -480,12 +481,12 @@ function placeOffshore(world: World, p: PlayerRecord, base: number, size: number
 /** Tiles from the footprint edge within which a seaport must find water to count (sim.ts uses the same rule). */
 export const SEAPORT_WATER_RANGE = 6;
 
-/** Any water tile within `range` tiles (Chebyshev) of the size x size footprint whose top-left is (x0,y0)? */
+/** Any open (unfrozen) water tile within `range` tiles (Chebyshev) of the size x size footprint whose top-left is (x0,y0)? */
 export function waterNear(world: World, x0: number, y0: number, size: number, range: number): boolean {
   for (let y = y0 - range; y < y0 + size + range; y++) {
     if (y < 0 || y >= WORLD_H) continue;
     for (let x = x0 - range; x < x0 + size + range; x++) {
-      if (x >= 0 && x < WORLD_W && isWater(world.get(x, y))) return true;
+      if (x >= 0 && x < WORLD_W && isWater(world.get(x, y)) && !world.frozen(x, y)) return true;
     }
   }
   return false;
@@ -523,7 +524,7 @@ export function queryTile(ctx: BuildCtx, x: number, y: number): QueryInfo {
       name = custom ? CUSTOM_BUILDINGS[custom.kind]?.name ?? 'Building' : buildingName(cv & LOMASK);
     }
   } else {
-    name = terrainName(v);
+    name = terrainName(v, world.base[y * WORLD_W + x]);
     if (isRail(v) && ctx.railCitiesAt) {
       const n = ctx.railCitiesAt(x, y);
       if (n >= 2) name = `${name} (links ${n} cities)`;
@@ -557,11 +558,14 @@ function buildingName(id: number): string {
   return `Tile ${id}`;
 }
 
-function terrainName(v: number): string {
+const GROUND_NAMES: Record<Biome, string> = {
+  [Biome.Temperate]: 'Dirt', [Biome.Desert]: 'Sand', [Biome.Steppe]: 'Dry grass', [Biome.Tundra]: 'Tundra', [Biome.Boreal]: 'Snowy ground', [Biome.Snow]: 'Ice sheet',
+};
+function terrainName(v: number, base: number): string {
   const id = v & LOMASK;
-  if (isDirt(v)) return 'Dirt';
-  if (isWater(v)) return id >= FIRSTRIVEDGE && id <= LASTRIVEDGE ? 'Shoreline' : 'Water';
-  if (isTree(v)) return 'Woods';
+  if (isDirt(v)) return GROUND_NAMES[baseBiome(base)] ?? 'Dirt';
+  if (isWater(v)) return baseIsFrozen(base) ? (id >= FIRSTRIVEDGE && id <= LASTRIVEDGE ? 'Icy shore' : 'Ice') : id >= FIRSTRIVEDGE && id <= LASTRIVEDGE ? 'Shoreline' : 'Water';
+  if (isTree(v)) return baseBiome(base) === Biome.Boreal ? 'Snowy woods' : 'Woods';
   if (id === FOUNTAIN) return 'Fountain';
   if (isParkTile(id)) return 'Park';
   if (isRubble(v)) return 'Rubble';

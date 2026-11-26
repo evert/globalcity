@@ -1,6 +1,6 @@
 // WebSocket client: identity, hello/welcome, auto-reconnect, typed send, ping, binary chunks.
 import type { ClientMsg, ServerMsg } from '@globalcity/shared';
-import { decodeChunk } from '@globalcity/shared';
+import { decodeChunk, type ChunkFrame } from '@globalcity/shared';
 import { Emitter } from './emitter.ts';
 
 export interface Identity { id?: string; token?: string; name?: string }
@@ -12,7 +12,7 @@ export type NetEvents = {
   open: void;
   close: void;
   msg: ServerMsg;
-  chunk: { cx: number; cy: number; tiles: Uint16Array };
+  chunk: ChunkFrame;
   status: string;
 };
 

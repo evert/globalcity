@@ -3,10 +3,11 @@
 import {
   CHUNK, CHUNKS_X, CHUNKS_Y, WORLD_W, WORLD_H, TILE_PX, MAX_SUBSCRIBED_CHUNKS,
   LOMASK, ZONEBIT, PWRBIT, ANIMBIT, LIGHTNINGBOLT, FIRE, LASTFIRE, TOOLS, CUSTOM_BUILDINGS, footprintOrigin, toolW, toolH, chunkKey, parseChunkKey, clamp, inWorld,
+  terrainVariant,
 } from '@globalcity/shared';
 import type { ClaimInfo, Flight, ToolId, Voyage } from '@globalcity/shared';
 import type { SpriteSheet, Minimap } from './assets.ts';
-import { drawTile } from './assets.ts';
+import { drawTile, TerrainSheets } from './assets.ts';
 import { ANI_TILE, isAnimatedId } from './anim.ts';
 import { TileMap, DIRTY_ALL } from './map.ts';
 import type { AppState, ClaimIdle } from './state.ts';
@@ -47,7 +48,7 @@ type RendererEvents = { camera: Camera; settle: Camera; hover: TilePos | null; t
 
 /** `anim`: tile indices in this chunk that animate (ANIMBIT set, or an animated id for old servers);
  *  `frame`: the tile id currently drawn for each of them (advanced through ANI_TILE every ANIM_MS while on screen). */
-interface ChunkCanvas { key: string; canvas: HTMLCanvasElement; g: CanvasRenderingContext2D; lastUse: number; anim: Set<number>; frame: Map<number, number> }
+interface ChunkCanvas { key: string; canvas: HTMLCanvasElement; g: CanvasRenderingContext2D; lastUse: number; anim: Set<number>; frame: Map<number, number>; terrain: Uint8Array | undefined }
 
 export function isFireTile(v: number): boolean { const id = v & LOMASK; return id >= FIRE && id <= LASTFIRE; }
 /** True when the tile value animates: the server flags animated tiles with ANIMBIT; old servers do not, so animated ids count too. */
@@ -1108,10 +1109,17 @@ export class Renderer extends Emitter<RendererEvents> {
     return own && (v & ZONEBIT) !== 0 && (v & PWRBIT) === 0;
   }
 
+  private terrainSheets: TerrainSheets | null = null;
+  /** The tile sheet recoloured for a terrain byte's biome and ice (see shared/biomeart.ts). */
+  private sheetFor(terrain: number): SpriteSheet {
+    if (this.terrainSheets?.base !== this.sheet) this.terrainSheets = new TerrainSheets(this.sheet);
+    return this.terrainSheets.get(terrainVariant(terrain));
+  }
+
   /** Blit sprite `frameId` (plus the power-bolt overlay for tile value `v`) at chunk index `idx`. */
   private drawFrame(cc: ChunkCanvas, v: number, idx: number, frameId: number, own: boolean): void {
     const tx = (idx % CHUNK) * TILE_PX, ty = Math.floor(idx / CHUNK) * TILE_PX;
-    drawTile(cc.g, this.sheet, frameId, tx, ty);
+    drawTile(cc.g, cc.terrain ? this.sheetFor(cc.terrain[idx]) : this.sheet, frameId, tx, ty);
     if (this.shouldBolt(v, own)) drawTile(cc.g, this.sheet, LIGHTNINGBOLT, tx, ty);
   }
 
@@ -1128,7 +1136,7 @@ export class Renderer extends Emitter<RendererEvents> {
     canvas.width = canvas.height = CHUNK_PX;
     const g = canvas.getContext('2d', { alpha: false })!;
     g.imageSmoothingEnabled = false;
-    const cc: ChunkCanvas = { key, canvas, g, lastUse: this.frame, anim: new Set(), frame: new Map() };
+    const cc: ChunkCanvas = { key, canvas, g, lastUse: this.frame, anim: new Set(), frame: new Map(), terrain: this.map.terrain.get(key) };
     const own = this.state.ownsChunk(cx, cy);
     for (let i = 0; i < CHUNK * CHUNK; i++) this.drawTileAt(cc, tiles, i, own);
     this.chunkCanvases.set(key, cc);

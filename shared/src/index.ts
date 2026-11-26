@@ -11,3 +11,4 @@ export * from './ships.ts';
 export * from './cargo.ts';
 export * from './sun.ts';
 export * from './terrain.ts';
+export * from './biomeart.ts';

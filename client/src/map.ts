@@ -15,6 +15,8 @@ export type MapEvents = {
 
 export class TileMap extends Emitter<MapEvents> {
   readonly chunks = new Map<string, Uint16Array>();
+  /** the generated landscape under each loaded chunk (see shared/terrain.ts): biome, forest, water, frozen */
+  readonly terrain = new Map<string, Uint8Array>();
   /** chunkKey -> list of changed tile indices within the chunk, or [DIRTY_ALL] */
   readonly dirty = new Map<string, number[]>();
   private lastUse = new Map<string, number>();
@@ -40,9 +42,17 @@ export class TileMap extends Emitter<MapEvents> {
     return c[(y - cy * CHUNK) * CHUNK + (x - cx * CHUNK)];
   }
 
-  setChunk(cx: number, cy: number, tiles: Uint16Array): void {
+  /** Terrain byte at world coords, or undefined if the chunk is not loaded. */
+  terrainAt(x: number, y: number): number | undefined {
+    if (!inWorld(x, y)) return undefined;
+    const { cx, cy } = chunkOf(x, y);
+    return this.terrain.get(chunkKey(cx, cy))?.[(y - cy * CHUNK) * CHUNK + (x - cx * CHUNK)];
+  }
+
+  setChunk(cx: number, cy: number, tiles: Uint16Array, terrain: Uint8Array = new Uint8Array(CHUNK * CHUNK)): void {
     const key = chunkKey(cx, cy);
     this.chunks.set(key, tiles);
+    this.terrain.set(key, terrain);
     this.lastUse.set(key, ++this.tick);
     this.dirty.set(key, [DIRTY_ALL]);
     this.emit('chunk', { cx, cy });
@@ -89,6 +99,7 @@ export class TileMap extends Emitter<MapEvents> {
 
   drop(key: string): void {
     if (this.chunks.delete(key)) {
+      this.terrain.delete(key);
       this.dirty.delete(key);
       this.lastUse.delete(key);
       this.emit('drop', key);

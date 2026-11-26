@@ -1,6 +1,6 @@
 // Routes server messages into state / map / renderer / ui. Shared by main.ts and the self test
 // so synthetic messages take exactly the same path as real ones.
-import type { ServerMsg } from '@globalcity/shared';
+import { CHUNK, WORLD_W, WORLD_H, type ServerMsg } from '@globalcity/shared';
 import type { TileMap } from './map.ts';
 import type { Renderer } from './renderer.ts';
 import type { AppState } from './state.ts';
@@ -16,7 +16,7 @@ export function handleServerMsg(msg: ServerMsg, { state, map, renderer, ui, upda
       state.replaceClaims(msg.claims);
       state.setStats(msg.stats);
       state.setTime(msg.time, msg.online);
-      if (msg.world.chunk !== 64 || msg.world.w !== 8192 || msg.world.h !== 4096) {
+      if (msg.world.chunk !== CHUNK || msg.world.w !== WORLD_W || msg.world.h !== WORLD_H) {
         console.warn('[main] server world size differs from shared constants', msg.world);
       }
       break;

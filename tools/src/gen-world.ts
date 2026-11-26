@@ -352,8 +352,21 @@ async function main() {
         const jx = (fbm(x / 28, y / 28, 911, 3) - 0.5) * 2 * JIT, jy = (fbm(x / 28, y / 28, 577, 3) - 0.5) * 2 * JIT;
         const kx = Math.min(kop.w - 1, Math.max(0, Math.floor(((x + 0.5 + jx + W) % W) * kpt)));
         const ky = Math.min(kRows.length / kop.w - 1, Math.max(0, Math.floor((y + 0.5 + jy) * kpt) - kBase));
+        const kAt = (tx: number, ty: number): number => {
+          const sx = Math.min(kop.w - 1, Math.max(0, Math.floor(((tx + 0.5 + W) % W) * kpt)));
+          const sy = Math.min(kRows.length / kop.w - 1, Math.max(0, Math.floor((ty + 0.5) * kpt) - kBase));
+          const v = kRows[sy * kop.w + sx];
+          return v > 30 ? 0 : v;
+        };
         let k = kRows[ky * kop.w + kx];
         if (k > 30) k = 0;
+        // land the climate map calls sea (the coastlines differ a little): borrow the nearest climate
+        if (k === 0 && isLand) {
+          k = kAt(x, y);
+          for (let r = 1; k === 0 && r <= JIT; r++) {
+            for (const [dx, dy] of [[r, 0], [-r, 0], [0, r], [0, -r], [r, r], [-r, r], [r, -r], [-r, -r]]) { k = kAt(x + dx, y + dy); if (k) break; }
+          }
+        }
         if (!isLand) {
           let frozen: boolean;
           if (k !== 0) frozen = KOPPEN_FROZEN_INLAND.has(k) || ice[i] === 1; // lake or river

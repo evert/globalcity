@@ -168,3 +168,37 @@ export function drawTile(g: CanvasRenderingContext2D, sheet: SpriteSheet, id: nu
   const sy = Math.floor(id / sheet.cols) * ts;
   g.drawImage(sheet.image, sx, sy, ts, ts, dx, dy, dw, dh);
 }
+
+/**
+ * The tile sheet in every terrain variant (biome ground, frozen water; see shared/biomeart.ts), recoloured on
+ * first use. Variant 0 is the sheet itself.
+ */
+export class TerrainSheets {
+  private readonly variants: (SpriteSheet | undefined)[] = [];
+  private pixels: ImageData | null = null;
+
+  constructor(readonly base: SpriteSheet) { this.variants[0] = base; }
+
+  get(variant: number): SpriteSheet {
+    const have = this.variants[variant];
+    if (have) return have;
+    if (this.base.procedural || variant <= 0 || variant >= T.TERRAIN_VARIANTS) return this.base;
+    const img = this.base.image as HTMLImageElement;
+    const w = img.naturalWidth || (img as unknown as HTMLCanvasElement).width, h = img.naturalHeight || (img as unknown as HTMLCanvasElement).height;
+    if (!this.pixels) {
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const g = c.getContext('2d', { willReadFrequently: true })!;
+      g.drawImage(img, 0, 0);
+      this.pixels = g.getImageData(0, 0, w, h);
+    }
+    const out = new ImageData(new Uint8ClampedArray(this.pixels.data), w, h);
+    T.recolourSheet(out.data, w, h, this.base.tileSize, variant);
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    c.getContext('2d')!.putImageData(out, 0, 0);
+    const sheet: SpriteSheet = { ...this.base, image: c };
+    this.variants[variant] = sheet;
+    return sheet;
+  }
+}
