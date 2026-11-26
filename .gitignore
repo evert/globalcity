@@ -3,6 +3,7 @@ dist/
 data/world/
 data/save*/
 data/raw/
+data/notify.db*
 *.log
 .DS_Store
 .env
