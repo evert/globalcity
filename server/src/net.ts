@@ -325,7 +325,7 @@ export class Net {
       if (p && isInt(m.kind) && m.kind >= 0 && m.kind < DISASTER_COUNT) {
         const ok = this.sim.disasters.start(p, m.kind as Disaster, Date.now());
         if (ok) this.broadcast({ t: 'disasters', list: this.sim.disasters.active() });
-        for (const t of this.sim.disasters.takeToasts()) for (const c of this.clients) if (c.player?.id === t.playerId) this.toast(c, t.msg, t.kind, t.at);
+        for (const t of this.sim.disasters.takeToasts()) this.deliverToast(t);
         this.toast(client, `devDisaster ${DISASTERS[m.kind as Disaster].name}: ${ok ? 'started' : 'nothing to hit'}`, 'info');
       }
       return true;
@@ -513,6 +513,14 @@ export class Net {
     log(`${p.name} (${p.id.slice(0, 8)}) connected; online=${this.onlineCount()}`);
   }
 
+  /** A simulation message for one player, or (playerId '*') for everyone playing except `except`. */
+  private deliverToast(t: { playerId: string; msg: string; kind: 'info' | 'error' | 'success'; at?: { x: number; y: number }; except?: string }): void {
+    for (const c of this.clients) {
+      if (!c.player) continue;
+      if (t.playerId === '*' ? c.player.id !== t.except : c.player.id === t.playerId) this.toast(c, t.msg, t.kind, t.at);
+    }
+  }
+
   private sendDisasters(client: Client): void {
     const list = this.sim.disasters.active();
     if (list.length) this.send(client, { t: 'disasters', list });
@@ -626,9 +634,7 @@ export class Net {
     for (const u of result.unclaimed) this.broadcast({ t: 'unclaim', cx: u.cx, cy: u.cy });
     if (result.claimsChanged.length > 0) this.broadcast({ t: 'claims', claims: result.claimsChanged });
     for (const c of this.clients) this.sendStatsIfChanged(c);
-    for (const t of result.toasts) {
-      for (const c of this.clients) if (c.player?.id === t.playerId) this.toast(c, t.msg, t.kind, t.at);
-    }
+    for (const t of result.toasts) this.deliverToast(t);
     // Leaderboard: recompute every N ticks (or when a city was released); push to everyone (with their own rank) only when the top list changed.
     if ((result.unclaimed.length > 0 || this.sim.tickCount % LEADERBOARD_PUSH_TICKS === 0) && this.leaderboard.recompute()) {
       for (const c of this.clients) if (c.player) this.send(c, this.leaderboard.messageFor(c.player));

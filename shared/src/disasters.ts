@@ -1,7 +1,8 @@
 // Natural disasters. Each kind only happens where it happens on Earth: the world generator records, per chunk,
 // which kinds are possible there (data/world-*/hazards.bin, one byte of HAZARD bits per chunk), from plate
-// boundaries, elevation, climate and storm regions. A city can be struck only while its mayor is online (and
-// never by more than one disaster an hour), and a disaster only touches the plots of the city it strikes.
+// boundaries, elevation, climate and storm regions. At most one disaster strikes per hour in the whole world,
+// always a city whose mayor is online, and everyone playing is told. A disaster only touches the plots of the
+// city it strikes.
 
 export enum Disaster { Earthquake = 0, Flood = 1, Tornado = 2, Storm = 3, Wildfire = 4, Blizzard = 5 }
 export const DISASTER_COUNT = 6;
@@ -18,11 +19,11 @@ export const DISASTERS: Record<Disaster, DisasterInfo> = {
   [Disaster.Blizzard]: { name: 'Blizzard', emoji: '❄️', verb: 'A blizzard buried' },
 };
 
-/** A city is struck at most once in this long. */
+/** At most one disaster in the whole world in this long. */
 export const DISASTER_MIN_GAP_MS = 60 * 60_000;
-/** Chance per simulation step for an eligible city once the gap has passed: about one disaster every two hours
- *  of play on top of the gap (720 steps an hour at 5 s). */
-export const DISASTER_STEP_P = 1 / 1440;
+/** Once the gap has passed, the chance per simulation step that a disaster strikes one of the cities that can be
+ *  struck (720 steps an hour at 5 s): on average about an hour later, so roughly one every two hours worldwide. */
+export const DISASTER_STEP_P = 1 / 720;
 /** Small towns are spared: disasters start once a city has this many people (the fire station milestone). */
 export const DISASTER_MIN_POP = 15_000;
 

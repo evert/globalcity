@@ -1,6 +1,6 @@
-// Natural disasters (shared/src/disasters.ts): which kinds a city can get comes from the world's hazard map,
-// they strike only cities whose mayor is online (at most one an hour each), and they only ever touch the
-// plots of the city they strike. Damage is Micropolis-style: buildings hit become rubble (or catch fire),
+// Natural disasters (shared/src/disasters.ts): which kinds a city can get comes from the world's hazard map; at
+// most one strikes per hour in the whole world, always in a city whose mayor is online, and everyone playing is
+// told; a disaster only ever touches the plots of the city it strikes. Damage is Micropolis-style: buildings hit become rubble (or catch fire),
 // floods cover low land next to water and then recede, a tornado tears a path across town.
 import {
   WORLD_W, WORLD_H, CHUNK, LOMASK, BULLBIT, BURNBIT, RUBBLE, FLOOD, DIRT, WATER_LOW, WATER_HIGH,
@@ -42,10 +42,13 @@ export interface DisasterHooks {
   isFrozen(id: string): boolean;
 }
 
-export interface DisasterToast { playerId: string; kind: 'error'; msg: string; at: { x: number; y: number } }
+/** `playerId` '*': for everyone else playing (the stricken city's mayor gets their own message). */
+export interface DisasterToast { playerId: string; kind: 'error' | 'info'; msg: string; at: { x: number; y: number }; except?: string }
 
 export class Disasters {
   private runs: Run[] = [];
+  /** when the last disaster struck anywhere (ms epoch): at most one an hour in the whole world */
+  private lastStrike = 0;
   /** announcements not yet delivered (the simulation hands them on every step; the dev hook straight away) */
   private toasts: DisasterToast[] = [];
   private nextId = 1;
@@ -58,7 +61,10 @@ export class Disasters {
     private readonly hazards: Uint8Array,
     private readonly elevation: Elevation,
     private readonly hooks: DisasterHooks,
-  ) {}
+  ) {
+    // survive restarts: the last strike is the latest one any city remembers
+    for (const p of players.players.values()) this.lastStrike = Math.max(this.lastStrike, p.lastDisaster ?? 0);
+  }
 
   /** Disasters started since `since` (ms epoch), for the world stats; a day of them is kept. */
   history(since: number): { kind: Disaster; at: number }[] { return this.past.filter((e) => e.at >= since); }
@@ -88,16 +94,20 @@ export class Disasters {
     for (const r of this.runs) this.advance(r, now);
     const moved = this.runs.some((r) => r.kind === Disaster.Tornado);
     this.runs = this.runs.filter((r) => !this.done(r, now));
-    if (random) {
+    // at most one disaster an hour in the whole world: once the hour is up, now and then one strikes a city
+    // that can be struck (its mayor online, big enough, a hazard on its land), picked at random
+    if (random && now - this.lastStrike >= DISASTER_MIN_GAP_MS && rand() < DISASTER_STEP_P) {
+      const candidates: { p: PlayerRecord; kinds: Disaster[] }[] = [];
       for (const p of online) {
-        if (this.runs.some((r) => r.p === p)) continue;
         if (p.stats.population < DISASTER_MIN_POP || p.monument) continue;
-        if (now - (p.lastDisaster ?? 0) < DISASTER_MIN_GAP_MS) continue;
-        if (rand() >= DISASTER_STEP_P) continue;
         const h = this.hazardsOf(p);
         const kinds: Disaster[] = [];
         for (let d = 0; d < DISASTER_COUNT; d++) if (h & hazardBit(d)) kinds.push(d);
-        if (kinds.length) this.start(p, kinds[randInt(kinds.length)], now);
+        if (kinds.length) candidates.push({ p, kinds });
+      }
+      if (candidates.length) {
+        const c = candidates[randInt(candidates.length)];
+        this.start(c.p, c.kinds[randInt(c.kinds.length)], now);
       }
     }
     if (moved || this.runs.length !== before) this.version++;
@@ -177,12 +187,16 @@ export class Disasters {
     }
     run.x ||= at % WORLD_W; run.y ||= Math.floor(at / WORLD_W);
     p.lastDisaster = now;
+    this.lastStrike = now;
     this.past = this.past.filter((e) => now - e.at < 86_400_000);
     this.past.push({ kind, at: now });
     this.players.dirty = true;
     this.runs.push(run);
     this.version++;
-    this.toasts.push({ playerId: p.id, kind: 'error', msg: `${info.emoji} ${info.verb} ${city}!`, at: { x: run.x, y: run.y } });
+    const where = { x: run.x, y: run.y };
+    this.toasts.push({ playerId: p.id, kind: 'error', msg: `${info.emoji} ${info.verb} ${city}!`, at: where });
+    // the news for everyone else playing (click to fly there and watch)
+    this.toasts.push({ playerId: '*', except: p.id, kind: 'info', msg: `${info.emoji} ${info.verb} ${p.cityName || `${p.name}'s city`}.`, at: where });
     return true;
   }
 
@@ -230,15 +244,19 @@ export class Disasters {
     void now;
   }
 
-  /** An earthquake: rubble and fires scattered around the epicentre. */
+  /** An earthquake: rubble and fires among what stands around the epicentre (bare ground and water just shake). */
   private quake(p: PlayerRecord, x0: number, y0: number): void {
-    const r = 10 + randInt(8);
-    const hits = 30 + Math.min(120, Math.floor(this.cityTiles(p).length / 150));
+    const r = 10 + randInt(8), w = this.world;
+    const standing: number[] = [];
+    for (let y = y0 - r; y <= y0 + r; y++) for (let x = x0 - r; x <= x0 + r; x++) {
+      if ((x - x0) ** 2 + (y - y0) ** 2 > r * r || !this.inCity(p, x, y)) continue;
+      const v = w.get(x, y);
+      if ((v & BULLBIT) && !isWater(v) && !isOverWater(v) && (v & LOMASK) !== DIRT && !((v & LOMASK) >= RUBBLE && (v & LOMASK) < RUBBLE + 4)) standing.push(y * WORLD_W + x);
+    }
+    const hits = Math.min(standing.length, 30 + Math.min(120, Math.floor(this.cityTiles(p).length / 150)));
     for (let k = 0; k < hits; k++) {
-      const a = rand() * Math.PI * 2, d = Math.sqrt(rand()) * r;
-      const x = Math.round(x0 + Math.cos(a) * d), y = Math.round(y0 + Math.sin(a) * d);
-      if (rand() < 0.15) { if (this.inCity(p, x, y)) this.hooks.ignite(x, y); }
-      else this.smash(p, x, y);
+      const i = standing.splice(randInt(standing.length), 1)[0], x = i % WORLD_W, y = (i - x) / WORLD_W;
+      if (rand() < 0.15) this.hooks.ignite(x, y); else this.smash(p, x, y);
     }
   }
 

@@ -1,7 +1,7 @@
 // Natural disasters (shared/src/disasters.ts), started with the devDisaster hook: every kind starts, announces
 // itself to the mayor and shows in the 'disasters' list; earthquakes and tornadoes leave rubble; blizzards bring
-// power lines down; wildfires burn; floods cover low land by the water and then recede; and nothing ever happens
-// to the neighbouring city.
+// power lines down; wildfires burn; floods cover low land by the water and then recede; the neighbouring city is
+// never touched, but its mayor hears the news.
 import WebSocket from 'ws';
 import { decodeChunk, Disaster } from '@globalcity/shared';
 const URL = `ws://127.0.0.1:${process.env.PORT}/ws`;
@@ -106,6 +106,9 @@ await strike(Disaster.Storm, 'storm', 6);
 
 // the neighbour's plot is untouched by all of it
 if (Array.from(B.chunks.get(`${sb.cx},${sb.cy}`)).join(',') !== bBefore) fail("disasters in A's city changed B's plot");
-if (B.toasts.some((t) => /earthquake|tornado|blizzard|flood|storm|wildfire/i.test(t))) fail('B was told about disasters in another city');
+const news = B.toasts.filter((t) => t.startsWith('info: ') && /earthquake|tornado|blizzard|flood|storm|wildfire/i.test(t));
+console.log(`B heard: ${news.length} disasters (${news[0]})`);
+if (news.length < 6) fail(`B should have heard about all 6 disasters, heard ${news.length}`);
+if (A.toasts.some((t) => t.startsWith('info: ') && /shook|touched down|buried|spreading|rising|hit/.test(t) && !/devDisaster/.test(t))) fail("A got the bystanders' news as well as its own");
 console.log('disasters OK');
 process.exit(0);
