@@ -1,7 +1,6 @@
 // Feature test: power trading across a chunk border, leaderboard, fire (via the DEV_HOOKS devIgnite hook).
-// Usage (server must run with DEV_HOOKS=1 on a throwaway save dir, never the live one):
-//   PORT=8791 DATA_DIR=data/save-test DEV_HOOKS=1 [TICK_MS=500] npx tsx src/index.ts
-//   PORT=8791 [TICK_MS=500] npm run smoke:features -w server
+// Usage:
+//   npm test -w server -- features   (starts a throwaway server with the settings it needs; see test/run-all.sh)
 // Exit 0 = pass. TICK_MS must match the server's so the waits are sized right.
 
 import WebSocket from 'ws';

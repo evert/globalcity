@@ -1,5 +1,6 @@
 // Zones can be placed over overland power lines; power keeps flowing through the zone.
 import WebSocket from 'ws';
+import { decodeChunk } from '@globalcity/shared';
 const URL = `ws://127.0.0.1:${process.env.PORT}/ws`;
 const CHUNK = 64, LOMASK = 0x3ff, ZONEBIT = 0x400, isWater = (t) => t >= 2 && t <= 20;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -7,7 +8,7 @@ const fail = (m) => { console.log('FAIL:', m); process.exit(1); };
 const ws = new WebSocket(URL); ws.binaryType = 'arraybuffer';
 let me = null, spot = null, chunk = null, stats = null, query = null; const toasts = [];
 ws.on('message', (d, bin) => {
-  if (bin) { const dv = new DataView(d instanceof ArrayBuffer ? d : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength)); const a = new Uint16Array(4096); for (let i = 0; i < 4096; i++) a[i] = dv.getUint16(5 + i * 2, true); chunk = { cx: dv.getUint16(1, true), cy: dv.getUint16(3, true), a }; return; }
+  if (bin) { const f = decodeChunk(d instanceof ArrayBuffer ? d : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength)); chunk = { cx: f.cx, cy: f.cy, a: f.tiles }; return; }
   const m = JSON.parse(d.toString());
   if (m.t === 'welcome') me = m.player;
   else if (m.t === 'freeSpot') spot = m;

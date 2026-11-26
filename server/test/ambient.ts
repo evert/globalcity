@@ -1,8 +1,7 @@
 // Ambient test: animation flags (coal/industrial smoke, airport radar, nuclear swirl, stadium games),
 // traffic tiles, special-building counts and police stations.
-// Usage (server must run with DEV_HOOKS=1 on a throwaway save dir, never the live one):
-//   PORT=8796 DATA_DIR=data/save-test6 DEV_HOOKS=1 TICK_MS=500 npx tsx src/index.ts
-//   PORT=8796 TICK_MS=500 npm run smoke:ambient -w server
+// Usage:
+//   npm test -w server -- ambient   (starts a throwaway server with the settings it needs; see test/run-all.sh)
 // Exit 0 = pass. TICK_MS must match the server's so the waits are sized right. Takes ~1-2 minutes.
 
 import WebSocket from 'ws';

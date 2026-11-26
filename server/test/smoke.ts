@@ -1,5 +1,5 @@
 // Smoke test: connect, found a city near London, build a small powered neighbourhood, verify stats flow.
-// Usage: npm run smoke -w server   (server must be running; PORT env overrides 8787). Exit 0 = pass.
+// Usage: npm test -w server -- smoke   (starts a throwaway server; see test/run-all.sh). Exit 0 = pass.
 
 import WebSocket from 'ws';
 import {

@@ -1,6 +1,7 @@
 // Lifeline: refused with money, offered when broke, grants LIFELINE_AMOUNT as debt, stacks for early cities up to the cap, one at a time for bigger ones,
 // and is repaid from surplus months. Needs DEV_HOOKS=1.
 import WebSocket from 'ws';
+import { decodeChunk } from '@globalcity/shared';
 const PORT = process.env.PORT, TICK = Number(process.env.TICK_MS) || 500;
 const CHUNK = 64, LOMASK = 0x3ff, isWater = (t) => t >= 2 && t <= 20;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -8,7 +9,7 @@ const fail = (m) => { console.log('FAIL:', m); process.exit(1); };
 const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`); ws.binaryType = 'arraybuffer';
 let me = null, stats = null, spot = null, chunk = null; const toasts = [];
 ws.on('message', (d, bin) => {
-  if (bin) { const dv = new DataView(d instanceof ArrayBuffer ? d : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength)); const a = new Uint16Array(4096); for (let i = 0; i < 4096; i++) a[i] = dv.getUint16(5 + i * 2, true); chunk = { cx: dv.getUint16(1, true), cy: dv.getUint16(3, true), a }; return; }
+  if (bin) { const f = decodeChunk(d instanceof ArrayBuffer ? d : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength)); chunk = { cx: f.cx, cy: f.cy, a: f.tiles }; return; }
   const m = JSON.parse(d.toString());
   if (m.t === 'welcome') { me = m.player; stats = m.stats; } else if (m.t === 'stats') stats = m.stats;
   else if (m.t === 'freeSpot') spot = m; else if (m.t === 'toast') toasts.push(`${m.kind}: ${m.msg}`);
@@ -67,13 +68,15 @@ send({ t: 'devSetFunds', amount: 10500 }); await sleep(200);
 for (let k = 0; k < 20; k++) { send({ t: 'ping' }); await sleep(TICK); }
 console.log(`20 months later: debt ${stats.debt}, last year ${stats.lastIncome}`);
 if (stats.debt !== 30000) fail('debt changed during loss months');
-// repayment arithmetic (the same function the simulation calls every month)
-const { applyMonthlyNet } = await import('./players.ts');
-const p = { funds: 0, debt: 10000 };
-const r1 = applyMonthlyNet(p, 400);   // surplus: a quarter repays
-const r2 = applyMonthlyNet(p, -300);  // loss: debt untouched, funds drop
-const q = { funds: 50, debt: 30 };
-const r3 = applyMonthlyNet(q, 1000);  // last bit of debt cleared
-console.log(`surplus $400 -> repaid ${r1.repaid}, kept ${r1.net}; loss $300 -> repaid ${r2.repaid}, debt ${p.debt}, funds ${p.funds}; final $30 -> cleared ${r3.cleared}`);
-if (r1.repaid !== 100 || r1.net !== 300 || r2.repaid !== 0 || p.debt !== 9900 || p.funds !== 0 || !r3.cleared || q.debt !== 0 || q.funds !== 1020) fail('repayment arithmetic');
+// repayment arithmetic (the same function the simulation calls every month): a share of a surplus month's
+// operating result is paid from funds, loss months leave the debt alone
+const { repayLifeline } = await import('../src/players.ts');
+const fake = (funds, debt) => ({ funds, debt, stats: {}, chunks: [], peakPop: 0 });
+const p = fake(1000, 10000);
+const r1 = repayLifeline(p, 400);   // surplus: a quarter repays
+const r2 = repayLifeline(p, -300);  // loss: debt untouched
+const q = fake(50, 30);
+const r3 = repayLifeline(q, 1000);  // last bit of debt cleared
+console.log(`surplus $400 -> repaid ${r1.repaid}; loss $300 -> repaid ${r2.repaid}, debt ${p.debt}, funds ${p.funds}; final $30 -> cleared ${r3.cleared}, funds ${q.funds}`);
+if (r1.repaid !== 100 || r2.repaid !== 0 || p.debt !== 9900 || p.funds !== 900 || !r3.cleared || q.debt !== 0 || q.funds !== 20) fail('repayment arithmetic');
 console.log('PASS'); process.exit(0);

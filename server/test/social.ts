@@ -1,12 +1,11 @@
 // Social feature test: city names, presence, neighbour + rail-link demand, plot cap, abandonment.
-// Usage (server must run with DEV_HOOKS=1 and a 1 s "day" on a throwaway save dir, never the live one):
-//   PORT=8791 DATA_DIR=data/save-test2 DEV_HOOKS=1 TICK_MS=500 ABANDON_DAY_MS=1000 npx tsx src/index.ts
-//   PORT=8791 TICK_MS=500 npm run smoke:social -w server
+// Usage:
+//   npm test -w server -- social   (starts a throwaway server with the settings it needs; see test/run-all.sh)
 // Exit 0 = pass. Takes ~70 s (the abandonment phase waits 61 "days"). TICK_MS must match the server's.
 
 import WebSocket from 'ws';
 import {
-  DEFAULT_PORT, CHUNK, TICK_MS, MAX_CHUNKS_PER_PLAYER, ABANDON_DECAY_DAYS, ABANDON_FREE_DAYS, ABANDON_DECAY_ENABLED, CHUNKS_X, CHUNKS_Y,
+  DEFAULT_PORT, CHUNK, TICK_MS, MAX_CHUNKS_PER_PLAYER, ABANDON_DECAY_DAYS, ABANDON_FREE_DAYS, ABANDON_DECAY_ENABLED, CHUNKS_X, CHUNKS_Y, WORLD_H,
   lonLatToTile, chunkOf, chunkKey, decodeChunk, isWater, isRubble, isRoad, isZoneTile, isHouse,
   type ClientMsg, type ServerMsg, type PlayerStats, type ClaimInfo, type Presence, type QueryInfo,
 } from '@globalcity/shared';
@@ -293,7 +292,7 @@ async function main(): Promise<void> {
   B.send({ t: 'view', x: -500, y: 1e9, zoom: 1 });
   const fb = await waitFor(() => A.presence.find((f) => f.players.some((p) => p.id === B.id)), 'presence frame with B at A', 1500);
   const pb = fb.players.find((p) => p.id === B.id)!;
-  if (pb.x !== 0 || pb.y !== 4095 || pb.cx !== undefined) fail(`presence clamp: ${JSON.stringify(pb)}`);
+  if (pb.x !== 0 || pb.y !== WORLD_H - 1 || pb.cx !== undefined) fail(`presence clamp: ${JSON.stringify(pb)}`);
   console.log('presence OK');
 
   // =========================================================================

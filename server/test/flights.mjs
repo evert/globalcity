@@ -1,6 +1,7 @@
 // Two mayors with powered airports: both get the airport boost, the server publishes both airports,
 // and the shared schedule produces flights between them only.
 import WebSocket from 'ws';
+import { decodeChunk } from '@globalcity/shared';
 const URL = `ws://127.0.0.1:${process.env.PORT}/ws`;
 const CHUNK = 64, LOMASK = 0x3ff, isWater = (t) => t >= 2 && t <= 20;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -10,7 +11,7 @@ class C {
   async connect() {
     this.ws = new WebSocket(URL); this.ws.binaryType = 'arraybuffer';
     this.ws.on('message', (d, bin) => {
-      if (bin) { const dv = new DataView(d instanceof ArrayBuffer ? d : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength)); const a = new Uint16Array(4096); for (let i = 0; i < 4096; i++) a[i] = dv.getUint16(5 + i * 2, true); this.chunk = { cx: dv.getUint16(1, true), cy: dv.getUint16(3, true), a }; return; }
+      if (bin) { const f = decodeChunk(d instanceof ArrayBuffer ? d : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength)); this.chunk = { cx: f.cx, cy: f.cy, a: f.tiles }; return; }
       const m = JSON.parse(d.toString());
       if (m.t === 'welcome') { this.id = m.player.id; this.stats = m.stats; }
       else if (m.t === 'stats') this.stats = m.stats;

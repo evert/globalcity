@@ -6,23 +6,8 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
-    "smoke": "tsx src/test-client.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "smoke:features": "tsx src/test-features.ts",
-    "smoke:social": "tsx src/test-social.ts",
-    "smoke:ambient": "tsx src/test-ambient.ts",
-    "smoke:flights": "tsx src/test-flights.mjs",
-    "smoke:water": "tsx src/test-water.mjs",
-    "smoke:zonewire": "tsx src/test-zonewire.mjs",
-    "smoke:freeze": "tsx src/test-freeze.mjs",
-    "smoke:smallrelease": "tsx src/test-smallrelease.mjs",
-    "smoke:milestones": "tsx src/test-milestones.mjs",
-    "smoke:lifeline": "tsx src/test-lifeline.mjs",
-    "smoke:custom": "tsx src/test-custom.mjs",
-    "smoke:uwcorner": "tsx src/test-uwcorner.mjs",
-    "smoke:grandcentral": "tsx src/test-grandcentral.mjs",
-    "smoke:monument": "tsx src/test-monument.mjs",
-    "smoke:abandon": "tsx src/test-abandon.mjs"
+    "test": "bash test/run-all.sh"
   },
   "dependencies": {
     "@globalcity/shared": "*",

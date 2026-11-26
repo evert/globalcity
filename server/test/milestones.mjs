@@ -1,6 +1,7 @@
 // Milestones: locked until the population threshold, one per city, rebuildable, grandfathered extras;
 // plus rail counting as transport access for zone growth. Needs DEV_HOOKS=1.
 import WebSocket from 'ws';
+import { decodeChunk, WIND_POWER } from '@globalcity/shared';
 const PORT = process.env.PORT, TICK = Number(process.env.TICK_MS) || 500;
 const CHUNK = 64, LOMASK = 0x3ff, ZONEBIT = 0x400, isWater = (t) => t >= 2 && t <= 20;
 const CITYHALL = 965, AIRPORT = 716;
@@ -11,7 +12,7 @@ class C {
   async connect() {
     this.ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`); this.ws.binaryType = 'arraybuffer';
     this.ws.on('message', (d, bin) => {
-      if (bin) { const dv = new DataView(d instanceof ArrayBuffer ? d : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength)); const a = new Uint16Array(4096); for (let i = 0; i < 4096; i++) a[i] = dv.getUint16(5 + i * 2, true); this.chunk = { cx: dv.getUint16(1, true), cy: dv.getUint16(3, true), a }; return; }
+      if (bin) { const f = decodeChunk(d instanceof ArrayBuffer ? d : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength)); this.chunk = { cx: f.cx, cy: f.cy, a: f.tiles }; return; }
       const m = JSON.parse(d.toString());
       if (m.t === 'welcome') { this.id = m.player.id; this.stats = m.stats; }
       else if (m.t === 'stats') this.stats = m.stats;
@@ -108,7 +109,7 @@ await W.build('residential', w.X + 15, w.Y + 2); // keep the city simulated
 t = await W.build('windfarm', w.X + 1, w.Y + 2);
 await ticks(3);
 console.log('wind farm:', t.join(' | ') || 'placed', '| power supply', W.stats.powerSupply);
-if (W.stats.powerSupply < 100) fail('wind farm should supply 100');
+if (W.stats.powerSupply < WIND_POWER) fail(`wind farm should supply ${WIND_POWER}`);
 // offshore: needs 300,000 and a 4x4 of water
 const O = new C('Mayor-O'); await O.connect();
 let site = null;
