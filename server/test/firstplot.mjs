@@ -3,14 +3,14 @@
 //  - a new mayor's claim on a mostly-water plot is refused, and the message says how much land is needed
 //  - findFree from there answers a plot that meets the founding rule, and claiming it works
 //  - once they own a plot, the same mostly-water plot (adjacent) can be bought
-// Candidates come from data/world/base.bin; the land counts are re-checked on the live tiles the server sends.
+// Candidates come from data/world-<W>x<H>/base.bin (a terrain byte per tile; BASE_WATER marks water); the land counts are re-checked on the live tiles the server sends.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
 import {
   decodeChunk, chunkLandCount, MIN_LAND_TILES_FIRST_CLAIM, MIN_LAND_TILES_TO_CLAIM, WORLD_W, WORLD_H, CHUNK,
-  CHUNKS_X, CHUNKS_Y,
+  CHUNKS_X, CHUNKS_Y, WORLD_TAG, BASE_WATER,
 } from '@globalcity/shared';
 
 const URL = `ws://127.0.0.1:${process.env.PORT}/ws`;
@@ -23,12 +23,13 @@ async function waitFor(fn, what, ms = 5000) {
 
 // ---- candidates: a mostly-water plot (enough land for an extra plot, not for a first) next to a plot with plenty ----
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const base = fs.readFileSync(path.join(root, 'data/world/base.bin'));
-if (base.length !== WORLD_W * WORLD_H) fail('needs the generated world in data/world/base.bin');
+const baseFile = path.join(root, `data/world-${WORLD_TAG}/base.bin`);
+const base = fs.readFileSync(baseFile);
+if (base.length !== WORLD_W * WORLD_H) fail(`needs the generated world in ${baseFile}`);
 const land = new Int32Array(CHUNKS_X * CHUNKS_Y);
 for (let cy = 0; cy < CHUNKS_Y; cy++) for (let cx = 0; cx < CHUNKS_X; cx++) {
   let n = 0;
-  for (let y = 0; y < CHUNK; y++) { const o = (cy * CHUNK + y) * WORLD_W + cx * CHUNK; for (let x = 0; x < CHUNK; x++) if (base[o + x] >= 1) n++; }
+  for (let y = 0; y < CHUNK; y++) { const o = (cy * CHUNK + y) * WORLD_W + cx * CHUNK; for (let x = 0; x < CHUNK; x++) if (!(base[o + x] & BASE_WATER)) n++; }
   land[cy * CHUNKS_X + cx] = n;
 }
 const pairs = [];
