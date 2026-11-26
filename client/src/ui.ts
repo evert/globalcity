@@ -1468,7 +1468,7 @@ export class UI {
     this.touchBar.classList.remove('hidden');
   }
 
-  toast(msg: string, kind: ToastKind = 'info', ms = 4000, at?: ToastAt): HTMLElement {
+  toast(msg: string, kind: ToastKind = 'info', ms = 4000, at?: ToastAt, big = false): HTMLElement {
     const now = performance.now();
     const last = this.lastToast;
     if (last && last.msg === msg && last.kind === kind && now - last.at < TOAST_DEDUP_MS && last.el.isConnected) {
@@ -1479,7 +1479,7 @@ export class UI {
       last.timer = setTimeout(() => this.dismissToast(last.el), ms);
       return last.el;
     }
-    const t = el('div', { class: `toast ${kind}`, text: msg });
+    const t = el('div', { class: `toast ${kind}${big ? ' big' : ''}`, text: msg });
     if (at) {
       t.classList.add('clickable');
       t.setAttribute('role', 'button');

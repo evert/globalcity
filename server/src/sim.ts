@@ -96,7 +96,7 @@ const tileTrafficLevel = (id: number): 0 | 1 | 2 => (id < LTRFBASE ? 0 : id < HT
 const chebyshev = (i: number, x: number, y: number): number => { const sx = i % WORLD_W, sy = (i - sx) / WORLD_W; return Math.max(Math.abs(sx - x), Math.abs(sy - y)); };
 
 /** `playerId` '*': for everyone playing, except `except`. */
-export interface SimToast { playerId: string; msg: string; kind: 'info' | 'error' | 'success'; at?: { x: number; y: number }; except?: string }
+export interface SimToast { playerId: string; msg: string; kind: 'info' | 'error' | 'success'; at?: { x: number; y: number }; except?: string; big?: boolean }
 
 export interface TickResult {
   time: GameTime;

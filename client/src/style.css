@@ -173,6 +173,9 @@ a { color: var(--accent); }
 .toast.error { border-color: var(--bad); color: #ffb3b3; }
 .toast.success { border-color: var(--good); color: #c9f5bb; }
 .toast.out { opacity: 0; transform: translateY(6px); }
+/* news to notice (a disaster): larger, bolder, and up for longer (BIG_TOAST_MS) */
+.toast.big { font-size: 16px; font-weight: 700; padding: 12px 22px; border-width: 2px; border-color: var(--warn); color: #ffe2b8; background: rgba(40, 26, 12, 0.95); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5); }
+.toast.big.error { border-color: var(--bad); color: #ffd0d0; background: rgba(60, 14, 14, 0.95); }
 @keyframes toastin { from { opacity: 0; transform: translateY(8px); } }
 
 /* query popover */

@@ -230,7 +230,7 @@ export type ServerMsg =
   | { t: 'time'; time: GameTime; online: number }
   | { t: 'freeSpot'; cx: number | null; cy: number | null }
   | { t: 'query'; info: QueryInfo }
-  | { t: 'toast'; msg: string; kind: 'info' | 'error' | 'success'; at?: { x: number; y: number } } // `at`: clickable, fly there
+  | { t: 'toast'; msg: string; kind: 'info' | 'error' | 'success'; at?: { x: number; y: number }; big?: boolean } // `at`: clickable, fly there; `big`: news to notice (a disaster), shown larger and longer
   | { t: 'leaderboard'; entries: LeaderboardEntry[]; me?: { rank: number; population: number }; monuments?: MonumentEntry[] } // top cities (and monuments, absent from old servers); also pushed periodically
   | { t: 'presence'; players: Presence[] } // every PRESENCE_INTERVAL_MS, online players except the receiver
   | { t: 'airports'; airports: AirportInfo[]; now: number } // powered airports (sent on welcome and when the set changes); `now` = server clock ms, for flight sync

@@ -47,7 +47,7 @@ export interface DisasterHooks {
 }
 
 /** `playerId` '*': for everyone else playing (the stricken city's mayor gets their own message). */
-export interface DisasterToast { playerId: string; kind: 'error' | 'info'; msg: string; at: { x: number; y: number }; except?: string }
+export interface DisasterToast { playerId: string; kind: 'error' | 'info'; msg: string; at: { x: number; y: number }; except?: string; big: true }
 
 export class Disasters {
   private runs: Run[] = [];
@@ -198,9 +198,9 @@ export class Disasters {
     this.runs.push(run);
     this.version++;
     const where = { x: run.x, y: run.y };
-    this.toasts.push({ playerId: p.id, kind: 'error', msg: `${info.emoji} ${info.verb} ${city}!`, at: where });
+    this.toasts.push({ playerId: p.id, kind: 'error', msg: `${info.emoji} ${info.verb} ${city}!`, at: where, big: true });
     // the news for everyone else playing (click to fly there and watch)
-    this.toasts.push({ playerId: '*', except: p.id, kind: 'info', msg: `${info.emoji} ${info.verb} ${p.cityName || `${p.name}'s city`}.`, at: where });
+    this.toasts.push({ playerId: '*', except: p.id, kind: 'info', msg: `${info.emoji} ${info.verb} ${p.cityName || `${p.name}'s city`}.`, at: where, big: true });
     return true;
   }
 

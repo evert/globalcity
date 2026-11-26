@@ -21,7 +21,7 @@ import type { MapTiles } from './maptiles.ts';
 import { WorldStatsCounter } from './worldstats.ts';
 import { World, chunkIndex, chunkCoords, type ChunkIndex } from './world.ts';
 import { Players, NAMES_LOCKED_MSG, sanitizeName, sanitizeCityName, refreshMilestoneStats, refreshLifeline, earn, type PlayerRecord } from './players.ts';
-import { Sim, type TickResult } from './sim.ts';
+import { Sim, type TickResult, type SimToast } from './sim.ts';
 import { applyBuild, queryTile } from './tools.ts';
 import { Leaderboard } from './leaderboard.ts';
 import { log } from './util.ts';
@@ -277,8 +277,8 @@ export class Net {
     for (const c of this.clients) if (c.player && c.ws.readyState === WebSocket.OPEN) c.ws.send(s);
   }
 
-  private toast(client: Client, msg: string, kind: 'info' | 'error' | 'success', at?: { x: number; y: number }): void {
-    this.send(client, at ? { t: 'toast', msg, kind, at } : { t: 'toast', msg, kind });
+  private toast(client: Client, msg: string, kind: 'info' | 'error' | 'success', at?: { x: number; y: number }, big = false): void {
+    this.send(client, { t: 'toast', msg, kind, ...(at ? { at } : {}), ...(big ? { big } : {}) });
   }
 
   /** Dev-only messages (DEV_HOOKS=1). Returns true if `raw` was handled. */
@@ -519,10 +519,10 @@ export class Net {
   }
 
   /** A simulation message for one player, or (playerId '*') for everyone playing except `except`. */
-  private deliverToast(t: { playerId: string; msg: string; kind: 'info' | 'error' | 'success'; at?: { x: number; y: number }; except?: string }): void {
+  private deliverToast(t: SimToast): void {
     for (const c of this.clients) {
       if (!c.player) continue;
-      if (t.playerId === '*' ? c.player.id !== t.except : c.player.id === t.playerId) this.toast(c, t.msg, t.kind, t.at);
+      if (t.playerId === '*' ? c.player.id !== t.except : c.player.id === t.playerId) this.toast(c, t.msg, t.kind, t.at, t.big);
     }
   }
 

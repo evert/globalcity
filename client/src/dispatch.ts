@@ -6,6 +6,9 @@ import type { Renderer } from './renderer.ts';
 import type { AppState } from './state.ts';
 import type { UI } from './ui.ts';
 
+/** how long news to notice (a disaster, `big` toasts) stays up */
+const BIG_TOAST_MS = 12_000;
+
 export interface DispatchTargets { state: AppState; map: TileMap; renderer: Renderer; ui: UI; updater?: { onVersion(v: string): void } }
 
 export function handleServerMsg(msg: ServerMsg, { state, map, renderer, ui, updater }: DispatchTargets): void {
@@ -36,7 +39,7 @@ export function handleServerMsg(msg: ServerMsg, { state, map, renderer, ui, upda
     case 'time': state.setTime(msg.time, msg.online); break;
     case 'freeSpot': ui.onFreeSpot(msg.cx, msg.cy); break;
     case 'query': ui.showQuery(msg.info); break;
-    case 'toast': ui.toast(msg.msg, msg.kind, undefined, msg.at); break;
+    case 'toast': ui.toast(msg.msg, msg.kind, msg.big ? BIG_TOAST_MS : undefined, msg.at, msg.big); break;
     case 'leaderboard': state.setLeaderboard(msg.entries, msg.me, msg.monuments); break;
     case 'presence': state.setPresence(Array.isArray(msg.players) ? msg.players : []); break;
     case 'airports': renderer.flightLayer.set(msg.airports, msg.now); renderer.invalidate(); break;
