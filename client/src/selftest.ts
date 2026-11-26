@@ -247,7 +247,8 @@ export async function runSelfTest(): Promise<void> {
   const cc = r.chunkCanvasFor(0, 0);
   assert(cc, 'chunk canvas 0,0 exists');
   const cg = cc!.getContext('2d')!;
-  const firePx = (x: number, y: number) => [...cg.getImageData(x * TILE_PX + 5, y * TILE_PX + 5, 1, 1).data].join(',');
+  const res = cc!.width / CHUNK; // chunk canvases may be drawn at half the sprite size when zoomed out
+  const firePx = (x: number, y: number) => [...cg.getImageData(x * res + Math.floor(res / 3), y * res + Math.floor(res / 3), 1, 1).data].join(',');
   const before = [firePx(10, 10), firePx(11, 10), firePx(12, 10)];
   assert(r.frameAt(12, 10) === LASTFIRE, `frame for FIRE+7 before stepping is LASTFIRE, got ${r.frameAt(12, 10)}`);
   r.stepAnim();
@@ -604,7 +605,7 @@ export async function runSelfTest(): Promise<void> {
   assert(!r.drawnClaims.has('40,20'), 'a released plot leaves the cached overview');
 
   // zoom stepping reaches tile mode and back
-  r.zoomStep(1); r.zoomStep(1); r.zoomStep(1); r.zoomStep(1); r.zoomStep(1); r.zoomStep(1); r.zoomStep(1);
+  for (let i = 0; i < r.zoomLevels().length; i++) r.zoomStep(1);
   assert(r.cam.zoom >= 0.5, `zoom steps up (${r.cam.zoom})`);
 
   console.log('selftest ok');

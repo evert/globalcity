@@ -36,7 +36,9 @@ export interface ChunkRect { cx0: number; cy0: number; cx1: number; cy1: number 
 
 export const TILE_MODE_ZOOM = 0.5;
 export const MAX_ZOOM = 3;
-const CHUNK_PX = CHUNK * TILE_PX; // 1024
+/** Pixels per tile a chunk canvas is drawn at: the sprite size, or half of it when that is all the screen shows
+ *  (zoomed out to the tile view's limit on a standard-density screen), which is a quarter of the pixels. */
+const chunkRes = (devicePxPerTile: number): number => (devicePxPerTile <= TILE_PX / 2 + 1e-6 ? TILE_PX / 2 : TILE_PX);
 const MAX_CHUNK_CANVASES = 120;
 const CHUNK_BUILD_BUDGET = 8; // chunk canvases built per frame
 const SETTLE_MS = 150;
@@ -48,7 +50,7 @@ type RendererEvents = { camera: Camera; settle: Camera; hover: TilePos | null; t
 
 /** `anim`: tile indices in this chunk that animate (ANIMBIT set, or an animated id for old servers);
  *  `frame`: the tile id currently drawn for each of them (advanced through ANI_TILE every ANIM_MS while on screen). */
-interface ChunkCanvas { key: string; canvas: HTMLCanvasElement; g: CanvasRenderingContext2D; lastUse: number; anim: Set<number>; frame: Map<number, number>; terrain: Uint8Array | undefined }
+interface ChunkCanvas { key: string; canvas: HTMLCanvasElement; g: CanvasRenderingContext2D; lastUse: number; anim: Set<number>; frame: Map<number, number>; terrain: Uint8Array | undefined; res: number }
 
 export function isFireTile(v: number): boolean { const id = v & LOMASK; return id >= FIRE && id <= LASTFIRE; }
 /** True when the tile value animates: the server flags animated tiles with ANIMBIT; old servers do not, so animated ids count too. */
@@ -594,6 +596,7 @@ export class Renderer extends Emitter<RendererEvents> {
   private renderTiles(g: CanvasRenderingContext2D, now: number): void {
     const r = this.visibleChunkRect(0);
     const W = this.canvas.width, H = this.canvas.height;
+    const res = chunkRes(this.tilePx() * this.dpr);
     this.pendingBuilds = 0;
     let built = 0;
     // 1. chunk blits
@@ -604,15 +607,16 @@ export class Renderer extends Emitter<RendererEvents> {
         if (x1 <= 0 || y1 <= 0 || x0 >= W || y0 >= H) continue;
         const key = chunkKey(cx, cy);
         let cc = this.chunkCanvases.get(key);
-        if (!cc) {
+        if (!cc || cc.res < res) {
+          // missing, or too coarse for this zoom (the coarse one stands in until the sharper one is built)
           const tiles = this.map.getChunk(cx, cy);
-          if (tiles && built < CHUNK_BUILD_BUDGET) { cc = this.buildChunkCanvas(key, cx, cy, tiles); built++; }
+          if (tiles && built < CHUNK_BUILD_BUDGET) { cc = this.buildChunkCanvas(key, cx, cy, tiles, res); built++; }
           else if (tiles) this.pendingBuilds++;
         }
         if (cc) {
           cc.lastUse = this.frame;
           if (cc.anim.size) this.visibleAnim.push(cc);
-          g.drawImage(cc.canvas, 0, 0, CHUNK_PX, CHUNK_PX, x0, y0, x1 - x0, y1 - y0);
+          g.drawImage(cc.canvas, 0, 0, cc.canvas.width, cc.canvas.height, x0, y0, x1 - x0, y1 - y0);
         } else {
           g.fillStyle = this.getChecker(g) ?? '#0c1018';
           g.fillRect(x0, y0, x1 - x0, y1 - y0);
@@ -1092,9 +1096,9 @@ export class Renderer extends Emitter<RendererEvents> {
 
   /** Blit sprite `frameId` (plus the power-bolt overlay for tile value `v`) at chunk index `idx`. */
   private drawFrame(cc: ChunkCanvas, v: number, idx: number, frameId: number, own: boolean): void {
-    const tx = (idx % CHUNK) * TILE_PX, ty = Math.floor(idx / CHUNK) * TILE_PX;
-    drawTile(cc.g, cc.terrain ? this.sheetFor(cc.terrain[idx]) : this.sheet, frameId, tx, ty);
-    if (this.shouldBolt(v, own)) drawTile(cc.g, this.sheet, LIGHTNINGBOLT, tx, ty);
+    const r = cc.res, tx = (idx % CHUNK) * r, ty = Math.floor(idx / CHUNK) * r;
+    drawTile(cc.g, cc.terrain ? this.sheetFor(cc.terrain[idx]) : this.sheet, frameId, tx, ty, r, r);
+    if (this.shouldBolt(v, own)) drawTile(cc.g, this.sheet, LIGHTNINGBOLT, tx, ty, r, r);
   }
 
   /** Draw the stored tile at `idx` (first frame) and re-evaluate its animation membership. */
@@ -1105,12 +1109,12 @@ export class Renderer extends Emitter<RendererEvents> {
     else if (cc.anim.size) { cc.anim.delete(idx); cc.frame.delete(idx); }
   }
 
-  private buildChunkCanvas(key: string, cx: number, cy: number, tiles: Uint16Array): ChunkCanvas {
+  private buildChunkCanvas(key: string, cx: number, cy: number, tiles: Uint16Array, res = TILE_PX): ChunkCanvas {
     const canvas = document.createElement('canvas');
-    canvas.width = canvas.height = CHUNK_PX;
+    canvas.width = canvas.height = CHUNK * res;
     const g = canvas.getContext('2d', { alpha: false })!;
     g.imageSmoothingEnabled = false;
-    const cc: ChunkCanvas = { key, canvas, g, lastUse: this.frame, anim: new Set(), frame: new Map(), terrain: this.map.terrain.get(key) };
+    const cc: ChunkCanvas = { key, canvas, g, lastUse: this.frame, anim: new Set(), frame: new Map(), terrain: this.map.terrain.get(key), res };
     const own = this.state.ownsChunk(cx, cy);
     for (let i = 0; i < CHUNK * CHUNK; i++) this.drawTileAt(cc, tiles, i, own);
     this.chunkCanvases.set(key, cc);
