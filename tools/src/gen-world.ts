@@ -347,6 +347,7 @@ async function main() {
   const kpt = kop.w / W; // source px per tile (both rasters are 1/120 degree)
   const tpt = (360 / W) / tree.res;
   const stats = new Float64Array(16);
+  let shownPct = 0; // progress is logged every 10% of the rows
   for (let y0 = 0; y0 < H; y0 += STRIP) {
     const y1 = Math.min(H, y0 + STRIP);
     const kr0 = Math.floor((y0 - JIT) * kpt) - 1, kr1 = Math.ceil((y1 + JIT) * kpt) + 1;
@@ -429,7 +430,8 @@ async function main() {
         if (forest) stats[10]++;
       }
     }
-    if ((y0 / STRIP) % 8 === 0) log(`climate/forest/ice rows ${y0}..${y1}`);
+    const pct = Math.floor((y1 / H) * 10) * 10;
+    if (pct > shownPct) { shownPct = pct; log(`climate/forest/ice ${pct}%`); }
   }
   // 4. water tiles take the ground of the land beside them (most common among the four sides), so shore pieces,
   // which draw a strip of that land, match it. Water with no land beside it keeps the default; it never shows.
