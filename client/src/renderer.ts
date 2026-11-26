@@ -846,6 +846,19 @@ export class Renderer extends Emitter<RendererEvents> {
     g.drawImage(c!.canvas, left + c!.x, top + c!.y);
   }
 
+  /**
+   * Draw an image that spans the whole world (night shade, its mask) over the screen rectangle (rx0, ry0)-(rx1, ry1)
+   * (device pixels), using only the part of it under that rectangle. Zoomed in, the whole world is wider than the
+   * largest image a canvas will draw (32,768 pixels), and such a drawImage is silently skipped.
+   */
+  private drawWorldImage(g: CanvasRenderingContext2D, img: CanvasImageSource, iw: number, ih: number, rx0: number, ry0: number, rx1: number, ry1: number): void {
+    const left = this.dx(0), top = this.dy(0), right = this.dx(WORLD_W), bottom = this.dy(WORLD_H);
+    const x0 = Math.max(rx0, left), y0 = Math.max(ry0, top), x1 = Math.min(rx1, right), y1 = Math.min(ry1, bottom);
+    if (x1 <= x0 || y1 <= y0) return;
+    const sx = (v: number) => ((v - left) / (right - left)) * iw, sy = (v: number) => ((v - top) / (bottom - top)) * ih;
+    g.drawImage(img, sx(x0), sy(y0), sx(x1) - sx(x0), sy(y1) - sy(y0), x0, y0, x1 - x0, y1 - y0);
+  }
+
   /** Chunks under a rectangle of the screen (device pixels). */
   private chunkRectOf(x0: number, y0: number, x1: number, y1: number): ChunkRect {
     const s = this.tilePx() * this.dpr;
@@ -866,10 +879,10 @@ export class Renderer extends Emitter<RendererEvents> {
     // the map: terrain and every city, as server-rendered images (one pixel per tile at the closest zoom)
     g.imageSmoothingEnabled = false;
     if (this.mapTiles.ready) this.mapTiles.draw(g, 'day', level, view, rx0, ry0, rx1, ry1);
-    else g.drawImage(this.minimap.image, 0, 0, this.minimap.width, this.minimap.height, left, top, right - left, bottom - top);
+    else this.drawWorldImage(g, this.minimap.image, this.minimap.width, this.minimap.height, rx0, ry0, rx1, ry1);
     // night: the real-time shade over the whole map, then the lights of the cities on the dark side
     g.imageSmoothingEnabled = true;
-    g.drawImage(this.night.canvas, left, top, right - left, bottom - top);
+    this.drawWorldImage(g, this.night.canvas, this.night.canvas.width, this.night.canvas.height, rx0, ry0, rx1, ry1);
     if (this.mapTiles.ready && rx1 > rx0 && ry1 > ry0) {
       const lc = this.lightsLayer ??= document.createElement('canvas');
       if (lc.width !== rx1 - rx0 || lc.height !== ry1 - ry0) { lc.width = rx1 - rx0; lc.height = ry1 - ry0; } else lc.getContext('2d')!.clearRect(0, 0, lc.width, lc.height);
@@ -880,7 +893,7 @@ export class Renderer extends Emitter<RendererEvents> {
       this.mapTiles.draw(lg, 'lights', level, view, rx0, ry0, rx1, ry1);
       lg.globalCompositeOperation = 'destination-in';
       lg.imageSmoothingEnabled = true;
-      lg.drawImage(this.night.mask, left, top, right - left, bottom - top);
+      this.drawWorldImage(lg, this.night.mask, this.night.mask.width, this.night.mask.height, rx0, ry0, rx1, ry1);
       lg.globalCompositeOperation = 'source-over';
       lg.setTransform(1, 0, 0, 1, 0, 0);
       g.globalAlpha = NIGHT_MAP_LIGHTS;

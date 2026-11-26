@@ -132,7 +132,8 @@ export const MAP_GLOW_BASE = 32, MAP_GLOW_STEPS = 16;
 export const MAP_LIGHTS_PALETTE: readonly (readonly [number, number, number, number])[] = (() => {
   const p: [number, number, number, number][] = Array.from({ length: MAP_GLOW_BASE + MAP_GLOW_STEPS }, () => [0, 0, 0, 0]);
   for (const [c, L] of Object.entries(MAP_LIGHTS)) if (L) p[1 + Number(c)] = [...L.rgb, L.alpha];
-  for (let k = 0; k < MAP_GLOW_STEPS; k++) p[MAP_GLOW_BASE + k] = [255, 200, 120, Math.round(40 + (215 * (k + 1)) / MAP_GLOW_STEPS)];
+  // a soft glow: even the brightest city stays see-through, like Earth at night from orbit
+  for (let k = 0; k < MAP_GLOW_STEPS; k++) p[MAP_GLOW_BASE + k] = [255, 200, 120, Math.round(24 + (146 * (k + 1)) / MAP_GLOW_STEPS)];
   return p;
 })();
 /** Lights palette index of one tile at level 0, or 0 when dark (no power, empty zone, unlit spot). */

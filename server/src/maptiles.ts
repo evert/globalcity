@@ -182,8 +182,8 @@ export class MapTiles {
       const area = n * n;
       for (let i = 0; i < lit.length; i++) {
         if (!lit[i]) continue;
-        // a city lights about a quarter of its tiles: that reads as a full glow
-        px[i] = MAP_GLOW_BASE + Math.min(MAP_GLOW_STEPS - 1, Math.floor((lit[i] / area) * 4 * MAP_GLOW_STEPS));
+        // a busy city centre lights about a quarter of its tiles; only that reaches the full (still soft) glow
+        px[i] = MAP_GLOW_BASE + Math.min(MAP_GLOW_STEPS - 1, Math.floor((lit[i] / area) * 3 * MAP_GLOW_STEPS));
       }
     }
     return encodeIndexedPng(w, h, px, MAP_LIGHTS_PALETTE.map((c) => [c[0], c[1], c[2]] as const), MAP_LIGHTS_PALETTE.map((c) => c[3]));
