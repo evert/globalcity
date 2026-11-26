@@ -1,5 +1,5 @@
-// Abandoning a broke city: refused while the city has money or no lifeline debt; once broke and in debt the
-// plots are released (unclaim broadcast) and the mayor starts over ($20,000, no debt). Nothing crumbles: the
+// Abandoning a city (any city: here a broke one that owes a lifeline): the plots are released (unclaim broadcast)
+// and the mayor starts over ($20,000, debt written off), but can't claim the plots they left for a week. Nothing crumbles: the
 // town stays as it was, and a new mayor who claims the plot gets it, buildings and all, for the normal plot
 // price (the first plot is free), with its power and zones working. Needs DEV_HOOKS=1.
 import WebSocket from 'ws';
@@ -59,11 +59,7 @@ while (!(A.stats?.population > 0) && Date.now() - t0 < 60 * TICK) await sleep(TI
 if (!(A.stats?.population > 0)) fail('town never grew');
 console.log(`town: ${A.stats.population} people`);
 
-A.send({ t: 'abandon' }); await sleep(300);
-if (!/Only a broke city/.test(A.last())) fail('abandon should be refused with money: ' + A.last());
 A.send({ t: 'devSetFunds', amount: 50 }); await sleep(300);
-A.send({ t: 'abandon' }); await sleep(300);
-if (!/Only a broke city/.test(A.last())) fail('abandon should be refused without a lifeline: ' + A.last());
 A.send({ t: 'lifeline' }); await sleep(300);
 if (A.stats.debt <= 0) fail('lifeline not taken');
 A.send({ t: 'devSetFunds', amount: 50 }); await sleep(300);
@@ -74,6 +70,12 @@ if (!/Anyone can claim its plots and everything built on them/.test(A.last())) f
 if (A.welcomes !== before + 1) fail('no fresh welcome');
 if (A.stats.funds !== 20000 || A.stats.debt !== 0 || A.stats.chunks !== 0) fail('mayor not reset: ' + JSON.stringify({ funds: A.stats.funds, debt: A.stats.debt, chunks: A.stats.chunks }));
 if (!B.unclaims.includes(key)) fail('plot not released');
+A.send({ t: 'abandon' }); await sleep(300);
+if (!/You have no city to abandon/.test(A.last())) fail('abandoning with no plots should be refused: ' + A.last());
+// no free restart with the old town: the mayor can't claim the plot they just left
+A.send({ t: 'claim', cx: spot.cx, cy: spot.cy }); await sleep(300);
+if (!/You left this plot when you abandoned your city: you can claim it again in 7 days/.test(A.last())) fail('reclaiming the left plot should be refused: ' + A.last());
+if (A.stats.chunks !== 0) fail('the mayor got their old plot back');
 
 // nothing crumbles: the released town stays as it was
 const census = () => { let rubble = 0, zones = 0; for (const v of B.chunk.a) { if (isRubble(v & LOMASK)) rubble++; if (v & ZONEBIT) zones++; } return { rubble, zones }; };
@@ -105,4 +107,17 @@ if (!book || book.plots !== 0 || book.construction !== 0) fail('newcomer was cha
 if (!(B.stats.powerSupply > 0)) fail('the taken-over coal plant supplies no power');
 if (!home.powered) fail('the taken-over homes are not powered');
 if (home.owner?.name !== 'Newcomer') fail("the homes are not the newcomer's");
+// a city with money can be abandoned too, and its mayor can found a new city somewhere else straight away
+const R = new C('Restless Mayor'); await R.connect();
+R.spot = null; R.send({ t: 'findFree', cx: 20, cy: 15 }); while (!R.spot) await sleep(20);
+R.send({ t: 'claim', cx: R.spot.cx, cy: R.spot.cy }); await sleep(400);
+if (R.stats.chunks !== 1) fail('restless mayor has no plot: ' + R.last());
+R.send({ t: 'abandon' }); await sleep(400);
+if (!/Anyone can claim its plots/.test(R.last()) || R.stats.chunks !== 0) fail('a city with money should be abandonable: ' + R.last());
+const left = `${R.spot.cx},${R.spot.cy}`;
+R.spot = null; R.send({ t: 'findFree', cx: 30, cy: 15 }); while (!R.spot) await sleep(20);
+if (`${R.spot.cx},${R.spot.cy}` === left) fail('findFree offered the plot just left');
+R.send({ t: 'claim', cx: R.spot.cx, cy: R.spot.cy }); await sleep(400);
+if (R.stats.chunks !== 1) fail('could not found a new city elsewhere: ' + R.last());
+console.log('restless mayor abandoned a rich city and founded a new one elsewhere');
 console.log('PASS'); process.exit(0);

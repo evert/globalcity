@@ -1,7 +1,7 @@
 // DOM overlay: top bar, toolbar, RCI, toasts, query popover, welcome/about panels, minimap widget.
 import type { BudgetYear, ClaimInfo, Demand, LeaderboardEntry, MonumentEntry, QueryInfo, ToolId } from '@globalcity/shared';
 import { OVERLAY_INFO, OVERLAY_MODES, type OverlayMode } from './overlays.ts';
-import { budgetTotals, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, STARTING_FUNDS, LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, LIFELINE_REPAY_SHARE, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT, LOMASK, FIRESTBASE, POLICESTBASE, CITYHALLBASE, LASTCITYHALL, chunkKey, shipCargo, flightLoad } from '@globalcity/shared';
+import { budgetTotals, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, ABANDON_RECLAIM_DAYS, MAX_MAYOR_NAME, MAX_CITY_NAME, STARTING_FUNDS, LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, LIFELINE_REPAY_SHARE, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT, LOMASK, FIRESTBASE, POLICESTBASE, CITYHALLBASE, LASTCITYHALL, chunkKey, shipCargo, flightLoad } from '@globalcity/shared';
 import { CHUNK, claimCost, MILESTONE_BUILDINGS, MILESTONE_ORDER, isMilestoneTool, nextMilestone, type MilestoneBuilding, MAX_CHUNKS_PER_PLAYER, POWER_PRICE_PER_UNIT, TOOLS, TOOL_ORDER, PLANT_OUTPUT, CUSTOM_BUILDINGS, GRAND_CENTRAL, WORLD_H, WORLD_W, chunkOf, lonLatToTile } from '@globalcity/shared';
 import type { Actions } from './actions.ts';
 import type { Minimap, SpriteSheet } from './assets.ts';
@@ -124,7 +124,13 @@ export class UI {
   private toasts!: HTMLElement; private lastToast: { msg: string; kind: ToastKind; el: HTMLElement; at: number; timer: ReturnType<typeof setTimeout> } | null = null;
   private lifelineBtn!: HTMLButtonElement; private lifelinePanel!: HTMLElement;
   private monumentBtn!: HTMLButtonElement; private monumentPanel!: HTMLElement; private monumentCity!: HTMLElement;
-  private abandonBtn!: HTMLButtonElement; private abandonPanel!: HTMLElement; private abandonCity!: HTMLElement;
+  private abandonBtn!: HTMLButtonElement;
+  /** the mayor dialog (behind the mayor name): rename the mayor and the city, and abandon the city to start over */
+  private mayorPanel!: HTMLElement; private mayorName!: HTMLInputElement; private mayorCity!: HTMLInputElement; private mayorCityRow!: HTMLElement;
+  private mayorStart!: HTMLElement; private mayorStartText!: HTMLElement; private mayorAbandonBtn!: HTMLButtonElement;
+  /** when this mayor last abandoned their city: the plots it releases are not "released after inactivity" */
+  private abandonedAt = 0;
+  private mayorConfirm!: HTMLElement; private mayorConfirmList!: HTMLElement; private mayorMonumentBtn!: HTMLButtonElement; private mayorConfirmBtn!: HTMLButtonElement;
   private budgetBtn!: HTMLButtonElement; private budgetPanel!: HTMLElement; private budgetTable!: HTMLElement;
   private milestones!: HTMLElement; private msRows!: HTMLElement; private msBtn!: HTMLButtonElement;
   private leaderboard!: HTMLElement; private lbRows!: HTMLElement; private lbMe!: HTMLElement; private lbBtn!: HTMLButtonElement;
@@ -165,7 +171,7 @@ export class UI {
     this.buildOverlayBar();
     this.buildLifeline();
     this.buildMonument();
-    this.buildAbandon();
+    this.buildMayor();
     this.buildBudget();
     this.buildDiscordInvite();
     this.buildWorldReset();
@@ -185,10 +191,10 @@ export class UI {
     this.online = el('span', { class: 'val', text: '0' });
     this.worldPop = el('span', { class: 'val', text: '0' });
     this.status = el('span', { id: 'status', class: 'status', text: 'Connecting…' });
-    this.nameBtn = el('button', { class: 'btn ghost', id: 'nameBtn', title: 'Click to rename' }, '…');
-    this.nameBtn.onclick = () => this.promptRename();
+    this.nameBtn = el('button', { class: 'btn ghost', id: 'nameBtn', title: 'You, the mayor: rename yourself or your city, or start over' }, '…');
+    this.nameBtn.onclick = () => this.toggleMayor('mayor');
     this.cityNameBtn = el('button', { class: 'btn ghost city hidden', id: 'cityNameBtn', title: 'Your city — click to rename' }, '');
-    this.cityNameBtn.onclick = () => this.promptRenameCity();
+    this.cityNameBtn.onclick = () => this.toggleMayor('city');
     this.plots = el('span', { class: 'val', text: `0/${MAX_CHUNKS_PER_PLAYER}` });
     this.plotsStat = el('div', { class: 'stat hidden', id: 'plots', title: `Plots claimed (a city is at most ${MAX_CHUNKS_PER_PLAYER} plots)` }, el('span', { class: 'ico' }, 'Plots'), this.plots);
     this.claimBtn = el('button', { class: 'btn primary hidden', id: 'claimBtn' }, 'Claim this plot');
@@ -210,7 +216,7 @@ export class UI {
     this.monumentBtn = el('button', { class: 'btn hidden', id: 'monumentBtn', title: `Your city has over ${MONUMENT_MIN_POP.toLocaleString('en-US')} people: you can retire it as a monument and start over` }, '🏛 Monument');
     this.monumentBtn.onclick = () => this.toggleMonument();
     this.abandonBtn = el('button', { class: 'btn hidden', id: 'abandonBtn', title: 'Your city is broke and already used its lifeline: you can abandon it and start over' }, '🏳 Abandon city');
-    this.abandonBtn.onclick = () => this.toggleAbandon();
+    this.abandonBtn.onclick = () => this.toggleMayor('abandon');
     this.fireBtn = el('button', { class: 'btn fire hidden', id: 'fireBtn', title: 'Your city is burning! Click to jump to the next fire.' }, '🔥 0 fires');
     this.fireBtn.onclick = () => this.nextFire();
     this.resetBtn = el('button', { class: 'btn hidden', id: 'resetBtn', title: 'The world resets soon: click to see what the new world brings' }, '⏳');
@@ -539,7 +545,7 @@ export class UI {
     if (!canRetire) this.monumentPanel?.classList.add('hidden');
     const canAbandon = this.state.ownedChunkCount() > 0 && (s?.funds ?? Infinity) < ABANDON_MAX_FUNDS && (s?.debt ?? 0) > 0;
     this.abandonBtn.classList.toggle('hidden', !canAbandon);
-    if (!canAbandon) this.abandonPanel?.classList.add('hidden');
+    if (this.mayorPanel && !this.mayorPanel.classList.contains('hidden')) this.refreshMayorStart();
     if (!s?.lifelineAvailable) this.lifelinePanel?.classList.add('hidden');
     this.budgetText.classList.toggle('bad', net < 0);
     this.budgetText.classList.toggle('hidden', !s);
@@ -836,34 +842,103 @@ export class UI {
     );
     this.root.append(this.monumentPanel);
   }
-  private buildAbandon(): void {
-    const close = el('button', { class: 'btn ghost round close', title: 'Close' }, '×');
-    close.onclick = () => this.hide(this.abandonPanel);
-    const go = el('button', { class: 'btn danger', type: 'button' }, 'Abandon my city and start over');
-    go.onclick = () => { this.actions.abandon(); this.hide(this.abandonPanel); };
-    const later = el('button', { class: 'btn', type: 'button' }, 'Keep trying');
-    later.onclick = () => this.hide(this.abandonPanel);
-    this.abandonCity = el('p');
-    this.abandonPanel = el('div', { id: 'abandon', class: 'panel card hidden' },
+  private buildMayor(): void {
+    const close = el('button', { class: 'btn ghost round close', title: 'Close', type: 'button' }, '×');
+    close.onclick = () => this.hide(this.mayorPanel);
+    this.mayorName = el('input', { type: 'text', maxlength: String(MAX_MAYOR_NAME), autocomplete: 'off', spellcheck: 'false' });
+    this.mayorCity = el('input', { type: 'text', maxlength: String(MAX_CITY_NAME), autocomplete: 'off', spellcheck: 'false' });
+    this.mayorCityRow = el('label', { class: 'mp-field' }, el('span', { text: 'City name' }), this.mayorCity);
+    const save = el('button', { class: 'btn primary', type: 'submit' }, 'Save');
+    const cancel = el('button', { class: 'btn', type: 'button' }, 'Close');
+    cancel.onclick = () => this.hide(this.mayorPanel);
+    const form = el('form', { class: 'mp-form' },
+      el('label', { class: 'mp-field' }, el('span', { text: 'Mayor name' }), this.mayorName),
+      this.mayorCityRow,
+      el('div', { class: 'row' }, save, cancel));
+    form.onsubmit = (e) => { e.preventDefault(); this.saveMayor(); };
+
+    this.mayorStartText = el('p');
+    this.mayorAbandonBtn = el('button', { class: 'btn danger', type: 'button' }, '🏳 Abandon my city…');
+    this.mayorAbandonBtn.onclick = () => this.showAbandonConfirm(true);
+    this.mayorConfirmList = el('ul', { class: 'ms-benefits' });
+    this.mayorConfirmBtn = el('button', { class: 'btn danger', type: 'button' }, 'Yes, abandon it');
+    this.mayorConfirmBtn.onclick = () => {
+      if (!this.actions.abandon()) { this.toast('Not connected — try again in a moment.', 'error'); return; }
+      this.abandonedAt = Date.now();
+      this.hide(this.mayorPanel);
+    };
+    const keep = el('button', { class: 'btn', type: 'button' }, 'Keep my city');
+    keep.onclick = () => this.showAbandonConfirm(false);
+    this.mayorMonumentBtn = el('button', { class: 'btn hidden', type: 'button' }, '🏛 Retire it as a monument instead');
+    this.mayorMonumentBtn.onclick = () => { this.hide(this.mayorPanel); this.toggleMonument(); };
+    this.mayorConfirm = el('div', { class: 'mp-confirm hidden' },
+      this.mayorConfirmList,
+      el('div', { class: 'row' }, this.mayorConfirmBtn, keep, this.mayorMonumentBtn));
+    this.mayorStart = el('div', { class: 'mp-start' },
+      el('h3', { text: 'Start over' }),
+      this.mayorStartText,
+      el('div', { class: 'row' }, this.mayorAbandonBtn),
+      this.mayorConfirm);
+
+    this.mayorPanel = el('div', { id: 'mayorPanel', class: 'panel card hidden', role: 'dialog', 'aria-label': 'Mayor' },
       close,
-      el('h2', { text: '🏳 Abandon your city' }),
-      this.abandonCity,
-      el('ul', { class: 'ms-benefits' },
-        el('li', { text: 'All your plots are released: anyone can claim them' }),
-        el('li', { text: 'Everything you built stays standing: whoever claims a plot gets its buildings' }),
-        el('li', { text: `You start over with ${fmtMoney(STARTING_FUNDS)} and claim a new first plot anywhere; your lifeline debt is written off` }),
-        el('li', { text: 'Milestones start again from zero' }),
-        el('li', { text: 'This cannot be undone' })),
-      el('div', { class: 'row' }, go, later),
-    );
-    this.root.append(this.abandonPanel);
+      el('h2', { text: '🎩 Mayor' }),
+      form,
+      this.mayorStart);
+    this.root.append(this.mayorPanel);
   }
-  private toggleAbandon(): void {
-    if (!this.abandonPanel.classList.contains('hidden')) { this.hide(this.abandonPanel); return; }
+
+  /** Open (or close) the mayor dialog, focused on the mayor name, the city name, or the abandon confirmation. */
+  private toggleMayor(focus: 'mayor' | 'city' | 'abandon'): void {
+    if (!this.mayorPanel.classList.contains('hidden') && focus !== 'abandon') { this.hide(this.mayorPanel); return; }
     this.hide(this.milestones); this.hide(this.leaderboard); this.hide(this.about); this.hide(this.lifelinePanel); this.hide(this.monumentPanel); this.hide(this.budgetPanel);
-    const s = this.state.stats, city = this.state.cityName || 'Your city';
-    this.abandonCity.textContent = `${city} has run out of money and still owes ${fmtMoney(s?.debt ?? 0)} on its lifeline. If it can't recover, you can leave it behind and found a new city.`;
-    this.abandonPanel.classList.remove('hidden');
+    this.mayorName.value = this.state.me?.name ?? this.net.identity.name ?? '';
+    this.mayorCity.value = this.state.cityName;
+    this.mayorCityRow.classList.toggle('hidden', !this.state.cityName);
+    this.showAbandonConfirm(focus === 'abandon');
+    this.show(this.mayorPanel);
+    if (focus === 'abandon') this.mayorConfirmBtn.focus();
+    else (focus === 'city' && this.state.cityName ? this.mayorCity : this.mayorName).select();
+  }
+
+  private saveMayor(): void {
+    const name = this.mayorName.value.trim(), city = this.mayorCity.value.trim();
+    const curName = this.state.me?.name ?? this.net.identity.name ?? '', curCity = this.state.cityName;
+    if (!name) { this.toast('Your mayor needs a name', 'error'); this.mayorName.focus(); return; }
+    let ok = true;
+    if (name !== curName) ok = this.actions.rename(name) && ok;
+    if (curCity && city && city !== curCity) ok = this.actions.renameCity(city) && ok;
+    if (!ok) { this.toast('Not connected — try again in a moment.', 'error'); return; }
+    this.refreshName();
+    this.hide(this.mayorPanel);
+  }
+
+  private showAbandonConfirm(on: boolean): void {
+    this.mayorConfirm.classList.toggle('hidden', !on);
+    this.mayorAbandonBtn.classList.toggle('hidden', on);
+    this.refreshMayorStart();
+  }
+
+  /** The "Start over" part of the mayor dialog: only with a city, and worded for a broke city or a healthy one. */
+  private refreshMayorStart(): void {
+    const owned = this.state.ownedChunkCount(), s = this.state.stats, city = this.state.cityName || 'your city';
+    this.mayorStart.classList.toggle('hidden', owned === 0);
+    if (owned === 0) return;
+    const funds = s?.funds ?? 0, debt = s?.debt ?? 0;
+    this.mayorStartText.textContent = funds < ABANDON_MAX_FUNDS && debt > 0
+      ? `${city} has run out of money and still owes ${fmtMoney(debt)} on its lifeline. If it can't recover, you can leave it behind and found a new city.`
+      : `Stuck, or want to build somewhere else? You can leave ${city} behind and found a new city anywhere in the world.`;
+    this.mayorConfirmBtn.textContent = `Yes, abandon ${this.state.cityName || 'my city'}`;
+    const canRetire = (s?.population ?? 0) >= MONUMENT_MIN_POP;
+    this.mayorMonumentBtn.classList.toggle('hidden', !canRetire);
+    const plots = owned === 1 ? 'Your plot is released: anyone can claim it' : `All ${owned} of your plots are released: anyone can claim them`;
+    this.mayorConfirmList.replaceChildren(
+      el('li', { text: `${plots}, with everything you built still standing` }),
+      el('li', { text: `You start over with ${fmtMoney(STARTING_FUNDS)}${funds > STARTING_FUNDS ? ` (you have ${fmtMoney(funds)} now)` : ''} and claim a new first plot for free${debt > 0 ? '; your lifeline debt is written off' : ''}` }),
+      el('li', { text: `You can't claim your old plots back for ${ABANDON_RECLAIM_DAYS} days` }),
+      el('li', { text: 'Milestones start again from zero' }),
+      el('li', { text: 'This cannot be undone' }),
+    );
   }
 
   private toggleMonument(): void {
@@ -960,7 +1035,7 @@ export class UI {
   }
   toggleBudget(): void {
     if (!this.budgetPanel.classList.contains('hidden')) { this.hide(this.budgetPanel); return; }
-    this.hide(this.about); this.hide(this.leaderboard); this.hide(this.milestones); this.hide(this.lifelinePanel); this.hide(this.monumentPanel); this.hide(this.abandonPanel);
+    this.hide(this.about); this.hide(this.leaderboard); this.hide(this.milestones); this.hide(this.lifelinePanel); this.hide(this.monumentPanel); this.hide(this.mayorPanel);
     this.budgetPanel.classList.remove('hidden');
     this.refreshBudget();
   }
@@ -1137,22 +1212,6 @@ export class UI {
   }
 
   // ---------- behaviours ----------
-  private promptRename(): void {
-    const cur = this.state.me?.name ?? this.net.identity.name ?? '';
-    const name = window.prompt('Your mayor name:', cur);
-    if (name === null) return;
-    if (!this.actions.rename(name)) this.toast('Not connected — try again in a moment.', 'error');
-    this.refreshName();
-  }
-
-  private promptRenameCity(): void {
-    const cur = this.state.cityName;
-    const name = window.prompt('Name your city:', cur);
-    if (name === null) return;
-    if (!this.actions.renameCity(name)) this.toast('Not connected — try again in a moment.', 'error');
-    this.refreshName();
-  }
-
   private claimCenter(): void {
     const { cx, cy } = this.renderer.centerChunk();
     if (!this.actions.claim(cx, cy)) this.toast('Not connected — cannot claim right now.', 'error');
@@ -1491,7 +1550,7 @@ export class UI {
     if (info.owner) (q.firstElementChild as HTMLElement).style.color = info.owner.color;
     if (id >= CITYHALLBASE && id <= LASTCITYHALL && info.owner && info.owner.id === this.state.me?.id) {
       const rename = el('button', { class: 'btn', type: 'button' }, '✎ Rename city');
-      rename.onclick = () => { this.hideQuery(); this.promptRenameCity(); };
+      rename.onclick = () => { this.hideQuery(); this.toggleMayor('city'); };
       q.append(el('div', { class: 'qrow qactions' }, rename));
     }
     this.placeQuery();
@@ -1613,7 +1672,7 @@ export class UI {
 
   /** A chunk was released after its owner went idle (state already dropped it; its buildings stay on the map). */
   onUnclaim(prev: ClaimInfo): void {
-    if (this.state.me && prev.ownerId === this.state.me.id) {
+    if (this.state.me && prev.ownerId === this.state.me.id && Date.now() - this.abandonedAt > 30_000) {
       this.toast(`Your plot ${prev.cx},${prev.cy} was released after inactivity. Anyone can now claim it with what you built there.`, 'error', 8000, { x: prev.cx * CHUNK + CHUNK / 2, y: prev.cy * CHUNK + CHUNK / 2 });
     }
   }

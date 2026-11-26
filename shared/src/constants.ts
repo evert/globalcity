@@ -10,8 +10,14 @@ export const TILE_PX = 16; // sprite size in tiles.png
 export const STARTING_FUNDS = 20000;
 /** A city this big can be retired as a monument: frozen forever on the map, and its mayor starts over. */
 export const MONUMENT_MIN_POP = 1_000_000;
-/** A broke city (under this many $) that owes a lifeline may be abandoned: its plots are released, buildings and all. */
+/** Any city may be abandoned (its plots are released, buildings and all); under this many $ while owing a lifeline,
+ *  the top bar suggests it. */
 export const ABANDON_MAX_FUNDS = 100;
+/** After abandoning, a mayor can't claim the plots they left for this many days (no free restart with the old town). */
+export const ABANDON_RECLAIM_DAYS = 7;
+/** Longest mayor and city names, in characters. */
+export const MAX_MAYOR_NAME = 24;
+export const MAX_CITY_NAME = 32;
 // Claiming more plots: the first is free, then the price escalates geometrically with every plot you own
 // (2nd $25,000, 3rd $43,750, 4th $76,563 ... 10th about $2.2M). Must be adjacent to one you own.
 export const CLAIM_BASE_COST = 25000;

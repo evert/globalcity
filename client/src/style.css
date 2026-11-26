@@ -264,6 +264,15 @@ a { color: var(--accent); }
 .btn.lifeline { background: #c0392b; border-color: #e74c3c; color: #fff; font-weight: bold; }
 #lifeline { width: min(460px, calc(100vw - 32px)); }
 #discordInvite { width: min(440px, calc(100vw - 32px)); }
+#mayorPanel { width: min(440px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow-y: auto; }
+.mp-form { display: flex; flex-direction: column; gap: 10px; }
+.mp-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.mp-field input { font: inherit; font-size: 14px; color: var(--fg); background: #0f1522; border: 1px solid var(--panel-border); border-radius: 4px; padding: 6px 8px; }
+.mp-field input:focus { outline: none; border-color: var(--accent); }
+.mp-start { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--panel-border); }
+.mp-start h3 { margin: 0 0 6px; font-size: 13px; color: var(--warn); }
+.mp-start p { font-size: 12px; }
+.mp-confirm { margin-top: 4px; padding: 10px 12px; border: 1px solid #a83a3a; border-radius: 6px; background: rgba(122, 36, 36, 0.18); }
 #resetBtn { border-color: #7b63d9; color: #ddd3ff; background: rgba(86, 60, 170, 0.35); font-variant-numeric: tabular-nums; }
 #resetBtn:hover { background: rgba(110, 80, 210, 0.55); }
 #resetBtn.soon { border-color: var(--warn); color: #ffe2b8; background: rgba(150, 90, 20, 0.4); }

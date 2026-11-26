@@ -17,7 +17,7 @@ import {
   encodeChunk, inWorld, clamp,
   type ClientMsg, type ServerMsg, type ToolId, type Presence,
   overviewByte, OVERVIEW_CHUNK_BYTES, parseChunkKey,
-  LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, STARTING_FUNDS, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT,
+  LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, MONUMENT_MIN_POP, STARTING_FUNDS, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT,
 } from '@globalcity/shared';
 import { World, chunkIndex, chunkCoords, type ChunkIndex } from './world.ts';
 import { Players, NAMES_LOCKED_MSG, sanitizeName, sanitizeCityName, refreshMilestoneStats, refreshLifeline, earn, type PlayerRecord } from './players.ts';
@@ -408,10 +408,7 @@ export class Net {
         break;
       }
       case 'abandon': {
-        if (p.chunks.length === 0 || p.funds >= ABANDON_MAX_FUNDS || (p.debt ?? 0) <= 0) {
-          this.toast(client, 'Only a broke city that has already used a lifeline can be abandoned', 'error');
-          break;
-        }
+        if (p.chunks.length === 0) { this.toast(client, 'You have no city to abandon', 'error'); break; }
         const city = p.cityName || `${p.name}'s city`;
         const released = this.players.abandon(p);
         this.sim.clearReleased(released);

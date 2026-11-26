@@ -2,7 +2,7 @@
 
 import crypto from 'node:crypto';
 import {
-  STARTING_FUNDS, claimCost, CHUNKS_X, CHUNKS_Y, CHUNK, MAX_CHUNKS_PER_PLAYER, WORLD_W, ZONEBIT,
+  STARTING_FUNDS, ABANDON_RECLAIM_DAYS, MAX_MAYOR_NAME, MAX_CITY_NAME, claimCost, CHUNKS_X, CHUNKS_Y, CHUNK, MAX_CHUNKS_PER_PLAYER, WORLD_W, ZONEBIT,
   chunkKey, parseChunkKey, colorForId,
   type PlayerStats, type PlayerPublic, type ClaimInfo, type GameTime, START_YEAR, type BudgetYear, BUDGET_YEARS_SENT,
   type IncomeLine, type ExpenseLine, type MoneyLine, INCOME_LINES, EXPENSE_LINES, emptyBudgetYear,
@@ -28,6 +28,8 @@ export interface PlayerRecord {
   namesLocked?: boolean;
   /** a retired city kept as a monument (a record of its own, no player behind it): frozen, never released */
   monument?: { at: number; population: number; founderId: string };
+  /** plots this mayor left by abandoning their city, which they can't claim again until `until` */
+  leftPlots?: { keys: string[]; until: number };
   /** message shown to the player on their next visit (e.g. why their plot was released), then cleared */
   notice?: string;
   token: string; // secret, never sent except in 'welcome' to its owner
@@ -116,11 +118,10 @@ const FIND_FREE_MAX_RADIUS = 40;
 export function sanitizeName(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
   // eslint-disable-next-line no-control-regex
-  const s = raw.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim().slice(0, 24);
+  const s = raw.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim().slice(0, MAX_MAYOR_NAME);
   return s.length > 0 ? s : null;
 }
 
-export const MAX_CITY_NAME = 32;
 
 export function sanitizeCityName(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
@@ -324,6 +325,11 @@ export class Players {
     if (this.claims.has(key)) {
       return { ok: false, msg: this.claims.get(key) === p.id ? 'You already own this chunk' : 'Chunk already claimed' };
     }
+    if (p.leftPlots && Date.now() >= p.leftPlots.until) { delete p.leftPlots; this.dirty = true; }
+    if (p.leftPlots?.keys.includes(key)) {
+      const days = Math.max(1, Math.ceil((p.leftPlots.until - Date.now()) / this.dayMs));
+      return { ok: false, msg: `You left this plot when you abandoned your city: you can claim it again in ${days} ${days === 1 ? 'day' : 'days'}. Start your new city somewhere else.` };
+    }
     if (!this.world.hasEnoughLand(cx, cy)) return { ok: false, msg: 'Not enough land here to found a city' };
     if (p.chunks.length >= MAX_CHUNKS_PER_PLAYER) return { ok: false, msg: `Your city is at the maximum of ${MAX_CHUNKS_PER_PLAYER} plots` };
     let cost = 0;
@@ -366,10 +372,12 @@ export class Players {
    * funds, no plots, no unlocks, no debt) and claims a new first plot like a new player. Returns the monument.
    */
   /**
-   * Abandon p's (broke) city: every plot is released as it stands, for anyone to claim with its buildings; p
-   * starts over like a new mayor (starting funds, lifeline debt written off, no unlocks). Returns the plots.
+   * Abandon p's city: every plot is released as it stands, for anyone to claim with its buildings; p starts over
+   * like a new mayor (starting funds, lifeline debt written off, no unlocks) and can't claim those plots back for
+   * ABANDON_RECLAIM_DAYS. Returns the plots.
    */
   abandon(p: PlayerRecord): { cx: number; cy: number }[] {
+    p.leftPlots = { keys: [...p.chunks], until: Date.now() + ABANDON_RECLAIM_DAYS * this.dayMs };
     const released = this.release(p);
     this.resetForFreshStart(p);
     return released;
