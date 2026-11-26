@@ -36,8 +36,9 @@ class TestClient {
   leaderboards: { entries: LeaderboardEntry[]; me?: { rank: number; population: number } }[] = [];
   fireTilesSeen = 0;
   month = -1;
-  /** funds and "last year" income as each new year starts (stats arrive after the tick's time message) */
-  newYears: { funds: number; lastIncome: number }[] = [];
+  /** funds and "last month" income as each new month starts (stats arrive after the tick's time message) */
+  newMonths: { funds: number; lastIncome: number }[] = [];
+  private lastMonth = -1;
 
   constructor(readonly name: string) { clients.push(this); }
 
@@ -59,7 +60,7 @@ class TestClient {
           case 'welcome': this.id = msg.player.id; this.stats = msg.stats; resolve(); break;
           case 'stats':
             this.stats = msg.stats;
-            if (this.month === 0) { this.newYears.push({ funds: msg.stats.funds, lastIncome: msg.stats.lastIncome }); this.month = -1; }
+            if (this.month >= 0 && this.month !== this.lastMonth) { this.newMonths.push({ funds: msg.stats.funds, lastIncome: msg.stats.lastIncome }); this.lastMonth = this.month; }
             break;
           case 'time': this.month = msg.time.month; break;
           case 'toast': this.toasts.push({ kind: msg.kind, msg: msg.msg, at: msg.at }); break;
@@ -211,12 +212,12 @@ async function main(): Promise<void> {
   await waitFor(() => A.hasToast(/^info: Selling \d+ units of power to Importer-B/), 'A selling toast', ticks(2));
   const buyToasts = B.toasts.filter((t) => t.msg.startsWith('Buying')).length;
   if (buyToasts !== 1) fail(`expected exactly one Buying toast so far, got ${buyToasts}`);
-  // "last year" counts the power bought: over a whole year B builds nothing, so its funds move by exactly that much
-  const seen = B.newYears.length;
-  await waitFor(() => B.newYears.length >= seen + 2, 'two new years for B', ticks(26));
-  const [y0, y1] = B.newYears.slice(seen, seen + 2);
-  console.log(`B over a year: funds ${y0.funds} -> ${y1.funds}, last year ${y1.lastIncome}`);
-  if (y1.funds - y0.funds !== y1.lastIncome) fail(`B last year ${y1.lastIncome} != funds change ${y1.funds - y0.funds}`);
+  // "last month" counts the power bought: over a whole month B builds nothing, so its funds move by exactly that much
+  const seen = B.newMonths.length;
+  await waitFor(() => B.newMonths.length >= seen + 2, 'two new months for B', ticks(26));
+  const [m0, m1] = B.newMonths.slice(seen, seen + 2);
+  console.log(`B over a month: funds ${m0.funds} -> ${m1.funds}, last month ${m1.lastIncome}`);
+  if (m1.funds - m0.funds !== m1.lastIncome) fail(`B last month ${m1.lastIncome} != funds change ${m1.funds - m0.funds}`);
   console.log('power trade OK');
 
   // ---- (b) leaderboard ----
@@ -243,6 +244,9 @@ async function main(): Promise<void> {
   console.log('budget...');
   // The year so far fills in month by month; A has a plant and roads, so power and road upkeep show. Bulldozing a
   // road tile ($1) is construction spending in the current year.
+  // start in a fresh year, so the founding year's building isn't in this year's construction
+  const startYear = A.stats!.budget!.current.year;
+  await waitFor(() => (A.stats?.budget?.current.year ?? 0) > startYear, 'a new year for A', ticks(14));
   const fundsAtBudget = A.stats!.funds;
   A.send({ t: 'build', tool: 'bulldozer', x: AX + 1, y: Y + 7 });
   await waitFor(() => { const c = A.stats?.budget?.current; return !!c && c.taxes > 0 && c.power > 0 && c.roads > 0 && c.construction > 0; }, 'A has taxes, upkeep lines and construction this year', ticks(14));

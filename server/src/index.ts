@@ -3,7 +3,8 @@
 // Environment:
 //   PORT       listen port (default 8787)          HOST      bind address (default 0.0.0.0)
 //   DATA_DIR   save directory, relative to the repo root (default data/save)
-//   TICK_MS    game-month length in ms (default TICK_MS from shared; shorten for tests)
+//   TICK_MS    simulation step length in ms (default TICK_MS from shared; shorten for tests)
+//   STEPS_PER_MONTH  simulation steps per game month (default STEPS_PER_MONTH from shared; tests use 1)
 //   DEV_HOOKS  "1" enables dev-only hooks: the {t:'devIgnite',x,y} socket message starts a fire,
 //              {t:'devFunds',amount} grants money, and random fire outbreaks are disabled so tests are
 //              deterministic. Never set in production.
@@ -11,7 +12,7 @@
 
 import os from 'node:os';
 import path from 'node:path';
-import { TICK_MS, DEFAULT_PORT, WORLD_W, WORLD_H, CHUNKS_X, CHUNKS_Y, WORLD_TAG } from '@globalcity/shared';
+import { TICK_MS, DEFAULT_PORT, WORLD_W, WORLD_H, CHUNKS_X, CHUNKS_Y, WORLD_TAG, STEPS_PER_MONTH } from '@globalcity/shared';
 import { bootWorld } from './world.ts';
 import { Players } from './players.ts';
 import { Places } from './places.ts';
@@ -101,7 +102,7 @@ console.log(`
   HTTP       http://localhost:${port}/  (health: /health, /ATTRIBUTION.md)
 ${lanUrls().map((u) => `  LAN        ${u}`).join('\n')}
   Save dir   ${saveDir}
-  Tick       every ${tickMs} ms = one game month${devHooks ? '\n  DEV_HOOKS  enabled (devIgnite/devFunds accepted, random fires off)' : ''}${dayMs !== 86_400_000 ? `\n  Day        ${dayMs} ms (ABANDON_DAY_MS)` : ''}
+  Tick       every ${tickMs} ms = one simulation step (${Number(process.env.STEPS_PER_MONTH) || STEPS_PER_MONTH} to a game month)${devHooks ? '\n  DEV_HOOKS  enabled (devIgnite/devFunds accepted, random fires off)' : ''}${dayMs !== 86_400_000 ? `\n  Day        ${dayMs} ms (ABANDON_DAY_MS)` : ''}
 `);
 
 /** http:// URLs for every non-internal IPv4 interface, for reaching the server from the LAN. */

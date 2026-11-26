@@ -1,4 +1,5 @@
-// Simulation: one tick = one game month, run for every active city (player with built tiles).
+// Simulation: one tick = one simulation step (a game month is STEPS_PER_MONTH of them), run for every active
+// city (player with built tiles).
 // Rules are a readable simplification of Micropolis (power scan, zone growth, RCI valves, taxes),
 // plus cross-border power trading, fire (doFire/fireZone), neighbour and rail-link demand,
 // abandonment (idle cities decay to ruins and their plots are released), traffic (makeTraffic),
@@ -7,7 +8,7 @@
 
 import {
   WORLD_W, WORLD_H, CHUNK, DEMAND_SMOOTHING, TAX_RATE, TAX_MULT, COAL_POWER, NUCLEAR_POWER, POWER_PRICE_PER_UNIT,
-  UPKEEP_ROAD, UPKEEP_RAIL, UPKEEP_STATION, UPKEEP_COAL, UPKEEP_NUCLEAR, CITY_FREEZE_MS,
+  UPKEEP_ROAD, UPKEEP_RAIL, UPKEEP_STATION, UPKEEP_COAL, UPKEEP_NUCLEAR, CITY_FREEZE_MS, STEPS_PER_MONTH,
   POLICESTATION,
   FIRE_SPREAD_P, FIRE_BURNOUT_P, FIRE_BURNOUT_P_COVERED, FIRE_STATION_RANGE, FIRE_OUTBREAK_BASE_P, FIRE_OWNER_ONLINE_MS, FIRE_PREVENTED_P,
   REGROW_MS, REGROW_P,
@@ -63,6 +64,8 @@ const REGROW_EVERY_MS = Number(process.env.REGROW_MS) || REGROW_MS;
 const REGROW_CHANCE = Number(process.env.REGROW_P) || REGROW_P;
 /** CITY_FREEZE_MS can be overridden by the environment (tests use a few seconds). */
 const FREEZE_MS = Number(process.env.CITY_FREEZE_MS) || CITY_FREEZE_MS;
+/** STEPS_PER_MONTH can be overridden too (tests use 1: a month per step, as before the slower calendar). */
+const STEPS = Number(process.env.STEPS_PER_MONTH) || STEPS_PER_MONTH;
 /** Rail networks are recomputed at most this often (in ticks) when only zones next to track changed. */
 const RAIL_RECOMPUTE_TICKS = 5;
 /** Random outbreak probability per city per tick never exceeds this, however big the city. */
@@ -322,9 +325,11 @@ export class Sim {
     this.tickCount++;
     this.profMark = performance.now();
     const t = this.players.time;
-    t.month++;
+    t.step = (t.step ?? 0) + 1;
+    let newMonth = false;
+    if (t.step >= STEPS) { t.step = 0; t.month++; newMonth = true; }
     if (t.month >= 12) { t.month = 0; t.year++; }
-    const newYear = t.month === 0;
+    const newYear = newMonth && t.month === 0;
     this.players.dirty = true;
     this.toasts = [];
     this.stations = [];
@@ -398,7 +403,7 @@ export class Sim {
     this.lap('power');
     const claimsChanged: ClaimInfo[] = [];
     for (const p of cities) {
-      this.cityStep(p, power, newYear);
+      this.cityStep(p, power, newMonth);
       if (this.lastPop.get(p.id) !== p.stats.population) {
         this.lastPop.set(p.id, p.stats.population);
         idleChanged.delete(p.id);
@@ -813,7 +818,7 @@ export class Sim {
   // -------------------------------------------------------------------------
   // 2-5. Zones, demand, taxes, stats for one city.
   // -------------------------------------------------------------------------
-  private cityStep(p: PlayerRecord, power: PowerScan, newYear: boolean): void {
+  private cityStep(p: PlayerRecord, power: PowerScan, newMonth: boolean): void {
     const tiles = this.world.tiles;
     const c: CityCounters = {
       R: 0, C: 0, I: 0, zones: 0, rci: 0, plants: 0, supply: 0, demand: 0, stations: 0, upkeep: { roads: 0, rail: 0, power: 0, services: 0 }, resZones: 0, civic: 0,
@@ -899,7 +904,7 @@ export class Sim {
     const newDemand: Demand = fresh ? { r: round2(r), c: round2(cd), i: round2(id) }
       : { r: ease(was.r, r), c: ease(was.c, cd), i: ease(was.i, id) };
 
-    // 4. Budget: this month's share of the yearly taxes and upkeep, and the power scan's trade, through the
+    // 4. Budget: this step's share (1/12) of the per-12-steps taxes and upkeep, and the power scan's trade, through the
     //    ledger (one line each). A lifeline is repaid from a surplus month. (Only running cities get here:
     //    a city whose mayor is away is frozen, see tick().)
     const yearlyTaxes = (c.R + jobs) * TAX_RATE * TAX_MULT * (c.hall > 0 ? 1 + CITYHALL_TAX_BONUS : 1);
@@ -911,8 +916,9 @@ export class Sim {
     moved += trade > 0 ? earn(p, 'powerSold', trade) : trade < 0 ? -spend(p, 'powerBought', -trade) : 0;
     const { repaid, cleared } = repayLifeline(p, (yearlyTaxes - yearlyUpkeep) / 12 + trade);
     if (cleared) this.toasts.push({ playerId: p.id, kind: 'success', msg: 'Lifeline repaid in full. Well done, mayor!' });
+    // the sidebar's figure: what the city made over the last game month
     p.yearIncome += moved - repaid;
-    if (newYear) {
+    if (newMonth) {
       p.stats.lastIncome = p.yearIncome;
       p.yearIncome = 0;
     }

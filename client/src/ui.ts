@@ -518,7 +518,7 @@ export class UI {
     }
     const net = s?.lastIncome ?? 0;
     const debt = s?.debt ?? 0;
-    this.budgetText.textContent = `💰 ${net >= 0 ? '+' : '−'}${fmtMoney(Math.abs(net))} last year${debt > 0 ? ` · 🛟 owes ${fmtMoney(debt)}` : ''}`;
+    this.budgetText.textContent = `💰 ${net >= 0 ? '+' : '−'}${fmtMoney(Math.abs(net))} last month${debt > 0 ? ` · 🛟 owes ${fmtMoney(debt)}` : ''}`;
     this.lifelineBtn.classList.toggle('hidden', !s?.lifelineAvailable);
     const canRetire = (s?.population ?? 0) >= MONUMENT_MIN_POP && this.state.ownedChunkCount() > 0;
     this.monumentBtn.classList.toggle('hidden', !canRetire);

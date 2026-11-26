@@ -40,7 +40,7 @@ export const UPKEEP_NUCLEAR = 300;
 // upkeep, and fire can't spread into it. Its power plants keep supplying neighbours. It resumes exactly
 // where it was when the mayor returns (any message, incl. the client's 20 s ping, counts as presence).
 export const CITY_FREEZE_MS = 15 * 60_000;
-export const POWER_PRICE_PER_UNIT = 1; // $ per zone-unit per game month, paid by importer to exporter
+export const POWER_PRICE_PER_UNIT = 1; // $ per zone-unit per simulation step, paid by importer to exporter
 export const LEADERBOARD_SIZE = 20;
 
 // Abandonment: idle cities decay, then their plots become claimable again (ruins stay on the map)
@@ -73,7 +73,7 @@ export const RAIL_LINK_MAX = 0.5;
 export const TRAFFIC_MAX_STEPS = 16; // tiles per drive
 export const TRAFFIC_ADD = 8; // density added to each road tile driven over
 /** RCI demand moves this share of the way to its newly computed value each tick (like Micropolis' valves, which
- *  accumulate rather than jump): most of a change settles within 10-15 game months. */
+ *  accumulate rather than jump): most of a change settles within 10-15 simulation steps. */
 export const DEMAND_SMOOTHING = 0.15;
 export const TRAFFIC_DECAY = 0.8; // multiplier per tick
 export const TRAFFIC_LIGHT = 80; // density >= -> light traffic tiles
@@ -83,7 +83,7 @@ export const TRAFFIC_RAIL_REACH = 6; // a zone is rail-served when track is with
 
 // Special buildings (all require power)
 // Lifeline: a broke city (funds below LIFELINE_MAX_FUNDS, nothing owed) can take an interest-free loan,
-// repaid automatically as a share of each month's surplus (nothing is taken in months at a loss).
+// repaid automatically as a share of each step's surplus (nothing is taken in steps at a loss).
 // Early cities (peak population below LIFELINE_EARLY_PEAK_POP) may take more while still repaying, as long as
 // the total owed stays within LIFELINE_MAX_DEBT; bigger cities must repay before the next one.
 export const LIFELINE_AMOUNT = 10_000;
@@ -132,9 +132,15 @@ export const FIRE_OWNER_ONLINE_MS = 60_000;
 /** Chance that an outbreak inside a powered fire station's range never starts (it is put out at once). */
 export const FIRE_PREVENTED_P = 0.75;
 
-// Time: one game month per tick (a game year every minute). Slowed from 2 s on 2026-10-28: the game felt
-// easy past the early stage, and a slower month cuts income per real hour without cheapening upkeep.
+// Time: the simulation takes a step every TICK_MS (slowed from 2 s on 2026-10-28: the game felt easy past the
+// early stage). Growth, traffic, fires, taxes and upkeep all run per step. The calendar is slower: a game month
+// every STEPS_PER_MONTH steps, so a game year takes a real hour (it was a minute before the 2x world).
+// Money constants named "a year" below are per 12 steps (one real minute); a game year is STEPS_PER_MONTH times
+// as long, so its budget shows that many times more (gameYearAmount).
 export const TICK_MS = 5000;
+export const STEPS_PER_MONTH = 60;
+/** What an amount given per 12 steps (the money constants) comes to over a game year. */
+export const gameYearAmount = (per12Steps: number): number => per12Steps * STEPS_PER_MONTH;
 export const START_YEAR = 1900;
 
 // Networking

@@ -61,7 +61,7 @@ for entry in "${TESTS[@]}"; do
   t0=$(date +%s)
   # own process group, so the whole server tree (npx -> tsx -> node) stops with it
   # shellcheck disable=SC2086
-  setsid env PORT="$PORT" DATA_DIR="$save" DEV_HOOKS=1 TICK_MS="$TICK_MS" $extra npx tsx src/index.ts > "$WORK/$name-server.log" 2>&1 &
+  setsid env PORT="$PORT" DATA_DIR="$save" DEV_HOOKS=1 TICK_MS="$TICK_MS" STEPS_PER_MONTH=1 $extra npx tsx src/index.ts > "$WORK/$name-server.log" 2>&1 &
   server_pid=$!
   up=0
   for _ in $(seq 1 240); do

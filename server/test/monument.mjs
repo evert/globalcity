@@ -78,8 +78,9 @@ if ((A.lb?.entries ?? []).some((e) => e.id === mc.ownerId)) fail('monument liste
 
 // and the mayor starts over
 const s2 = await A.findFree(s.cx + 3, s.cy);
-A.send({ t: 'claim', cx: s2.cx, cy: s2.cy }); await sleep(400);
+A.send({ t: 'claim', cx: s2.cx, cy: s2.cy });
+for (let i = 0; i < 50 && A.claims.get(`${s2.cx},${s2.cy}`)?.ownerId !== A.me.id; i++) await sleep(100); // up to 5 s: a busy machine is slow
 const nc = A.claims.get(`${s2.cx},${s2.cy}`);
-if (nc?.ownerId !== A.me.id) fail('mayor could not found a new city');
+if (nc?.ownerId !== A.me.id) fail(`mayor could not found a new city at ${s2.cx},${s2.cy}: ${A.toasts.slice(-2).join(' / ')}`);
 console.log(`new city: ${nc.cityName} at ${s2.cx},${s2.cy}; funds ${A.stats.funds}`);
 console.log('PASS'); process.exit(0);

@@ -45,6 +45,7 @@ export interface PlayerRecord {
   /** fraction of a dollar carried between ledger moves (funds only move in whole dollars) */
   fundsCarry?: number;
   /** operating result so far this game year, whole dollars actually moved (the sidebar's "last year") */
+  /** money made since the last game month began (shown as last month's income) */
   yearIncome: number;
   /** the current game year's money so far, by budget line (fractional; rounded into the stats) */
   yearBook?: YearBook;
@@ -197,7 +198,7 @@ export class Players {
   readonly claims = new Map<string, string>();
   /** plots of abandoned cities whose ruins are still crumbling (until fully decayed or claimed again) */
   readonly ruins = new Set<string>();
-  time: GameTime = { year: START_YEAR, month: 0 };
+  time: GameTime = { year: START_YEAR, month: 0, step: 0 };
   /** state changed since last save */
   dirty = false;
   /** bumped whenever the claims map changes (consumers cache per version: neighbours, rail networks) */
@@ -492,7 +493,7 @@ export class Players {
 
   /** Load a state file; players saved by older versions get the new fields (cityName derived from their first chunk, lastSeen = now). */
   load(state: StateFile): void {
-    this.time = { ...state.time };
+    this.time = { step: 0, ...state.time };
     const now = Date.now();
     const unnamed: PlayerRecord[] = [];
     for (const raw of state.players) {

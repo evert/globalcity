@@ -27,6 +27,8 @@ export interface ClaimInfo {
 export interface GameTime {
   year: number;
   month: number; // 0..11
+  /** simulation steps into the month (0..STEPS_PER_MONTH-1); absent in saves from before the slower calendar */
+  step?: number;
 }
 
 export interface Demand { r: number; c: number; i: number } // -1..1
@@ -41,8 +43,8 @@ export interface PlayerStats {
   powerDemand: number; // zone-units needed
   demand: Demand;
   chunks: number; // chunks owned
-  lastIncome: number; // funds gained last game year
-  // Power trading (per game month, on the last tick)
+  lastIncome: number; // funds gained last game month
+  // Power trading (per simulation step)
   powerImported: number; // zone-units bought from neighbours' grids
   powerExported: number; // zone-units sold to neighbours
   powerTradeNet: number; // $ net from power trade last month (positive = income)

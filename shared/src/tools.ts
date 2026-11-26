@@ -1,5 +1,5 @@
 import * as T from './tiles.ts';
-import { UPKEEP_WIND, UPKEEP_OFFSHORE } from './constants.ts';
+import { UPKEEP_WIND, UPKEEP_OFFSHORE, gameYearAmount } from './constants.ts';
 
 export type ToolId =
   | 'query' | 'bulldozer' | 'road' | 'rail' | 'wire' | 'park'
@@ -111,7 +111,7 @@ export const MILESTONE_BUILDINGS: Record<MilestoneBuilding, MilestoneDef> = {
   cityhall: { name: 'City hall', tool: 'cityhall', pop: 75_000, max: 1, centres: [T.CITYHALL],
     benefits: ['+10% tax income', 'Crime 40% lower across the city', 'One per city', 'Needs power'] },
   windfarm: { name: 'Wind farm', tool: 'windfarm', pop: 150_000, centres: [T.WINDFARM],
-    benefits: [`${WIND_POWER} zones of clean power: a few turbines, so a city runs on many of them`, 'No pollution, quiet: neighbours don\'t mind', `$${UPKEEP_WIND} a year to run`] },
+    benefits: [`${WIND_POWER} zones of clean power: a few turbines, so a city runs on many of them`, 'No pollution, quiet: neighbours don\'t mind', `$${gameYearAmount(UPKEEP_WIND).toLocaleString('en-US')} a year to run`] },
   school: { name: 'Elementary school', tool: 'school', pop: 50_000, centres: [T.SCHOOL],
     benefits: ['Lots within 8 tiles gain land value', 'Needs power'] },
   seaport: { name: 'Seaport', tool: 'seaport', pop: 100_000, centres: [T.PORT],
@@ -123,7 +123,7 @@ export const MILESTONE_BUILDINGS: Record<MilestoneBuilding, MilestoneDef> = {
   airport: { name: 'Airport', tool: 'airport', pop: 500_000, centres: [T.AIRPORT],
     benefits: ['Commercial demand boost once another mayor has an airport', 'Planes fly between your city and theirs', 'Some pollution', 'Needs power'] },
   offshore: { name: 'Offshore wind farm', tool: 'offshore', pop: 300_000, centres: [T.OFFSHORE],
-    benefits: [`${OFFSHORE_POWER} zones of clean power: more than a wind farm on land, on water you can't build on anyway`, 'Must be placed entirely on water', 'Connect it to shore with an underwater power line', `$${UPKEEP_OFFSHORE} a year to run`] },
+    benefits: [`${OFFSHORE_POWER} zones of clean power: more than a wind farm on land, on water you can't build on anyway`, 'Must be placed entirely on water', 'Connect it to shore with an underwater power line', `$${gameYearAmount(UPKEEP_OFFSHORE).toLocaleString('en-US')} a year to run`] },
 };
 export const MILESTONE_ORDER: readonly MilestoneBuilding[] = ['fire', 'police', 'school', 'cityhall', 'seaport', 'windfarm', 'university', 'stadium', 'offshore', 'airport'];
 /** Everything the Milestones panel lists: the population ladder plus Grand Central (unlocked by a rail link). */
