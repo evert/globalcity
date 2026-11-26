@@ -29,7 +29,7 @@ export function zoneKind(centerTile: number): ZoneKind {
  * True for any tile that belongs to a multi-tile zone/building: the plain footprint ids (isZoneTile) plus the
  * animated cells the simulator swaps in (airport radar 832..839, industrial smoke 852..859 and 884..915,
  * coal smoke 916..931, stadium game 932..947, nuclear swirl 952..955). Use this, not isZoneTile, wherever a
- * hit on one tile must find the whole building (bulldozer, fire, decay, query).
+ * hit on one tile must find the whole building (bulldozer, fire, query).
  */
 export const isBuildingTile = (v: number): boolean => {
   if (isZoneTile(v)) return true;

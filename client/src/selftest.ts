@@ -5,7 +5,7 @@
 // data sets used by /#demo-leaderboard and /#demo-social.
 import type { ClaimInfo, LeaderboardEntry, PlayerStats, Presence, ServerMsg } from '@globalcity/shared';
 import {
-  ABANDON_DECAY_DAYS, ABANDON_FREE_DAYS, CHUNK, LOMASK, PWRBIT, ZONEBIT, RESBASE, FREEZ, ROADS, RIVER, WOODS, DIRT, CONDBIT, BULLBIT, FIRE, BURNBIT, TILE_PX,
+  ABANDON_IDLE_DAYS, ABANDON_FREE_DAYS, CHUNK, LOMASK, PWRBIT, ZONEBIT, RESBASE, FREEZ, ROADS, RIVER, WOODS, DIRT, CONDBIT, BULLBIT, FIRE, BURNBIT, TILE_PX,
   MAX_CHUNKS_PER_PLAYER, ANIMBIT, LASTFIRE, COALSMOKE1, LTRFBASE, FOUNTAIN, LHRAIL, LVRAIL, LVRAIL2, LVRAIL3, LVRAIL4, LVRAIL5, LVRAIL8, LVRAIL10,
   COALBASE, PORTBASE, AIRPORTBASE, POWERPLANT, PORT, AIRPORT, RADAR0, COAL_SMOKE, STADIUM_GAME,
   HTRFBASE, NUCLEARBASE, NUKE_SWIRL, HROADPOWER, LHPOWER, FULLSTADIUMBASE, FULLSTADIUM, NUCLEAR,
@@ -430,7 +430,7 @@ export async function runSelfTest(): Promise<void> {
   assert(state.cityName === '', 'no city name before any named claim');
   net.emit('msg', { t: 'claims', claims: [
     claim(0, 0, 'me', 'Tester', '#58c4ff', 5, { cityName: 'Testville' }),
-    claim(1, 1, 'other', 'Someone', '#ff5f5f', 10, { cityName: 'Oldtown', idleDays: ABANDON_DECAY_DAYS + 11 }),
+    claim(1, 1, 'other', 'Someone', '#ff5f5f', 10, { cityName: 'Oldtown', idleDays: ABANDON_IDLE_DAYS + 11 }),
     claim(1, 0, 'p3', 'Idler', '#ffb347', 3, { cityName: 'Napville', idleDays: 12 }),
     { cx: 0, cy: 1, ownerId: 'p4', ownerName: 'Legacy', color: '#7ddc5c', pop: 1 } as ClaimInfo, // old server: no cityName / idleDays
   ] });
@@ -441,7 +441,7 @@ export async function runSelfTest(): Promise<void> {
   r.render();
   const lab = (cx: number, cy: number) => r.drawnClaims.get(`${cx},${cy}`);
   assert(lab(0, 0)?.label === 'Testville — Tester (you)' && !lab(0, 0)!.abandoned, `own label, got "${lab(0, 0)?.label}"`);
-  assert(lab(1, 1)?.label === `Oldtown — Someone (abandoned, free in ${ABANDON_FREE_DAYS - ABANDON_DECAY_DAYS - 11} days)` && lab(1, 1)!.abandoned && lab(1, 1)!.idle === 'abandoned',
+  assert(lab(1, 1)?.label === `Oldtown — Someone (abandoned, up for grabs in ${ABANDON_FREE_DAYS - ABANDON_IDLE_DAYS - 11} days)` && lab(1, 1)!.abandoned && lab(1, 1)!.idle === 'abandoned',
     `abandoned label + grey flag, got "${lab(1, 1)?.label}" ${lab(1, 1)?.abandoned}`);
   assert(lab(1, 1)!.color !== '#ff5f5f', 'abandoned claim colour is desaturated');
   assert(lab(1, 0)?.label === 'Napville — Idler · idle 12d' && lab(1, 0)!.idle === 'idle' && !lab(1, 0)!.abandoned, `idle label, got "${lab(1, 0)?.label}"`);
@@ -471,7 +471,7 @@ export async function runSelfTest(): Promise<void> {
   assert(!state.canClaim(1, 0), 'claimed chunk is not claimable');
   net.emit('msg', { t: 'unclaim', cx: 1, cy: 0 });
   assert(!state.claimAt(1, 0), 'unclaim removed the claim');
-  assert(state.canClaim(1, 0), 'released ruins are claimable (adjacent to mine)');
+  assert(state.canClaim(1, 0), 'released plots are claimable (adjacent to mine)');
   r.render();
   assert(!lab(1, 0), 'no label drawn for the released chunk');
   net.emit('msg', { t: 'unclaim', cx: 0, cy: 0 }); // mine

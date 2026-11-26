@@ -19,7 +19,7 @@ export interface ClaimInfo {
   cityName: string;
   color: string;
   pop: number; // displayed population of the whole city this chunk belongs to
-  idleDays: number; // days since the owner was last seen; >= ABANDON_DECAY_DAYS means decaying, claims released at ABANDON_FREE_DAYS
+  idleDays: number; // days since the owner was last seen; >= ABANDON_IDLE_DAYS means abandoned, claims released at ABANDON_FREE_DAYS
   /** a retired city kept as a monument: frozen, never released (absent = a normal city) */
   monument?: boolean;
 }
@@ -171,7 +171,7 @@ export type ClientMsg =
   | { t: 'leaderboard' } // ask for the current top list
   | { t: 'lifeline' } // take the emergency lifeline loan
   | { t: 'monument' } // retire my city (over MONUMENT_MIN_POP) as a monument and start over
-  | { t: 'abandon' } // give up my broke city (owes a lifeline, under ABANDON_MAX_FUNDS): plots released, ruins crumble, start over
+  | { t: 'abandon' } // give up my broke city (owes a lifeline, under ABANDON_MAX_FUNDS): plots released as they stand, start over
   | { t: 'ping' };
 
 // ---------- server -> client (JSON) ----------
@@ -196,7 +196,7 @@ export type ServerMsg =
   | { t: 'leaderboard'; entries: LeaderboardEntry[]; me?: { rank: number; population: number }; monuments?: MonumentEntry[] } // top cities (and monuments, absent from old servers); also pushed periodically
   | { t: 'presence'; players: Presence[] } // every PRESENCE_INTERVAL_MS, online players except the receiver
   | { t: 'airports'; airports: AirportInfo[]; now: number } // powered airports (sent on welcome and when the set changes); `now` = server clock ms, for flight sync
-  | { t: 'unclaim'; cx: number; cy: number } // a chunk was released (abandoned); ruins stay
+  | { t: 'unclaim'; cx: number; cy: number } // a chunk was released (abandoned); what was built there stays for the next claimant
   | { t: 'version'; version: string } // current client build on the server (on welcome and whenever a new build lands)
   | { t: 'announce'; id: string; msg: string; level: 'info' | 'warn'; until: number } // admin announcement banner; until = ms epoch
   | { t: 'announceClear' }

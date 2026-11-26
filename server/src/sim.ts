@@ -2,7 +2,7 @@
 // city (player with built tiles).
 // Rules are a readable simplification of Micropolis (power scan, zone growth, RCI valves, taxes),
 // plus cross-border power trading, fire (doFire/fireZone), neighbour and rail-link demand,
-// abandonment (idle cities decay to ruins and their plots are released), traffic (makeTraffic),
+// abandonment (idle cities' plots are released, buildings intact, for others to claim), traffic (makeTraffic),
 // special buildings (stadium/seaport/airport demand, police vs crime) and ambient animation flags
 // (coal/industrial smoke, stadium games, airport radar, nuclear swirl; the client cycles ANIMBIT tiles).
 
@@ -12,7 +12,7 @@ import {
   POLICESTATION,
   FIRE_SPREAD_P, FIRE_BURNOUT_P, FIRE_BURNOUT_P_COVERED, FIRE_STATION_RANGE, FIRE_OUTBREAK_BASE_P, FIRE_OWNER_ONLINE_MS, FIRE_PREVENTED_P,
   REGROW_MS, REGROW_P,
-  ABANDON_DECAY_DAYS, ABANDON_FREE_DAYS, ABANDON_DECAY_P, ABANDON_DECAY_ENABLED, SMALL_CITY_MAX_ITEMS, SMALL_CITY_RELEASE_MS, NEIGHBOUR_DEMAND_MAX, RAIL_LINK_BOOST, RAIL_LINK_MAX,
+  ABANDON_IDLE_DAYS, ABANDON_FREE_DAYS, SMALL_CITY_MAX_ITEMS, SMALL_CITY_RELEASE_MS, NEIGHBOUR_DEMAND_MAX, RAIL_LINK_BOOST, RAIL_LINK_MAX,
   TRAFFIC_MAX_STEPS, TRAFFIC_ADD, TRAFFIC_DECAY, TRAFFIC_LIGHT, TRAFFIC_HEAVY, TRAFFIC_RAIL_SHARE, TRAFFIC_RAIL_REACH,
   STADIUM_RES_BOOST, SEAPORT_IND_BOOST, AIRPORT_COM_BOOST, POLICE_RANGE, CRIME_PER_POP,
   HBRIDGE, VBRIDGE, HPOWER, VPOWER, HRAIL, VRAIL, ROADBASE, LTRFBASE, HTRFBASE,
@@ -25,14 +25,12 @@ import {
   isRoad, isRail, isWire, isTree, isWater, isIndZone, isComZone, isHouse, isRubble, chunkKey, parseChunkKey, inWorld, clamp,
   HOSPITAL, CHURCH, HOSPITALBASE, CHURCHBASE,
   type ClaimInfo, type Demand, type GameTime,
-  isOverWater,
   CITYHALL, CITYHALL_TAX_BONUS, CITYHALL_CRIME_FACTOR, UPKEEP_CITYHALL,
   MILESTONE_BUILDINGS, milestoneUnlocksFor,
   lotHash, CRIME_LAND_VALUE_THRESHOLD,
   WINDFARM, OFFSHORE, SCHOOL, WIND_POWER, OFFSHORE_POWER, UPKEEP_WIND, UPKEEP_OFFSHORE, UPKEEP_SCHOOL, SCHOOL_RANGE,
   milestoneForCentre, pollutionSource, pollutionAt, POLLUTION_HIGH, POLLUTION_SEVERE, POLLUTION_MAX_RADIUS,
   NUCLEAR,
-  isOffshoreTile, RIVER,
   MILESTONE_ORDER,
   CUSTOMCENTRE, UPKEEP_UNIVERSITY, UNIVERSITY_RANGE, UNIVERSITY_POLICE_FACTOR, UNIVERSITY_IND_BOOST, GRAND_CENTRAL_RANGE, GRAND_CENTRAL_RAIL_BOOST, UPKEEP_GRANDCENTRAL,
 } from '@globalcity/shared';
@@ -42,7 +40,7 @@ import type { Players, PlayerRecord } from './players.ts';
 import { unlockedOf, refreshMilestoneStats, earn, spend, repayLifeline, closeYear, budgetStats } from './players.ts';
 import { ShippingPlanner } from './shipping.ts';
 import { zoneKind, isPlantCenter, countHouses, plopZone, findZoneCenter, isBuildingTile, clearFootprint } from './zones.ts';
-import { fixZone, waterNear, SEAPORT_WATER_RANGE } from './tools.ts';
+import { waterNear, SEAPORT_WATER_RANGE } from './tools.ts';
 import { chance, randInt, log } from './util.ts';
 
 /** Tax multiplier: tuned so a town of ~20 full R, 8 C, 8 I zones earns ~$2600 per game year. */
@@ -163,12 +161,6 @@ const isParkTile = (v: number): boolean => { const id = v & LOMASK; return (id >
 const rubbleTile = (): number => (RUBBLE + randInt(3)) | BULLBIT;
 /** Tiles a rail network "serves": any multi-tile zone/building tile or a house. */
 const zoneLike = (v: number): boolean => isBuildingTile(v) || isHouse(v);
-/** Built tiles that decay in an abandoned city (water-borne infrastructure is left alone). */
-const decays = (v: number): boolean => {
-  const id = v & LOMASK;
-  if (isOverWater(v)) return false; // bridges / underwater lines never decay into rubble on the water
-  return isBuildingTile(v) || isHouse(v) || isRoad(v) || isRail(v) || isWire(v) || isParkTile(v);
-};
 const fireTile = (): number => (FIRE + randInt(LASTFIRE - FIRE)) | ANIMBIT; // no BULLBIT/BURNBIT/CONDBIT: fire can't be dozed and breaks wires
 
 export class Sim {
@@ -348,40 +340,32 @@ export class Sim {
     this.nextPoliceRange = [];
     this.nextUniCities = new Set();
 
-    // 0. Abandonment: idle owners' cities decay, then their plots are released.
+    // 0. Abandonment: idle owners' plots are released (buildings and all) for others to claim.
     const now = Date.now();
     const unclaimed: { cx: number; cy: number }[] = [];
-    const decaying = new Set<string>();
+    const abandoned = new Set<string>();
     const idleChanged = new Set<string>();
     for (const p of this.players.players.values()) {
       if (p.chunks.length === 0) { this.lastIdle.delete(p.id); continue; }
-      if (p.monument) continue; // monuments never decay or get released
+      if (p.monument) continue; // monuments are never released
       const idle = this.players.idleDays(p, now);
       const small = now - p.lastSeen >= SMALL_RELEASE_MS && this.builtItems(p, SMALL_CITY_MAX_ITEMS) < SMALL_CITY_MAX_ITEMS;
       if (idle >= ABANDON_FREE_DAYS || small) {
         const released = this.players.release(p);
         unclaimed.push(...released);
-        for (const u of released) { const ci = chunkIndex(u.cx, u.cy); this.density.delete(ci); this.applyTrafficLevels(ci, null); }
-        this.lastDensityChunk = -1; this.lastDensityArr = null;
+        this.clearReleased(released);
         this.lastIdle.delete(p.id);
         this.lastPop.delete(p.id);
         p.notice = small
-          ? `Your plot was released because fewer than ${SMALL_CITY_MAX_ITEMS} things were built there and you were away for over an hour. Claim a new plot anywhere to start again.`
-          : `Your city was released after ${idle} days without a visit. Claim a new plot anywhere to start again.`;
+          ? `Your plot was released because fewer than ${SMALL_CITY_MAX_ITEMS} things were built there and you were away for over an hour. Claim a new plot anywhere to start again (your old one too, if nobody has taken it).`
+          : `Your city was released after ${idle} days without a visit: whoever claims its plots gets everything built there. Claim a plot anywhere to start again (your old ones too, if nobody has taken them).`;
         log(small
           ? `${p.name}'s city ${p.cityName || '(unnamed)'} had under ${SMALL_CITY_MAX_ITEMS} things built and its mayor was away ${Math.round((now - p.lastSeen) / 60_000)} min: released ${released.length} chunk(s)`
           : `${p.name}'s city ${p.cityName || '(unnamed)'} abandoned for ${idle} days: released ${released.length} chunk(s)`);
         continue;
       }
-      if (idle >= ABANDON_DECAY_DAYS) { decaying.add(p.id); if (ABANDON_DECAY_ENABLED) this.decayStep(p); }
+      if (idle >= ABANDON_IDLE_DAYS) abandoned.add(p.id);
       if (this.lastIdle.get(p.id) !== idle) { this.lastIdle.set(p.id, idle); idleChanged.add(p.id); }
-    }
-
-    // Ruins of abandoned cities (released plots) keep crumbling until nothing is left to decay or someone claims them.
-    for (const key of [...this.players.ruins]) {
-      if (this.players.claims.has(key)) { this.players.ruins.delete(key); continue; }
-      const { cx, cy } = parseChunkKey(key);
-      if (!this.decayChunk(cx, cy)) { this.players.ruins.delete(key); this.players.dirty = true; }
     }
     this.lap('abandon');
     // Cities whose mayor is away are frozen: they skip growth, traffic and the budget entirely
@@ -394,7 +378,7 @@ export class Sim {
     // 1. Neighbourhood: rail networks and neighbour/rail demand for every running city with land.
     this.updateRailNetworks();
     this.lap('rail');
-    for (const p of this.players.players.values()) if (p.chunks.length > 0 && !this.frozen.has(p.id)) this.neighbourhoodStep(p, decaying);
+    for (const p of this.players.players.values()) if (p.chunks.length > 0 && !this.frozen.has(p.id)) this.neighbourhoodStep(p, abandoned);
     this.lap('neighbours');
 
     const withLand = [...this.players.players.values()].filter((p) => p.active && p.chunks.length > 0);
@@ -437,33 +421,6 @@ export class Sim {
     return { time: { ...t }, claimsChanged, toasts: this.toasts, unclaimed };
   }
 
-  // -------------------------------------------------------------------------
-  // 0. Abandonment: every built tile of a decaying city turns to rubble with ABANDON_DECAY_P per
-  //    tick; a hit on a multi-tile building takes the whole footprint (like fireZone).
-  // -------------------------------------------------------------------------
-  /** One decay step over an unowned chunk of ruins; false once nothing in it can decay any more. */
-  private decayChunk(cx: number, cy: number): boolean {
-    const tiles = this.world.tiles;
-    let left = 0;
-    const hits: number[] = [];
-    for (let dy = 0; dy < CHUNK; dy++) {
-      const row = (cy * CHUNK + dy) * WORLD_W + cx * CHUNK;
-      for (let dx = 0; dx < CHUNK; dx++) {
-        const i = row + dx;
-        if (!decays(tiles[i])) continue;
-        left++;
-        if (chance(ABANDON_DECAY_P)) hits.push(i);
-      }
-    }
-    for (const i of hits) {
-      const v = tiles[i];
-      if (!decays(v)) continue;
-      const x = i % WORLD_W, y = (i - x) / WORLD_W;
-      this.ruin(x, y, v);
-    }
-    return left > 0;
-  }
-
   /**
    * Nature returns: each rubble tile has REGROW_P chance of turning back into the landscape that was there
    * before anyone built. Only chunks that were ever built on can hold rubble; chunks of cities whose mayor is
@@ -496,19 +453,6 @@ export class Sim {
     this.lastDensityChunk = -1; this.lastDensityArr = null;
   }
 
-  private decayStep(p: PlayerRecord): void {
-    const tiles = this.world.tiles;
-    const hits: number[] = [];
-    this.forEachChunkTile(p, (i) => { if (decays(tiles[i]) && chance(ABANDON_DECAY_P)) hits.push(i); });
-    for (const i of hits) {
-      const v = tiles[i];
-      if (!decays(v)) continue; // already rubble from an earlier hit on the same building
-      const x = i % WORLD_W, y = (i - x) / WORLD_W;
-      this.ruin(x, y, v);
-    }
-  }
-
-  /** Turn tile (x,y) (and the whole building it belongs to) into rubble. */
   /**
    * Things the mayor built, counting each zone/building once (its centre) and each road, rail, power
    * line or park tile once. Stops counting at `cap` (callers only need "fewer than cap?").
@@ -529,30 +473,18 @@ export class Sim {
     return n;
   }
 
-  private ruin(x: number, y: number, v: number): void {
-    const w = this.world;
-    const z = isBuildingTile(v) ? findZoneCenter(w, x, y) : null;
-    if (z) {
-      const offshore = isOffshoreTile(w.get(z.cx, z.cy)); // ruins at sea are just sea
-      clearFootprint(w, z, () => (offshore ? RIVER : rubbleTile()));
-      return;
-    }
-    w.set(x, y, rubbleTile());
-    fixZone(w, x, y);
-  }
-
   // -------------------------------------------------------------------------
   // 1. Neighbourhood. Neighbours (cities owning a chunk 8-adjacent to mine) add demand: their jobs
   //    attract my residents, their residents shop in my stores. Cities linked by rail to my zones add
-  //    commercial (and half as much residential) demand. Decaying neighbours count for nothing.
+  //    commercial (and half as much residential) demand. Abandoned neighbours count for nothing.
   // -------------------------------------------------------------------------
-  private neighbourhoodStep(p: PlayerRecord, decaying: Set<string>): void {
+  private neighbourhoodStep(p: PlayerRecord, abandoned: Set<string>): void {
     const s = p.stats;
     const nb = this.players.neighboursOf(p);
     let jobs = 0, R = 0;
     for (const id of nb) {
       const q = this.players.players.get(id);
-      if (!q || decaying.has(id)) continue;
+      if (!q || abandoned.has(id)) continue;
       jobs += (q.stats.comPop + q.stats.indPop) * 8;
       R += q.stats.resPop;
     }
@@ -567,7 +499,7 @@ export class Sim {
     let rail = 0;
     for (const id of linked) {
       const q = this.players.players.get(id);
-      if (!q || q.chunks.length === 0 || decaying.has(id)) continue;
+      if (!q || q.chunks.length === 0 || abandoned.has(id)) continue;
       rail += RAIL_LINK_BOOST * clamp(q.stats.population / RAIL_LINK_FULL_POP, RAIL_LINK_MIN_SCALE, 1);
     }
     s.railLinks = linked.size;

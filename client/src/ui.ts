@@ -712,7 +712,7 @@ export class UI {
       this.abandonCity,
       el('ul', { class: 'ms-benefits' },
         el('li', { text: 'All your plots are released: anyone can claim them' }),
-        el('li', { text: 'The empty city slowly crumbles into ruins until someone takes over a plot' }),
+        el('li', { text: 'Everything you built stays standing: whoever claims a plot gets its buildings' }),
         el('li', { text: `You start over with ${fmtMoney(STARTING_FUNDS)} and claim a new first plot anywhere; your lifeline debt is written off` }),
         el('li', { text: 'Milestones start again from zero' }),
         el('li', { text: 'This cannot be undone' })),
@@ -1475,10 +1475,10 @@ export class UI {
     if (this.state.me && c.ownerId === this.state.me.id) this.refreshWelcome();
   }
 
-  /** A chunk was released after its owner went idle (state already dropped it; the ruins stay on the map). */
+  /** A chunk was released after its owner went idle (state already dropped it; its buildings stay on the map). */
   onUnclaim(prev: ClaimInfo): void {
     if (this.state.me && prev.ownerId === this.state.me.id) {
-      this.toast(`Your plot ${prev.cx},${prev.cy} was released after inactivity.`, 'error', 8000, { x: prev.cx * CHUNK + CHUNK / 2, y: prev.cy * CHUNK + CHUNK / 2 });
+      this.toast(`Your plot ${prev.cx},${prev.cy} was released after inactivity. Anyone can now claim it with what you built there.`, 'error', 8000, { x: prev.cx * CHUNK + CHUNK / 2, y: prev.cy * CHUNK + CHUNK / 2 });
     }
   }
 }

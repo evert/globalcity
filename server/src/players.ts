@@ -2,7 +2,7 @@
 
 import crypto from 'node:crypto';
 import {
-  STARTING_FUNDS, claimCost, CHUNKS_X, CHUNKS_Y, CHUNK, MAX_CHUNKS_PER_PLAYER,
+  STARTING_FUNDS, claimCost, CHUNKS_X, CHUNKS_Y, CHUNK, MAX_CHUNKS_PER_PLAYER, WORLD_W, ZONEBIT,
   chunkKey, parseChunkKey, colorForId,
   type PlayerStats, type PlayerPublic, type ClaimInfo, type GameTime, START_YEAR, type BudgetYear, BUDGET_YEARS_SENT,
   type IncomeLine, type ExpenseLine, type MoneyLine, INCOME_LINES, EXPENSE_LINES, emptyBudgetYear,
@@ -105,11 +105,12 @@ export interface StateFile {
   time: GameTime;
   players: PlayerRecord[];
   claims: [string, string][]; // chunkKey -> playerId
-  /** released plots of an abandoned city that are still crumbling (chunk keys); absent in older saves */
+  /** Older saves: released plots that were still crumbling. Nothing decays any more; ignored on load. */
   ruins?: string[];
 }
 
-export type ClaimResult = { ok: true; cost: number } | { ok: false; msg: string };
+/** `inherited`: zones and buildings already standing on the plot (left by an earlier city), now the claimant's. */
+export type ClaimResult = { ok: true; cost: number; inherited: number } | { ok: false; msg: string };
 
 const FIND_FREE_MAX_RADIUS = 40;
 
@@ -196,8 +197,6 @@ export function lifelineDebtOk(p: PlayerRecord): boolean {
 export class Players {
   readonly players = new Map<string, PlayerRecord>();
   readonly claims = new Map<string, string>();
-  /** plots of abandoned cities whose ruins are still crumbling (until fully decayed or claimed again) */
-  readonly ruins = new Set<string>();
   time: GameTime = { year: START_YEAR, month: 0, step: 0 };
   /** state changed since last save */
   dirty = false;
@@ -317,7 +316,8 @@ export class Players {
 
   /**
    * Claim a chunk. The first claim is free; later ones cost claimCost(owned) (escalating) and must be
-   * 4-adjacent to a chunk the player already owns.
+   * 4-adjacent to a chunk the player already owns. Whatever stands on a released plot comes with it, as it is
+   * and at no extra cost; the city starts simulating right away if that includes a zone or building.
    */
   claim(p: PlayerRecord, cx: number, cy: number): ClaimResult {
     if (!validChunk(cx, cy)) return { ok: false, msg: 'Invalid chunk' };
@@ -343,10 +343,22 @@ export class Players {
     p.stats.chunks = p.chunks.length;
     p.stats.funds = p.funds;
     this.claims.set(key, p.id);
-    this.ruins.delete(key); // a new owner stops the decay
+    const inherited = this.zoneCentres(cx, cy);
+    if (inherited > 0) p.active = true;
     this.claimsVersion++;
     this.dirty = true;
-    return { ok: true, cost };
+    return { ok: true, cost, inherited };
+  }
+
+  /** Zones and buildings (their centre tiles) standing in a chunk. */
+  private zoneCentres(cx: number, cy: number): number {
+    const t = this.world.tiles;
+    let n = 0;
+    for (let dy = 0; dy < CHUNK; dy++) {
+      const row = (cy * CHUNK + dy) * WORLD_W + cx * CHUNK;
+      for (let dx = 0; dx < CHUNK; dx++) if (t[row + dx] & ZONEBIT) n++;
+    }
+    return n;
   }
 
   /**
@@ -355,13 +367,11 @@ export class Players {
    * funds, no plots, no unlocks, no debt) and claims a new first plot like a new player. Returns the monument.
    */
   /**
-   * Abandon p's (broke) city: every plot is released and marked as ruins that keep crumbling until claimed; p
+   * Abandon p's (broke) city: every plot is released as it stands, for anyone to claim with its buildings; p
    * starts over like a new mayor (starting funds, lifeline debt written off, no unlocks). Returns the plots.
    */
   abandon(p: PlayerRecord): { cx: number; cy: number }[] {
-    const keys = [...p.chunks];
     const released = this.release(p);
-    for (const k of keys) this.ruins.add(k);
     this.resetForFreshStart(p);
     return released;
   }
@@ -404,7 +414,7 @@ export class Players {
 
   /**
    * Release every claim of an abandoned city. The player keeps funds and city name; stats reset to
-   * an empty city. Tiles are left as they are (ruins for the next claimant). Returns the released chunks.
+   * an empty city. Tiles are left as they are: the next claimant gets them. Returns the released chunks.
    */
   release(p: PlayerRecord): { cx: number; cy: number }[] {
     const out: { cx: number; cy: number }[] = [];
@@ -488,7 +498,7 @@ export class Players {
   }
 
   serialize(): StateFile {
-    return { version: 1, time: { ...this.time }, players: [...this.players.values()], claims: [...this.claims.entries()], ruins: [...this.ruins] };
+    return { version: 1, time: { ...this.time }, players: [...this.players.values()], claims: [...this.claims.entries()] };
   }
 
   /** Load a state file; players saved by older versions get the new fields (cityName derived from their first chunk, lastSeen = now). */
@@ -519,7 +529,6 @@ export class Players {
       if (!p.cityName && p.chunks.length > 0) unnamed.push(p);
     }
     for (const [key, id] of state.claims) if (this.players.has(id)) this.claims.set(key, id);
-    for (const key of state.ruins ?? []) if (!this.claims.has(key)) this.ruins.add(key);
     for (const p of unnamed) {
       const c = parseChunkKey(p.chunks[0]);
       p.cityName = this.defaultCityName(c.cx, c.cy, p);

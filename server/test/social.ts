@@ -5,7 +5,7 @@
 
 import WebSocket from 'ws';
 import {
-  DEFAULT_PORT, CHUNK, TICK_MS, MAX_CHUNKS_PER_PLAYER, ABANDON_DECAY_DAYS, ABANDON_FREE_DAYS, ABANDON_DECAY_ENABLED, CHUNKS_X, CHUNKS_Y, WORLD_H,
+  DEFAULT_PORT, CHUNK, TICK_MS, MAX_CHUNKS_PER_PLAYER, ABANDON_IDLE_DAYS, ABANDON_FREE_DAYS, CHUNKS_X, CHUNKS_Y, WORLD_H,
   lonLatToTile, chunkOf, chunkKey, decodeChunk, isWater, isRubble, isRoad, isZoneTile, isHouse,
   type ClientMsg, type ServerMsg, type PlayerStats, type ClaimInfo, type Presence, type QueryInfo,
 } from '@globalcity/shared';
@@ -383,45 +383,51 @@ async function main(): Promise<void> {
   console.log(`plot cap OK (C owns ${owned.length} plots, 11th refused; city "${C.myClaims()[0].cityName}")`);
 
   // =========================================================================
-  // (5b) Abandonment, part 2: decay after ABANDON_DECAY_DAYS, release after ABANDON_FREE_DAYS.
+  // (5b) Abandonment, part 2: shown as abandoned after ABANDON_IDLE_DAYS, released after ABANDON_FREE_DAYS.
+  // Nothing decays: whoever claims the released plot gets D's zones and roads as they stand, for the plot price.
   // =========================================================================
+  const builtInD = (): number => {
+    let n = 0;
+    for (let dy = 0; dy < 5; dy++) for (let dx = 0; dx < 20; dx++) if (builtTile(A.tile(dSite.X + dx, dSite.Y + dy)!)) n++;
+    return n;
+  };
   const rubbleInD = (): number => {
     let r = 0;
     for (let dy = 0; dy < 5; dy++) for (let dx = 0; dx < 20; dx++) if (isRubble(A.tile(dSite.X + dx, dSite.Y + dy)!)) r++;
     return r;
   };
+  const intact = (when: string): void => {
+    if (rubbleInD() > 0) fail(`${rubbleInD()} rubble tiles in D ${when}`);
+    if (builtInD() !== dBuilt) fail(`D had ${dBuilt} built tiles, ${builtInD()} ${when}`);
+  };
   const idleNow = (): number => A.claims.get(dKey)?.idleDays ?? -1;
-  console.log(`D idle for ${((Date.now() - dLeft) / 1000).toFixed(1)} s; A sees idleDays=${idleNow()}, rubble=${rubbleInD()}`);
+  console.log(`D idle for ${((Date.now() - dLeft) / 1000).toFixed(1)} s; A sees idleDays=${idleNow()}, built=${builtInD()}`);
   if (idleNow() < 1) fail('idleDays for D did not advance in the claims broadcasts');
-  if (rubbleInD() > 0) fail('D tiles decayed before ABANDON_DECAY_DAYS');
-  const decayAt = dLeft + ABANDON_DECAY_DAYS * DAY_MS;
-  await sleep(Math.max(0, decayAt + 1000 - Date.now()));
-  if (ABANDON_DECAY_ENABLED) {
-    console.log(`day ${idleNow()}: waiting for ruins...`);
-    await waitFor(() => rubbleInD() > 0, 'first rubble tile in D', ticks(20));
-    console.log(`day ${idleNow()}: ${rubbleInD()} rubble tiles in D`);
-  } else {
-    await sleep(ticks(10));
-    console.log(`day ${idleNow()}: decay is off, ${rubbleInD()} rubble tiles in D`);
-    if (rubbleInD() > 0) fail('D decayed although decay is switched off');
-  }
-  // Returning owner stops the decay: resume D with its token? We only have D's id, not the token
-  // in this script (welcome carried it) - check that the idle clock keeps running instead.
+  intact('before it was abandoned');
+  await sleep(Math.max(0, dLeft + ABANDON_IDLE_DAYS * DAY_MS + 1000 - Date.now()) + ticks(10));
+  console.log(`day ${idleNow()}: abandoned, ${builtInD()} built tiles and ${rubbleInD()} rubble in D`);
+  intact('once abandoned');
   const freeAt = dLeft + ABANDON_FREE_DAYS * DAY_MS;
   await waitFor(() => A.unclaims.includes(dKey), `unclaim of D's chunk`, Math.max(5000, freeAt + ticks(4) - Date.now()));
-  const rubbleAfter = rubbleInD();
-  console.log(`unclaim received at idle ${((Date.now() - dLeft) / 1000).toFixed(1)} s; ${rubbleAfter} rubble tiles remain`);
+  console.log(`unclaim received at idle ${((Date.now() - dLeft) / 1000).toFixed(1)} s`);
   if (A.claims.has(dKey)) fail("D's claim still listed after unclaim");
-  if (ABANDON_DECAY_ENABLED && rubbleAfter === 0) fail('ruins vanished');
-  if (!ABANDON_DECAY_ENABLED && rubbleAfter > 0) fail('D decayed although decay is switched off');
+  await sleep(ticks(10));
+  intact('after the release');
   const spot = await A.findFree(dSite.cx, dSite.cy);
   if (!spot || spot.cx !== dSite.cx || spot.cy !== dSite.cy) fail(`findFree did not return the released chunk (${JSON.stringify(spot)})`);
   const E = new TestClient('Eve');
   await E.connect();
   if (E.claims.has(dKey)) fail("new client's welcome still lists D's chunk");
+  const eFunds = E.stats!.funds, nE = E.toasts.length;
   if (!(await E.tryClaim(dSite.cx, dSite.cy))) fail('E could not claim the released chunk');
-  if (rubbleInD() < rubbleAfter) fail('rubble disappeared on reclaim');
-  console.log(`abandonment OK (E claimed the ruins as "${E.myClaims()[0].cityName}")`);
+  await E.toastAfter(nE, /^success: Welcome, Mayor!.*with the 6 zones and buildings already standing there/);
+  await sleep(ticks(6));
+  intact("after E claimed it");
+  if (E.stats!.chunks !== 1) fail(`E should own 1 plot, has ${E.stats!.chunks}`);
+  // the first plot is free and the buildings cost nothing extra (E's new road and zone upkeep aside: frozen
+  // or not, a few ticks of an unpowered city cost at most a few dollars)
+  if (eFunds - E.stats!.funds > 100) fail(`E paid ${eFunds - E.stats!.funds} for the plot and its buildings`);
+  console.log(`abandonment OK (E claimed D's plot as "${E.myClaims()[0].cityName}" with ${builtInD()} built tiles, funds ${eFunds} -> ${E.stats!.funds})`);
 
   console.log(`PASS (${((Date.now() - t0) / 1000).toFixed(0)} s)`);
   for (const c of clients) c.ws.close();
