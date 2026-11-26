@@ -34,6 +34,8 @@ export interface Camera { x: number; y: number; zoom: number }
 export interface TilePos { x: number; y: number }
 export interface ChunkRect { cx0: number; cy0: number; cx1: number; cy1: number }
 
+/** A well-mixed hash of an integer to [0, 1). */
+const hash01 = (n: number): number => { let h = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b); h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
 export const TILE_MODE_ZOOM = 0.5;
 export const MAX_ZOOM = 3;
 /** Pixels per tile a chunk canvas is drawn at: the sprite size, or half of it when that is all the screen shows
@@ -472,14 +474,19 @@ export class Renderer extends Emitter<RendererEvents> {
         g.save();
         g.beginPath(); g.arc(x, y, span, 0, Math.PI * 2); g.clip();
         const snow = kind === Disaster.Blizzard;
-        g.fillStyle = snow ? 'rgba(255,255,255,0.85)' : 'rgba(170,200,255,0.6)';
-        g.strokeStyle = 'rgba(170,200,255,0.6)'; g.lineWidth = Math.max(1, d);
-        const n = 260, t = now / 1000;
+        // a haze over the city (a whiteout, or grey rain), then the flakes or streaks
+        const haze = g.createRadialGradient(x, y, span * 0.2, x, y, span);
+        haze.addColorStop(0, snow ? 'rgba(235,242,250,0.38)' : 'rgba(40,55,80,0.32)');
+        haze.addColorStop(1, 'rgba(0,0,0,0)');
+        g.fillStyle = haze; g.fillRect(x - span, y - span, span * 2, span * 2);
+        g.fillStyle = snow ? 'rgba(255,255,255,0.9)' : 'rgba(170,200,255,0.6)';
+        g.strokeStyle = 'rgba(190,215,255,0.7)'; g.lineWidth = Math.max(1, d);
+        const n = 1100, t = now / 1000, flake = Math.max(2, Math.round(tp / 5));
         for (let i = 0; i < n; i++) {
-          const fx = ((i * 7919) % 1000) / 1000, fy = ((i * 104729) % 1000) / 1000;
+          const fx = hash01(i * 2 + 1), fy = hash01(i * 2 + 2); // independent positions, no stripes
           const px = x - span + ((fx * 2 * span + t * (snow ? 30 : 160) * d) % (2 * span));
           const py = y - span + ((fy * 2 * span + t * (snow ? 60 : 420) * d) % (2 * span));
-          if (snow) g.fillRect(px, py, 2 * d, 2 * d);
+          if (snow) g.fillRect(px, py, flake, flake);
           else { g.beginPath(); g.moveTo(px, py); g.lineTo(px - 3 * d, py + 9 * d); g.stroke(); }
         }
         g.restore();

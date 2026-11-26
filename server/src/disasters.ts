@@ -190,7 +190,7 @@ export class Disasters {
     switch (r.kind) {
       case Disaster.Flood: case Disaster.Storm: return (r.rise ?? 0) <= 0 && (r.hits ?? 0) <= 0 && !this.anyFlood(r);
       case Disaster.Tornado: return r.steps >= TORNADO_STEPS || !this.inCity(r.p, Math.round(r.x), Math.round(r.y)) && r.steps > 3;
-      case Disaster.Blizzard: return (r.hits ?? 0) <= 0;
+      case Disaster.Blizzard: return now >= r.until; // snows for its whole time, bringing lines down while there are any
       default: return now >= r.until;
     }
   }
