@@ -24,6 +24,7 @@ export const GROUND_PALETTES: Record<Biome, GroundPalette> = {
   [Biome.Tundra]: { dirt: 0xa8a48c, speck: 0x6c6c5c, speck2: 0x4c4c40, bank: 0x8c8466, leaf: 0x3ca050, leafDark: 0x1c5c2c },
   [Biome.Boreal]: { dirt: 0xe6eaf0, speck: 0xa4aebc, speck2: 0x7c8898, bank: 0xb4bcc8, leaf: 0xdce8e4, leafDark: 0x1c5c3c },
   [Biome.Snow]: { dirt: 0xf6f9fc, speck: 0xc4d2e2, speck2: 0xa4b4cc, bank: 0xc8d6e6, leaf: 0xe6eef0, leafDark: 0x2c6448 },
+  [Biome.Beach]: { dirt: 0xf2dea4, speck: 0xccb47c, speck2: 0xa89060, bank: 0xdcc490, leaf: 0x9cc048, leafDark: 0x5c7c28 },
 };
 export const ICE = { water: 0xd2e6f4, waterDark: 0x9cc4e0 } as const;
 

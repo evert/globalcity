@@ -5,6 +5,7 @@
 // which biome's art the tile is drawn with, whether its water is frozen, or a transition between two
 // biomes (or between ice and open water) at a border. The look follows from where the tile is and what kind
 // it is (see lookAt), so the server stamps it whenever it writes a tile and nothing else ever sets it.
+// Bits 16-25 (10 bits) hold it; a tile value stays below 2^26.
 //
 // The art for every look is baked into one sheet (client/public/assets/micropolis/skins.png, built by
 // `npm run gen:sheet -w tools`): every tile in every biome, the water tiles frozen, and the transition tiles.
@@ -15,9 +16,9 @@ import { Biome, BIOME_COUNT, BASE_BIOME_MASK, BASE_WATER, BASE_FROZEN } from './
 import { onWaterId } from './biomeart.ts';
 
 export const LOOK_SHIFT = 16;
-export const LOOK_BITS = 0x1ff << LOOK_SHIFT;
+export const LOOK_BITS = 0x3ff << LOOK_SHIFT;
 /** The look of a tile value. */
-export const lookOf = (v: number): number => (v >>> LOOK_SHIFT) & 0x1ff;
+export const lookOf = (v: number): number => (v >>> LOOK_SHIFT) & 0x3ff;
 /** A tile value without its look (kind + flags): what tools and the simulation work with. */
 export const withoutLook = (v: number): number => v & 0xffff;
 
@@ -25,10 +26,11 @@ export const withoutLook = (v: number): number => v & 0xffff;
 // 0..11: plain skins, biome * 2 + frozen
 // GROUND_LOOKS: biome A's tile with some corners in biome B (A above B in BIOME_PRECEDENCE)
 // ICE_LOOKS: a frozen water tile with some corners open
+// COAST_LOOKS: land of a biome with some corners rounded off into the water (open or frozen) around them
 export const SKIN_COUNT = BIOME_COUNT * 2;
 export const skinLook = (biome: Biome, frozen: boolean): number => biome * 2 + (frozen ? 1 : 0);
 /** Which biome's ground wins a border: transitions are drawn inside the tiles of the higher one. */
-export const BIOME_PRECEDENCE: readonly Biome[] = [Biome.Snow, Biome.Boreal, Biome.Tundra, Biome.Temperate, Biome.Steppe, Biome.Desert];
+export const BIOME_PRECEDENCE: readonly Biome[] = [Biome.Snow, Biome.Boreal, Biome.Tundra, Biome.Temperate, Biome.Steppe, Biome.Desert, Biome.Beach];
 const RANK: number[] = []; BIOME_PRECEDENCE.forEach((b, i) => { RANK[b] = i; });
 /** Ordered pairs (higher, lower) of biomes that can share a border. */
 export const GROUND_PAIRS: readonly [Biome, Biome][] = (() => {
@@ -41,22 +43,31 @@ const PAIR_INDEX = new Map(GROUND_PAIRS.map(([a, b], i) => [a * 8 + b, i]));
 export const CORNER_MASKS = 14;
 export const GROUND_LOOK_BASE = SKIN_COUNT;
 export const ICE_LOOK_BASE = GROUND_LOOK_BASE + GROUND_PAIRS.length * CORNER_MASKS;
-export const LOOK_COUNT = ICE_LOOK_BASE + BIOME_COUNT * CORNER_MASKS;
+export const COAST_LOOK_BASE = ICE_LOOK_BASE + BIOME_COUNT * CORNER_MASKS;
+/** Coast corners use all 15 masks (an islet of one tile has all four rounded). */
+export const COAST_MASKS = 15;
+export const LOOK_COUNT = COAST_LOOK_BASE + BIOME_COUNT * 2 * COAST_MASKS;
 export const groundLook = (a: Biome, b: Biome, mask: number): number => GROUND_LOOK_BASE + PAIR_INDEX.get(a * 8 + b)! * CORNER_MASKS + (mask - 1);
 export const iceLook = (biome: Biome, mask: number): number => ICE_LOOK_BASE + biome * CORNER_MASKS + (mask - 1);
+export const coastLook = (biome: Biome, frozen: boolean, mask: number): number => COAST_LOOK_BASE + (biome * 2 + (frozen ? 1 : 0)) * COAST_MASKS + (mask - 1);
 
 export type LookInfo =
   | { kind: 'skin'; biome: Biome; frozen: boolean }
   | { kind: 'ground'; a: Biome; b: Biome; mask: number }
-  | { kind: 'ice'; biome: Biome; mask: number };
+  | { kind: 'ice'; biome: Biome; mask: number }
+  | { kind: 'coast'; biome: Biome; frozen: boolean; mask: number };
 export function describeLook(look: number): LookInfo {
   if (look < SKIN_COUNT) return { kind: 'skin', biome: (look >> 1) as Biome, frozen: (look & 1) === 1 };
   if (look < ICE_LOOK_BASE) {
     const t = look - GROUND_LOOK_BASE, [a, b] = GROUND_PAIRS[Math.floor(t / CORNER_MASKS)];
     return { kind: 'ground', a, b, mask: (t % CORNER_MASKS) + 1 };
   }
-  const t = look - ICE_LOOK_BASE;
-  return { kind: 'ice', biome: Math.floor(t / CORNER_MASKS) as Biome, mask: (t % CORNER_MASKS) + 1 };
+  if (look < COAST_LOOK_BASE) {
+    const t = look - ICE_LOOK_BASE;
+    return { kind: 'ice', biome: Math.floor(t / CORNER_MASKS) as Biome, mask: (t % CORNER_MASKS) + 1 };
+  }
+  const t = look - COAST_LOOK_BASE, skin = Math.floor(t / COAST_MASKS);
+  return { kind: 'coast', biome: (skin >> 1) as Biome, frozen: (skin & 1) === 1, mask: (t % COAST_MASKS) + 1 };
 }
 
 // ---- which kinds get which art ----
@@ -101,6 +112,15 @@ export function lookAt(base: Uint8Array, x: number, y: number, kind: number): nu
       | (open(so) || open(sw) || open(w) ? 4 : 0) | (open(w) || open(nw) || open(n) ? 8 : 0);
     return mask === 0 ? skinLook(biome, true) : mask === 15 ? skinLook(biome, false) : iceLook(biome, mask);
   }
+  // land corners that stick out into the water (water on both sides of the corner) are rounded off
+  const wn = (n & BASE_WATER) !== 0, we = (e & BASE_WATER) !== 0, ws = (so & BASE_WATER) !== 0, ww = (w & BASE_WATER) !== 0;
+  if (!(own & BASE_WATER) && (wn || ws) && (we || ww)) {
+    const coast = (wn && we ? 1 : 0) | (we && ws ? 2 : 0) | (ws && ww ? 4 : 0) | (ww && wn ? 8 : 0);
+    if (coast) {
+      const water = wn ? n : ws ? so : 0; // the water the corners open onto: frozen or not
+      return coastLook(biome, (water & BASE_FROZEN) !== 0, coast);
+    }
+  }
   // each corner takes the lowest-precedence biome among the four tiles meeting there
   const c0 = lowest(biome, n, ne, e), c1 = lowest(biome, e, se, so), c2 = lowest(biome, so, sw, w), c3 = lowest(biome, w, nw, n);
   if (c0 === biome && c1 === biome && c2 === biome && c3 === biome) return skinLook(biome, false);
@@ -131,12 +151,13 @@ export const CORNER_DIR: readonly [number, number][] = [[1, -1], [1, 1], [-1, 1]
 // [frozen: per biome, the FROZEN_KINDS]
 // [ground transitions: per look, the GROUND_TRANSITION_KINDS]
 // [ice transitions: per look, the ICE_TRANSITION_KINDS]
-export const SHEET_COLS = 64;
+export const SHEET_COLS = 128;
 const KINDS = T.LOMASK + 1;
 export const SHEET_FROZEN_BASE = BIOME_COUNT * KINDS;
 export const SHEET_GROUND_BASE = SHEET_FROZEN_BASE + BIOME_COUNT * FROZEN_KINDS.length;
 export const SHEET_ICE_BASE = SHEET_GROUND_BASE + GROUND_PAIRS.length * CORNER_MASKS * GROUND_TRANSITION_KINDS.length;
-export const SHEET_TILES = SHEET_ICE_BASE + BIOME_COUNT * CORNER_MASKS * ICE_TRANSITION_KINDS.length;
+export const SHEET_COAST_BASE = SHEET_ICE_BASE + BIOME_COUNT * CORNER_MASKS * ICE_TRANSITION_KINDS.length;
+export const SHEET_TILES = SHEET_COAST_BASE + BIOME_COUNT * 2 * COAST_MASKS * GROUND_TRANSITION_KINDS.length;
 
 /** Sheet position of every (look, kind): built once, LOOK_COUNT x 1024 entries. */
 const SHEET_OF: Int32Array = (() => {
@@ -149,8 +170,9 @@ const SHEET_OF: Int32Array = (() => {
       let s: number;
       if (d.kind === 'skin') s = d.frozen && frozenSlot[k] >= 0 ? SHEET_FROZEN_BASE + d.biome * FROZEN_KINDS.length + frozenSlot[k] : d.biome * KINDS + k;
       else if (d.kind === 'ground') s = groundSlot[k] >= 0 ? SHEET_GROUND_BASE + (look - GROUND_LOOK_BASE) * GROUND_TRANSITION_KINDS.length + groundSlot[k] : d.a * KINDS + k;
-      else s = iceSlot[k] >= 0 ? SHEET_ICE_BASE + (look - ICE_LOOK_BASE) * ICE_TRANSITION_KINDS.length + iceSlot[k]
+      else if (d.kind === 'ice') s = iceSlot[k] >= 0 ? SHEET_ICE_BASE + (look - ICE_LOOK_BASE) * ICE_TRANSITION_KINDS.length + iceSlot[k]
         : frozenSlot[k] >= 0 ? SHEET_FROZEN_BASE + d.biome * FROZEN_KINDS.length + frozenSlot[k] : d.biome * KINDS + k;
+      else s = groundSlot[k] >= 0 ? SHEET_COAST_BASE + (look - COAST_LOOK_BASE) * GROUND_TRANSITION_KINDS.length + groundSlot[k] : d.biome * KINDS + k;
       t[look * KINDS + k] = s;
     }
   }

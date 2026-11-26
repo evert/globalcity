@@ -3,11 +3,12 @@
 //   - frozen: the tiles that lie on water, iced over, per biome
 //   - ground transitions: bare ground and trees of one biome with some corners frayed into another
 //   - ice transitions: frozen water with some corners open
+//   - coast corners: land with the corners that stick out into the water rounded off, with a bank line
 // Run after art/sheet/build_sheet.py whenever tiles.png or the palettes change:  npm run gen:sheet -w tools
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { TILE_PX, SHEET_COLS, SHEET_TILES, SKIN_COUNT, recolourSheet, describeLook, sheetEntries } from '@globalcity/shared';
+import { TILE_PX, SHEET_COLS, SHEET_TILES, SKIN_COUNT, RIVER, GROUND_PALETTES, recolourSheet, describeLook, sheetEntries } from '@globalcity/shared';
 import { readPng, writePngRgb } from './png.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -52,13 +53,32 @@ function copyTile(from: Uint8Array, kind: number, to: number, mask = 0, cornerFr
   }
 }
 
+// Coast corners: inside a quarter circle around each rounded corner the tile shows the water tile; a one-pixel
+// bank (the biome's shore colour, as on Micropolis' own shore tiles) runs along the curve.
+const R_COAST = T * 0.56;
+function coastTile(land: Uint8Array, water: Uint8Array, bank: number, kind: number, to: number, mask: number): void {
+  const sx = (kind % srcCols) * T, sy = Math.floor(kind / srcCols) * T;
+  const wx = (RIVER % srcCols) * T, wy = Math.floor(RIVER / srcCols) * T;
+  const dx = (to % SHEET_COLS) * T, dy = Math.floor(to / SHEET_COLS) * T;
+  for (let y = 0; y < T; y++) for (let x = 0; x < T; x++) {
+    let d = Infinity;
+    for (let c = 0; c < 4; c++) if (mask & (1 << c)) d = Math.min(d, Math.hypot(x + 0.5 - CORNERS[c][0], y + 0.5 - CORNERS[c][1]));
+    const o = ((dy + y) * out.w + dx + x) * 4;
+    if (d < R_COAST - 1) { const s2 = ((wy + y) * base.w + wx + x) * 4; out.px[o] = water[s2]; out.px[o + 1] = water[s2 + 1]; out.px[o + 2] = water[s2 + 2]; }
+    else if (d < R_COAST) { out.px[o] = (bank >> 16) & 255; out.px[o + 1] = (bank >> 8) & 255; out.px[o + 2] = bank & 255; }
+    else { const s2 = ((sy + y) * base.w + sx + x) * 4; out.px[o] = land[s2]; out.px[o + 1] = land[s2 + 1]; out.px[o + 2] = land[s2 + 2]; }
+    out.px[o + 3] = 255;
+  }
+}
+
 let n = 0;
 for (const { index, look, kind } of sheetEntries()) {
   if (kind >= srcCols * (base.h / T)) continue;
   const d = describeLook(look);
   if (d.kind === 'skin') copyTile(skins[d.biome * 2 + (d.frozen ? 1 : 0)], kind, index);
   else if (d.kind === 'ground') copyTile(skins[d.a * 2], kind, index, d.mask, skins[d.b * 2]);
-  else copyTile(skins[d.biome * 2 + 1], kind, index, d.mask, skins[d.biome * 2]);
+  else if (d.kind === 'ice') copyTile(skins[d.biome * 2 + 1], kind, index, d.mask, skins[d.biome * 2]);
+  else coastTile(skins[d.biome * 2], skins[d.biome * 2 + (d.frozen ? 1 : 0)], GROUND_PALETTES[d.biome].bank, kind, index, d.mask);
   n++;
 }
 writeFileSync(OUT, writePngRgb(out));

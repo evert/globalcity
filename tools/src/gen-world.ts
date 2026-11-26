@@ -296,11 +296,11 @@ async function main() {
   need(TREE_FILE, TREE_URL);
 
   // 1. land / water: Natural Earth land plus the Antarctic ice shelves, minus lakes and major rivers
-  const grid = new Uint8Array(W * H); // 1 = land
+  const grid = new Uint8Array(W * H); // 0 sea, 1 land, 2 lake or river
   fillPolygons(grid, land.json.features, 1);
   fillPolygons(grid, shelves.json.features, 1);
   log('land rasterized');
-  fillPolygons(grid, lakes.json.features, 0);
+  fillPolygons(grid, lakes.json.features, 2);
   log('lakes rasterized');
   let nRivers = 0;
   for (const f of rivers.json.features) {
@@ -312,7 +312,7 @@ async function main() {
     nRivers++;
     for (const ls of lines)
       for (let i = 0; i < ls.length - 1; i++)
-        line(grid, px(ls[i][0]), py(ls[i][1]), px(ls[i + 1][0]), py(ls[i + 1][1]), 0);
+        line(grid, px(ls[i][0]), py(ls[i][1]), px(ls[i + 1][0]), py(ls[i + 1][1]), 2);
   }
   log(`rivers drawn: ${nRivers}`);
   // 2. ice: glaciers and ice shelves are snow-covered land
@@ -406,7 +406,39 @@ async function main() {
     }
     if ((y0 / STRIP) % 8 === 0) log(`climate/forest/ice rows ${y0}..${y1}`);
   }
-  // 4. water tiles take the ground of the land next to them, so shorelines are drawn in that biome
+  // 4. beaches: warm and temperate land within a tile or two of open sea turns to sand, in long stretches with
+  // rocky bits between (lakes and rivers get none, nor do cold or icy coasts)
+  {
+    const dist = ice; // done with the glacier mask: reuse it as distance to open sea (255 = far)
+    dist.fill(255);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      if (grid[i] !== 0 || (out[i] & BASE_FROZEN)) continue;
+      // open sea next to land: mark the land within two tiles
+      if (!((x > 0 && grid[i - 1] === 1) || (x < W - 1 && grid[i + 1] === 1) || (y > 0 && grid[i - W] === 1) || (y < H - 1 && grid[i + W] === 1))) continue;
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+        const xx = (x + dx + W) % W, yy = y + dy;
+        if (yy < 0 || yy >= H) continue;
+        const j = yy * W + xx;
+        if (grid[j] === 1) dist[j] = Math.min(dist[j], Math.max(Math.abs(dx), Math.abs(dy)));
+      }
+    }
+    let beaches = 0;
+    for (let i = 0; i < W * H; i++) {
+      if (dist[i] > 2 || (out[i] & BASE_WATER)) continue;
+      const b = out[i] & BASE_BIOME_MASK;
+      if (b !== Biome.Temperate && b !== Biome.Steppe && b !== Biome.Desert) continue;
+      const x = i % W, y = (i - x) / W;
+      const n = fbm(x / 40, y / 40, 777, 3);
+      const width = n < 0.44 ? 0 : n > 0.6 ? 2 : 1;
+      if (dist[i] > width) continue;
+      out[i] = Biome.Beach; // sand, no trees
+      beaches++;
+    }
+    log(`beaches: ${beaches} tiles`);
+  }
+
+  // 5. water tiles take the ground of the land next to them, so shorelines are drawn in that biome
   for (let pass = 0; pass < 2; pass++) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = y * W + x;
     if (!(out[i] & BASE_WATER)) continue;
@@ -423,7 +455,7 @@ async function main() {
   writeFileSync(resolve(OUT, 'base.bin'), out);
   writeFileSync(resolve(OUT, 'base.json'), JSON.stringify({
     w: W, h: H, version: 2,
-    layout: 'one byte per tile: bits 0-3 biome (0 temperate, 1 desert, 2 steppe, 3 tundra, 4 boreal, 5 snow), 0x20 trees, 0x40 frozen, 0x80 water',
+    layout: 'one byte per tile: bits 0-3 biome (0 temperate, 1 desert, 2 steppe, 3 tundra, 4 boreal, 5 snow, 6 beach), 0x20 trees, 0x40 frozen, 0x80 water',
     generatedAt: new Date().toISOString(),
     sources: [land.url, lakes.url, rivers.url, glaciers.url, shelves.url, KOPPEN_URL, TREE_URL, SEAICE_URL],
   }, null, 2));
@@ -433,7 +465,7 @@ async function main() {
   const rgb = new Uint8Array(mw * mh * 3);
   const PAL: Record<string, [number, number, number]> = {
     water: [0x66, 0x66, 0xe6], ice: [0xd8, 0xe8, 0xf4],
-    g0: [0xcc, 0x7f, 0x66], g1: [0xe6, 0xc8, 0x8c], g2: [0xc4, 0xb0, 0x70], g3: [0x9c, 0x9c, 0x84], g4: [0xc8, 0xc8, 0xc8], g5: [0xff, 0xff, 0xff],
+    g0: [0xcc, 0x7f, 0x66], g1: [0xe6, 0xc8, 0x8c], g2: [0xc4, 0xb0, 0x70], g3: [0x9c, 0x9c, 0x84], g4: [0xc8, 0xc8, 0xc8], g5: [0xff, 0xff, 0xff], g6: [0xf2, 0xde, 0xa4],
     t0: [0x00, 0xb8, 0x00], t1: [0x70, 0x90, 0x30], t2: [0x60, 0x98, 0x30], t3: [0x40, 0x80, 0x40], t4: [0x1c, 0x60, 0x3c], t5: [0x1c, 0x60, 0x3c],
   };
   const counts = new Map<string, number>();
@@ -455,7 +487,7 @@ async function main() {
   const pct = (v: number, of: number) => `${((v / of) * 100).toFixed(1)}%`;
   console.log('--- summary ---');
   console.log(`land:   ${landCount} tiles (${pct(landCount, W * H)} of world), forest ${pct(stats[10], landCount)} of land`);
-  console.log(`biomes: ${['temperate', 'desert', 'steppe', 'tundra', 'boreal', 'snow'].map((n, b) => `${n} ${pct(stats[2 + b], landCount)}`).join(', ')}`);
+  console.log(`biomes: ${['temperate', 'desert', 'steppe', 'tundra', 'boreal', 'snow'].map((n, b) => `${n} ${pct(stats[2 + b], landCount)}`).join(', ')} (before beaches)`);
   console.log(`water:  ${stats[0] + stats[1]} tiles, frozen ${pct(stats[1], stats[0] + stats[1])}`);
   console.log(`elapsed: ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 }
