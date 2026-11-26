@@ -1,7 +1,7 @@
 // Dev helper: fills a save with fake, fully built cities at real places, to see how the map looks with a busy
 // world at every zoom. Never run it against a real save: it adds made-up players.
 //
-//   npx tsx scripts/seed-demo-cities.ts <save dir> [count] [--spacing <chunks>] [--fill <share>]
+//   npx tsx scripts/seed-demo-cities.ts <save dir> [count] [--spacing <chunks>] [--fill <share>] [--live]
 //   (the server must NOT be running on that save)
 //
 // count: how many cities at real places (default 90); --spacing: least distance between them in chunks (default 12;
@@ -11,7 +11,8 @@
 // Bigger places get more plots. Cities are laid out SimCity-style: a road grid with 3x3 zones, commercial in the
 // centre, homes around it, industry, a coal plant and sometimes an airport or stadium at the edge, busy roads
 // in the middle. Every building is powered. The mayors were "last seen" 20 minutes ago, so the simulation keeps
-// the cities frozen exactly like this (and lit at night) instead of growing or decaying them.
+// the cities frozen exactly like this (and lit at night) instead of growing or decaying them. With --live the
+// cities take part in the simulation instead (run the server with ALL_ONLINE=1 to keep them all running).
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -27,6 +28,7 @@ const root = path.resolve(import.meta.dirname, '../..');
 const args = process.argv.slice(2);
 const flag = (name: string): number | null => { const i = args.indexOf(name); if (i < 0) return null; const v = Number(args[i + 1]); args.splice(i, 2); return v; };
 const SPACING = flag('--spacing') ?? 12, FILL = flag('--fill') ?? 0;
+const LIVE = args.includes('--live'); if (LIVE) args.splice(args.indexOf('--live'), 1);
 const saveDir = path.resolve(root, args[0] ?? '');
 const COUNT = Number(args[1]) || 90;
 if (!args[0] || !fs.existsSync(path.join(saveDir, 'state.json'))) {
@@ -165,7 +167,7 @@ function makeCity(city: { name: string; x: number; y: number; pop: number }): bo
   const keys = chunks.map((c) => chunkKey(c.cx, c.cy));
   state.players.push({
     id, token: crypto.randomBytes(16).toString('hex'), name: `Demo ${city.name}`, cityName: city.name, color: colorForId(id),
-    funds: 50_000, chunks: keys, createdAt: now - 86_400_000, lastSeen: now - 20 * 60_000, active: false, yearIncome: 0, peakPop: population,
+    funds: 50_000, chunks: keys, createdAt: now - 86_400_000, lastSeen: now - 20 * 60_000, active: LIVE, yearIncome: 0, peakPop: population,
     stats: { ...template, funds: 50_000, population, resPop: pops.res, comPop: pops.com, indPop: pops.ind, chunks: keys.length, peakPop: population },
   });
   for (const k of keys) { state.claims.push([k, id]); claimed.add(k); }
