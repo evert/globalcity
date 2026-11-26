@@ -12,9 +12,13 @@ SimCity is a trademark of Electronic Arts; this project is not affiliated with E
 
 ## How it works
 
-- The world is an 8192 x 4096 tile grid in equirectangular projection (about 5 km per
-  tile at the equator). Coastlines, lakes and major rivers come from Natural Earth,
-  forests from deterministic noise.
+- The world is a 16384 x 8192 tile grid in equirectangular projection (about 2.4 km per
+  tile at the equator). Coastlines, lakes, major rivers, glaciers and ice shelves come from
+  Natural Earth; biomes (desert, steppe, tundra, snowy boreal forest, ice sheets) from the
+  Beck et al. Koppen-Geiger climate map; forests from 1 km satellite tree cover; frozen seas
+  from 10 years of NSIDC sea ice (frozen where there was ice at least half of the time).
+  Frozen water is still water, but ships can't cross it. Biomes are the Micropolis art in
+  other colours (shared/src/biomeart.ts).
 - The grid is split into 64 x 64 tile chunks. A chunk is the unit players claim and the
   unit the client streams. Your first claim is free; each further plot costs more than the last
   ($25,000 for the second, rising 1.75x per plot, 10 plots max) and must touch a chunk you already own.
@@ -22,9 +26,12 @@ SimCity is a trademark of Electronic Arts; this project is not affiliated with E
   runs a simplified Micropolis simulation for every active city once per game month
   (5 seconds), and pushes tile deltas over WebSockets to clients subscribed to those chunks.
 - Persistence is plain files under `data/save/` (edited chunks + players/claims JSON),
-  flushed every 10 seconds and on shutdown.
-- The client is Vite + vanilla TypeScript + Canvas 2D. Zoomed out you see the Earth with
-  every claimed plot coloured by owner; zoomed in you see Micropolis tiles.
+  flushed every 10 seconds and on shutdown. A save is stamped with its world size
+  (`world.txt`) and the server refuses to load it into a world of another size.
+- The client is Vite + vanilla TypeScript + Canvas 2D. Zoomed in you see Micropolis tiles.
+  Zoomed out you see map images the server renders (`/map/...`, a 7-level pyramid of
+  256 x 256 palette PNGs with versioned, cacheable URLs; see shared/src/maptiles.ts), so
+  the client only fetches and draws what is on screen at the detail the zoom needs.
 
 ## Running it
 
@@ -32,7 +39,8 @@ Requires Node 22+ (24 recommended).
 
 ```sh
 npm install
-npm run gen:world      # downloads Natural Earth data and rasterises the world (one-off, ~1-2 min)
+bash tools/fetch-terrain-data.sh   # climate, tree cover and sea ice rasters (~300 MB, one-off)
+npm run gen:world      # downloads Natural Earth data and rasterises the world (one-off, ~2 min)
 npm run dev            # server on :8787, Vite client on :5173 (proxies /ws)
 ```
 
