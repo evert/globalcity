@@ -12,6 +12,7 @@ import { ZONE_TOOLS, type TouchPlan } from './input.ts';
 import { NIGHT_REFRESH_MS } from './night.ts';
 import { isFireTile, withAlpha } from './renderer.ts';
 import type { AppState } from './state.ts';
+import { fetchWorldReset, pushState, enablePush, disablePush, type PushState } from './push.ts';
 
 /** Toolbar groups: members share one button with a flyout once two or more of them are unlocked. */
 const TOOL_GROUPS: { id: string; name: string; members: ToolId[] }[] = [
@@ -45,6 +46,13 @@ const WELCOMED_KEY = 'globalcity.welcomed';
 /** how many times this browser has opened the game, and whether it has been invited to the Discord yet */
 const VISITS_KEY = 'globalcity.visits';
 const DISCORD_ASKED_KEY = 'globalcity.discordAsked';
+/** The Discord invite is off while the world reset dialog (which links the Discord too) takes its place. */
+const DISCORD_INVITE_ENABLED = false;
+/** the world reset time this browser last opened the world reset dialog for (it opens once by itself per date) */
+const RESET_SEEN_KEY = 'globalcity.resetSeen';
+/** how long after the reset time the top bar still says it is happening */
+const RESET_GRACE_MS = 6 * 3600_000;
+const RESET_REFRESH_MS = 15 * 60_000;
 const TOAST_DEDUP_MS = 3000;
 const POWER_TRADE_HELP = 'Power flows over wires across plot borders; surplus is sold at $1 per unit per month.';
 export const NEIGHBOUR_HELP = "Neighbouring cities' jobs and shoppers add demand across the border; rail connecting your zones to theirs boosts commerce.";
@@ -128,6 +136,9 @@ export class UI {
   /** we saw this player with zero plots this session, so the next plot is a founding */
   private sawNoPlots = false; private foundedToastShown = false;
   private discordInvite!: HTMLElement;
+  private resetBtn!: HTMLButtonElement; private resetPanel!: HTMLElement; private resetTitle!: HTMLElement; private resetWhen!: HTMLElement;
+  private resetNums!: HTMLElement[]; private resetNotifyBtn!: HTMLButtonElement; private resetNote!: HTMLElement;
+  private resetAt: number | null = null; private vapidKey = ''; private pushState: PushState = 'unsupported';
   private about!: HTMLElement;
   private mini!: HTMLCanvasElement; private miniDirty = true;
 
@@ -157,6 +168,7 @@ export class UI {
     this.buildAbandon();
     this.buildBudget();
     this.buildDiscordInvite();
+    this.buildWorldReset();
     this.buildMinimap();
     this.root.append(this.toasts, this.query, this.touchBar, this.banners);
     this.bind();
@@ -201,6 +213,8 @@ export class UI {
     this.abandonBtn.onclick = () => this.toggleAbandon();
     this.fireBtn = el('button', { class: 'btn fire hidden', id: 'fireBtn', title: 'Your city is burning! Click to jump to the next fire.' }, '🔥 0 fires');
     this.fireBtn.onclick = () => this.nextFire();
+    this.resetBtn = el('button', { class: 'btn hidden', id: 'resetBtn', title: 'The world resets soon: click to see what the new world brings' }, '⏳');
+    this.resetBtn.onclick = () => this.toggleWorldReset();
     const discordBtn = discordLink('', 'btn ghost discord-btn');
     discordBtn.append(discordIcon(), el('span', { class: 'discord-label' }, 'Discord'));
     discordBtn.setAttribute('aria-label', 'GlobalCity Discord');
@@ -217,7 +231,7 @@ export class UI {
       el('div', { class: 'stat', title: 'Players online' }, el('span', { class: 'ico online-dot' }, '●'), this.online),
       el('div', { class: 'stat world-pop', title: 'World population: every city on the planet combined' }, el('span', { class: 'ico' }, '🌍'), this.worldPop),
       this.plotsStat,
-      this.claimBtn, this.findBtn, this.cityBtn, this.worldBtn, this.msBtn, this.budgetBtn, this.lbBtn, this.lifelineBtn, this.abandonBtn, this.monumentBtn, this.fireBtn,
+      this.claimBtn, this.findBtn, this.cityBtn, this.worldBtn, this.msBtn, this.budgetBtn, this.lbBtn, this.lifelineBtn, this.abandonBtn, this.monumentBtn, this.fireBtn, this.resetBtn,
       el('div', { class: 'spacer' }),
       this.status, this.cityNameBtn, this.nameBtn, discordBtn, aboutBtn,
     );
@@ -643,7 +657,7 @@ export class UI {
       localStorage.setItem(VISITS_KEY, String(visits));
       asked = localStorage.getItem(DISCORD_ASKED_KEY) === '1';
     } catch { return; } // no storage: we can't tell a second visit from the first
-    if (visits < 2 || asked) return;
+    if (!DISCORD_INVITE_ENABLED || visits < 2 || asked) return;
     // a few seconds in, once nothing else (the welcome, a budget screen, ...) is open; give up after a minute
     let tries = 0;
     const attempt = (): void => {
@@ -653,6 +667,130 @@ export class UI {
       this.show(this.discordInvite);
     };
     setTimeout(attempt, 4000);
+  }
+
+  // ---------- world reset ----------
+  /** The countdown to the world reset in the top bar, and the dialog behind it: what the new world brings, a
+   *  "Notify me" button (Web Push, see push.ts) and the Discord. Opens by itself once per reset date. */
+  private buildWorldReset(): void {
+    const close = el('button', { class: 'btn ghost round close', title: 'Close' }, '×');
+    close.onclick = () => this.hide(this.resetPanel);
+    this.resetTitle = el('h2', { text: 'A new world is coming' });
+    this.resetWhen = el('p', { class: 'wr-when' });
+    const seg = (label: string): [HTMLElement, HTMLElement] => {
+      const num = el('span', { class: 'num', text: '--' });
+      return [el('div', { class: 'seg' }, num, el('span', { class: 'lbl', text: label })), num];
+    };
+    const segs = [seg('days'), seg('hours'), seg('min'), seg('sec')];
+    this.resetNums = segs.map((s) => s[1]);
+    const map = el('figure', { class: 'wr-map' },
+      el('img', { src: '/assets/new-world.png', width: '512', height: '256', alt: 'Map of the new world, coloured by biome: deserts, grassland, forests, tundra and ice', loading: 'lazy' }),
+      el('figcaption', { class: 'muted', text: 'The new world, coloured by its biomes' }));
+    const item = (ico: string, head: string, text: string): HTMLElement =>
+      el('li', {}, el('span', { class: 'wr-ico' }, ico), el('span', {}, el('b', { text: head }), ' ', text));
+    this.resetNotifyBtn = el('button', { class: 'btn primary', type: 'button' }, '🔔 Notify me');
+    this.resetNotifyBtn.onclick = () => void this.toggleResetPush();
+    const discord = el('a', { class: 'btn discord-btn', href: DISCORD_URL, target: '_blank', rel: 'noopener noreferrer' }, discordIcon(), el('span', {}, 'Join the Discord'));
+    this.resetNote = el('p', { class: 'wr-note muted hidden' });
+    this.resetPanel = el('div', { id: 'worldReset', class: 'panel card hidden', role: 'dialog', 'aria-label': 'World reset' },
+      close,
+      this.resetTitle,
+      el('div', { class: 'wr-count' }, ...segs.map((s) => s[0])),
+      this.resetWhen,
+      map,
+      el('ul', { class: 'wr-list' },
+        item('🌍', '4× the size.', 'The map is twice as wide and twice as tall, with room for many more cities.'),
+        item('🏜', 'More biomes.', "Deserts, savanna, rainforest, tundra, ice sheets and frozen seas, drawn from Earth's real climate."),
+        item('🌪', 'Natural disasters', 'where they happen on Earth: earthquakes, floods, tornadoes, tropical storms, wildfires and blizzards.'),
+      ),
+      el('p', { class: 'muted', text: 'When the countdown ends, the current world is retired and every mayor starts fresh on the new map.' }),
+      el('div', { class: 'row' }, this.resetNotifyBtn, discord),
+      this.resetNote,
+    );
+    this.root.append(this.resetPanel);
+    if (location.hash.startsWith('#selftest')) return;
+    const load = async (): Promise<void> => {
+      const r = await fetchWorldReset();
+      if (!r) return;
+      this.resetAt = r.at; this.vapidKey = r.vapidKey;
+      this.tickWorldReset();
+      if (this.resetAt !== null && Date.now() < this.resetAt) this.autoOpenWorldReset(this.resetAt);
+    };
+    void load();
+    setInterval(() => void load(), RESET_REFRESH_MS);
+    setInterval(() => this.tickWorldReset(), 1000);
+  }
+
+  /** Open the dialog once per reset date, a few seconds in and once nothing else is open; give up after a minute. */
+  private autoOpenWorldReset(at: number): void {
+    try { if (localStorage.getItem(RESET_SEEN_KEY) === String(at)) return; } catch { return; }
+    let tries = 0;
+    const attempt = (): void => {
+      if (this.resetAt !== at) return;
+      const busy = !this.state.me || [...this.root.querySelectorAll('.card')].some((c) => !c.classList.contains('hidden'));
+      if (busy) { if (++tries < 12) setTimeout(attempt, 5000); return; }
+      this.openWorldReset();
+    };
+    setTimeout(attempt, 4000);
+  }
+
+  private toggleWorldReset(): void {
+    if (this.resetPanel.classList.contains('hidden')) this.openWorldReset(); else this.hide(this.resetPanel);
+  }
+
+  private openWorldReset(): void {
+    try { if (this.resetAt !== null) localStorage.setItem(RESET_SEEN_KEY, String(this.resetAt)); } catch { /* ignore */ }
+    this.tickWorldReset();
+    this.show(this.resetPanel);
+    void pushState(this.vapidKey).then((st) => this.showResetPush(st));
+  }
+
+  /** Update the top bar countdown (and the dialog's, while open) once a second. */
+  private tickWorldReset(): void {
+    const at = this.resetAt, now = Date.now();
+    const active = at !== null && now < at + RESET_GRACE_MS;
+    this.resetBtn.classList.toggle('hidden', !active);
+    if (!active) { this.hide(this.resetPanel); return; }
+    const left = Math.max(0, at - now);
+    const s = Math.floor(left / 1000), d = Math.floor(s / 86400), h = Math.floor(s / 3600) % 24, m = Math.floor(s / 60) % 60, sec = s % 60;
+    const p2 = (n: number): string => String(n).padStart(2, '0');
+    this.resetBtn.textContent = left === 0 ? '🌍 New world!' : d > 0 ? `⏳ ${d}d ${p2(h)}h ${p2(m)}m` : `⏳ ${p2(h)}:${p2(m)}:${p2(sec)}`;
+    this.resetBtn.classList.toggle('soon', left > 0 && left < 86_400_000);
+    if (this.resetPanel.classList.contains('hidden')) return;
+    [d, h, m, sec].forEach((n, i) => { this.resetNums[i].textContent = i === 0 ? String(n) : p2(n); });
+    this.resetTitle.textContent = left === 0 ? 'The world is resetting now' : 'A new world is coming';
+    this.resetWhen.textContent = `${left === 0 ? 'The reset started' : 'The world resets'} ${new Date(at).toLocaleString(undefined, { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}.`;
+  }
+
+  private showResetPush(st: PushState, error = ''): void {
+    this.pushState = st;
+    const btn = this.resetNotifyBtn;
+    btn.disabled = st === 'denied';
+    btn.classList.toggle('hidden', st === 'unsupported' || st === 'ios-install');
+    btn.classList.toggle('primary', st !== 'on');
+    btn.textContent = st === 'on' ? '🔕 Turn off notification' : '🔔 Notify me';
+    const note = error || {
+      unsupported: "This browser can't show notifications. Join the Discord to hear the moment the new world opens.",
+      'ios-install': 'On iPhone or iPad, tap Share, then "Add to Home Screen", open GlobalCity from there and tap Notify me. Or join the Discord.',
+      denied: "Notifications are blocked for GlobalCity. Allow them in your browser's site settings, or join the Discord.",
+      off: '',
+      on: "✓ You're on the list: we'll send you a notification when the new world opens.",
+    }[st];
+    this.resetNote.textContent = note;
+    this.resetNote.classList.toggle('hidden', !note);
+  }
+
+  private async toggleResetPush(): Promise<void> {
+    const btn = this.resetNotifyBtn;
+    btn.disabled = true;
+    try {
+      this.showResetPush(this.pushState === 'on' ? await disablePush() : await enablePush(this.vapidKey));
+    } catch (e) {
+      // e.g. a private window, where Chrome has no Push API but can't say so up front
+      const why = (e as Error).message;
+      this.showResetPush(await pushState(this.vapidKey).catch(() => 'off' as const),
+        `Couldn't turn on notifications in this browser${why ? ` (${why})` : ''}. Private windows can't get them; join the Discord instead.`);
+    }
   }
 
   private buildLifeline(): void {

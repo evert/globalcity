@@ -22,6 +22,10 @@ without them no update can be uploaded.
 The app needs Android 7.0 or newer (minSdk 24, required by androidbrowserhelper 2.7, which draws the launch screen
 edge-to-edge as Android 15 expects). It targets SDK 36.
 
+Notification delegation is on (since 1.0.2): the site's Web Push notifications (the world reset "Notify me")
+show as the app's own Android notifications with `ic_notification_icon` (white globe), and Android 13+ asks for
+the notification permission when the player taps "Notify me". Older app versions still get them, from Chrome.
+
 To release a new version, bump `versionCode` (must always increase) and `versionName` in `app/build.gradle`
 and `twa-manifest.json`, then run the script.
 

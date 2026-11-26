@@ -33,6 +33,7 @@ TESTS=(
   "regrow|REGROW_MS=1000 REGROW_P=0.5 CITY_FREEZE_MS=3000"
   "smallrelease|SMALL_CITY_RELEASE_MS=3000"
   "custom|"
+  "notify|"
 )
 
 want=" $* "
@@ -73,7 +74,7 @@ for entry in "${TESTS[@]}"; do
     echo "FAIL $name: server did not start"; tail -20 "$WORK/$name-server.log"
     failed+=("$name"); stop_server; continue
   fi
-  if PORT="$PORT" TICK_MS="$TICK_MS" timeout "$TEST_TIMEOUT" npx tsx "$file" > "$WORK/$name.log" 2>&1; then
+  if PORT="$PORT" TICK_MS="$TICK_MS" DATA_DIR="$save" timeout "$TEST_TIMEOUT" npx tsx "$file" > "$WORK/$name.log" 2>&1; then
     echo "PASS $name ($(( $(date +%s) - t0 ))s)"; passed+=("$name")
   else
     echo "FAIL $name ($(( $(date +%s) - t0 ))s)"; tail -20 "$WORK/$name.log" | sed 's/^/    /'

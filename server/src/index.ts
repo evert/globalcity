@@ -8,6 +8,8 @@
 //              {t:'devFunds',amount} grants money, and random fire outbreaks are disabled so tests are
 //              deterministic. Never set in production.
 //   ABANDON_DAY_MS  length of an abandonment "day" in ms (default 86400000; tests use 1000)
+//   NOTIFY_DB  world reset notification sign-ups (SQLite; default notify.db beside the save directory, so it
+//              survives the world reset)
 
 import os from 'node:os';
 import path from 'node:path';
@@ -18,6 +20,7 @@ import { Places } from './places.ts';
 import { Persist } from './persist.ts';
 import { Sim } from './sim.ts';
 import { Net } from './net.ts';
+import { Notify } from './notify.ts';
 import { log, warn, timed } from './util.ts';
 
 const TILE_FLUSH_MS = 100;
@@ -44,7 +47,8 @@ const chunksLoaded = timed('Overlay saved chunks', () => persist.loadChunks());
 log(`State: ${hadState ? `${players.players.size} players, ${players.claims.size} claims` : 'fresh'}; ${chunksLoaded} saved chunk(s); clock ${players.time.year}-${String(players.time.month + 1).padStart(2, '0')}`);
 
 const sim = new Sim(world, players, { randomFires: !devHooks });
-const net = new Net(world, players, sim, clientDist, root, { devHooks, dataDir: saveDir });
+const notify = new Notify(path.resolve(root, process.env.NOTIFY_DB || path.join(path.dirname(saveDir), 'notify.db')), devHooks);
+const net = new Net(world, players, sim, clientDist, root, { devHooks, dataDir: saveDir, notify });
 try {
   await net.listen(port, host);
 } catch (e) {

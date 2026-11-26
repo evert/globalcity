@@ -6,9 +6,14 @@
 #   deploy/pi/admin.sh clear
 #   deploy/pi/admin.sh status
 #   deploy/pi/admin.sh grant <mayor name | player id prefix> <amount>   # cash for one city, live
+#   deploy/pi/admin.sh signups                 # world reset: when, and how many players asked to be notified
+#   deploy/pi/admin.sh reset-at 2026-12-03T12:00:00-05:00 | none   # move (or cancel) the world reset countdown
+#   deploy/pi/admin.sh notify-reset [--again]  # send "the new world is open" to everyone who signed up
 #
 # Announcements show as a banner to everyone online and to anyone connecting before they expire
 # (players can dismiss them). Clients from before banners existed get the text as a toast.
+# The world reset notification is never sent by itself: run notify-reset once the new world is up. It only
+# reaches each player once (--again sends to everyone again). Sign-ups live in /opt/globalcity/data/notify.db.
 # HOST=user@host overrides the target (default node05); PORT the server port (default 8787).
 set -euo pipefail
 HOST="${HOST:-node05}"; PORT="${PORT:-8787}"
@@ -28,5 +33,12 @@ case "$cmd" in
     who="${2:?usage: admin.sh grant <mayor name | player id prefix> <amount>}"; amount="${3:?usage: admin.sh grant <mayor name | player id prefix> <amount>}"
     # an id prefix is 6+ hex digits; anything else is taken as the exact mayor name (case-insensitive)
     python3 -c 'import json,re,sys; w,a=sys.argv[1],int(sys.argv[2]); key="id" if re.fullmatch(r"[0-9a-f]{6,}", w) else "name"; print(json.dumps({key: w, "amount": a}))' "$who" "$amount" | call POST /admin/grant ;;
-  *) echo "unknown command: $cmd (announce | clear | status | grant)"; exit 1 ;;
+  signups) echo '' | call GET /admin/notify ;;
+  reset-at)
+    at="${2:?usage: admin.sh reset-at <ISO date with time zone, e.g. 2026-12-03T12:00:00-05:00> | none}"
+    python3 -c 'import json,sys; print(json.dumps({"at": None if sys.argv[1] == "none" else sys.argv[1]}))' "$at" | call POST /admin/reset-at ;;
+  notify-reset)
+    again=false; [ "${2:-}" = "--again" ] && again=true
+    echo "{\"again\": $again}" | call POST /admin/notify-reset ;;
+  *) echo "unknown command: $cmd (announce | clear | status | grant | signups | reset-at | notify-reset)"; exit 1 ;;
 esac
