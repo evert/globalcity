@@ -65,6 +65,8 @@ const REGROW_EVERY_MS = Number(process.env.REGROW_MS) || REGROW_MS;
 const REGROW_CHANCE = Number(process.env.REGROW_P) || REGROW_P;
 /** CITY_FREEZE_MS can be overridden by the environment (tests use a few seconds). */
 const FREEZE_MS = Number(process.env.CITY_FREEZE_MS) || CITY_FREEZE_MS;
+/** test servers: every mayor counts as online (seen every step), so no city freezes and disasters strike anywhere */
+const ALL_ONLINE = process.env.ALL_ONLINE === '1';
 /** STEPS_PER_MONTH can be overridden too (tests use 1: a month per step, as before the slower calendar). */
 const STEPS = Number(process.env.STEPS_PER_MONTH) || STEPS_PER_MONTH;
 /** Rail networks are recomputed at most this often (in ticks) when only zones next to track changed. */
@@ -332,6 +334,7 @@ export class Sim {
   tick(): TickResult {
     this.tickCount++;
     this.profMark = performance.now();
+    if (ALL_ONLINE) { const now = Date.now(); for (const p of this.players.players.values()) if (!p.monument && p.chunks.length > 0) p.lastSeen = now; }
     const t = this.players.time;
     t.step = (t.step ?? 0) + 1;
     let newMonth = false;

@@ -12,6 +12,10 @@ import type { Players, PlayerRecord } from './players.ts';
 import type { Elevation } from './elevation.ts';
 import { findZoneCenter, clearFootprint, isBuildingTile } from './zones.ts';
 
+/** DISASTER_EVERY_MS (testing): a disaster exactly this often, instead of the hourly gap and the random wait after it */
+const EVERY_MS = Number(process.env.DISASTER_EVERY_MS) || 0;
+const MIN_GAP_MS = EVERY_MS || DISASTER_MIN_GAP_MS, STEP_P = EVERY_MS ? 1 : DISASTER_STEP_P;
+
 /** Land no higher than this (metres) next to water floods. */
 const FLOOD_MAX_ELEV = 10;
 const FLOOD_RISE_STEPS = 8, FLOOD_SPREAD_P = 0.35, FLOOD_RECEDE_P = 0.12, FLOOD_STRETCH = 12;
@@ -96,7 +100,7 @@ export class Disasters {
     this.runs = this.runs.filter((r) => !this.done(r, now));
     // at most one disaster an hour in the whole world: once the hour is up, now and then one strikes a city
     // that can be struck (its mayor online, big enough, a hazard on its land), picked at random
-    if (random && now - this.lastStrike >= DISASTER_MIN_GAP_MS && rand() < DISASTER_STEP_P) {
+    if (random && now - this.lastStrike >= MIN_GAP_MS && rand() < STEP_P) {
       const candidates: { p: PlayerRecord; kinds: Disaster[] }[] = [];
       for (const p of online) {
         if (p.stats.population < DISASTER_MIN_POP || p.monument) continue;

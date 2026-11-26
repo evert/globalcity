@@ -163,6 +163,8 @@ export class Net {
   onlineCount(): number {
     const ids = new Set<string>();
     for (const c of this.clients) if (c.player) ids.add(c.player.id);
+    // ALL_ONLINE (test servers, see index.ts): every mayor with a city counts as playing
+    if (process.env.ALL_ONLINE === '1') for (const p of this.players.players.values()) if (!p.monument && p.chunks.length > 0) ids.add(p.id);
     return ids.size;
   }
 
