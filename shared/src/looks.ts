@@ -30,7 +30,7 @@ export const withoutLook = (v: number): number => v & 0xffff;
 export const SKIN_COUNT = BIOME_COUNT * 2;
 export const skinLook = (biome: Biome, frozen: boolean): number => biome * 2 + (frozen ? 1 : 0);
 /** Which biome's ground wins a border: transitions are drawn inside the tiles of the higher one. */
-export const BIOME_PRECEDENCE: readonly Biome[] = [Biome.Snow, Biome.Boreal, Biome.Tundra, Biome.Temperate, Biome.Steppe, Biome.Desert, Biome.Beach];
+export const BIOME_PRECEDENCE: readonly Biome[] = [Biome.Snow, Biome.Boreal, Biome.Tundra, Biome.Temperate, Biome.Steppe, Biome.Desert];
 const RANK: number[] = []; BIOME_PRECEDENCE.forEach((b, i) => { RANK[b] = i; });
 /** Ordered pairs (higher, lower) of biomes that can share a border. */
 export const GROUND_PAIRS: readonly [Biome, Biome][] = (() => {

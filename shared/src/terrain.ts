@@ -16,11 +16,9 @@ export enum Biome {
   Boreal = 4,
   /** ice sheets and glaciers: Antarctica, Greenland, mountain glaciers, the Antarctic ice shelves (Koppen EF) */
   Snow = 5,
-  /** sandy beach: land along warm and temperate sea coasts */
-  Beach = 6,
 }
-export const BIOME_COUNT = 7;
-export const BIOME_NAMES: readonly string[] = ['temperate', 'desert', 'steppe', 'tundra', 'boreal', 'snow', 'beach'];
+export const BIOME_COUNT = 6;
+export const BIOME_NAMES: readonly string[] = ['temperate', 'desert', 'steppe', 'tundra', 'boreal', 'snow'];
 
 /** base.bin byte layout */
 export const BASE_BIOME_MASK = 0x0f;

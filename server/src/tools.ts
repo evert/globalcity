@@ -559,7 +559,7 @@ function buildingName(id: number): string {
 }
 
 const GROUND_NAMES: Record<Biome, string> = {
-  [Biome.Temperate]: 'Dirt', [Biome.Desert]: 'Sand', [Biome.Steppe]: 'Dry grass', [Biome.Tundra]: 'Tundra', [Biome.Boreal]: 'Snowy ground', [Biome.Snow]: 'Ice sheet', [Biome.Beach]: 'Beach',
+  [Biome.Temperate]: 'Dirt', [Biome.Desert]: 'Sand', [Biome.Steppe]: 'Dry grass', [Biome.Tundra]: 'Tundra', [Biome.Boreal]: 'Snowy ground', [Biome.Snow]: 'Ice sheet',
 };
 function terrainName(v: number, base: number): string {
   const id = v & LOMASK;
