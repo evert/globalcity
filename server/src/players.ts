@@ -40,6 +40,8 @@ export interface PlayerRecord {
   stats: PlayerStats;
   createdAt: number;
   lastSeen: number;
+  /** when a natural disaster last struck the city (ms epoch); at most one an hour */
+  lastDisaster?: number;
   /** city participates in the simulation (has built something; cleared when no zones/plants remain) */
   active: boolean;
   /** fraction of a dollar carried between ledger moves (funds only move in whole dollars) */

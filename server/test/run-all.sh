@@ -33,6 +33,7 @@ TESTS=(
   "regrow|REGROW_MS=1000 REGROW_P=0.5 CITY_FREEZE_MS=3000"
   "smallrelease|SMALL_CITY_RELEASE_MS=3000"
   "custom|"
+  "disasters|"
 )
 
 want=" $* "

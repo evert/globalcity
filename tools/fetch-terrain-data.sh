@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Downloads the climate, tree cover and sea ice rasters that tools/src/gen-world.ts needs into data/raw
-# (Natural Earth vectors are fetched by the generator itself). About 300 MB. See ATTRIBUTION.md.
+# (Natural Earth vectors are fetched by the generator itself). About 800 MB. See ATTRIBUTION.md.
 set -euo pipefail
 RAW="$(cd "$(dirname "$0")/.." && pwd)/data/raw"
 mkdir -p "$RAW/koppen" "$RAW/treecover" "$RAW/seaice"
@@ -10,6 +10,11 @@ if [ ! -f "$RAW/koppen/1991_2020/koppen_geiger_0p00833333.tif" ]; then
 fi
 [ -f "$RAW/treecover/tree_cover_1km_2022.tif" ] || curl -fL -o "$RAW/treecover/tree_cover_1km_2022.tif" \
   "https://zenodo.org/api/records/14439377/files/tree.cover_glc.fcd30d_p_1km_20220101_20221231_go_epsg4326_v20241210.tif/content"
+mkdir -p "$RAW/elevation" "$RAW/plates"
+[ -f "$RAW/elevation/ETOPO_2022_v1_60s_N90W180_surface.tif" ] || curl -fL -o "$RAW/elevation/ETOPO_2022_v1_60s_N90W180_surface.tif" \
+  https://www.ngdc.noaa.gov/mgg/global/relief/ETOPO2022/data/60s/60s_surface_elev_gtif/ETOPO_2022_v1_60s_N90W180_surface.tif
+[ -f "$RAW/plates/PB2002_boundaries.json" ] || curl -fL -o "$RAW/plates/PB2002_boundaries.json" \
+  https://raw.githubusercontent.com/fraxen/tectonicplates/master/GeoJSON/PB2002_boundaries.json
 cd "$RAW/seaice"
 for pole in north:N south:S; do
   for m in 01_Jan 02_Feb 03_Mar 04_Apr 05_May 06_Jun 07_Jul 08_Aug 09_Sep 10_Oct 11_Nov 12_Dec; do

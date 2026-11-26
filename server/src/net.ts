@@ -13,7 +13,7 @@ import { WebSocketServer, WebSocket, type RawData } from 'ws';
 import {
   WORLD_W, WORLD_H, CHUNK, CHUNKS_X, CHUNKS_Y, MAX_SUBSCRIBED_CHUNKS, TOOLS, LEADERBOARD_PUSH_TICKS,
   PRESENCE_INTERVAL_MS, PRESENCE_MAX,
-  encodeChunk, inWorld, clamp,
+  encodeChunk, inWorld, clamp, Disaster, DISASTERS, DISASTER_COUNT,
   type ClientMsg, type ServerMsg, type ToolId, type Presence,
   LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, STARTING_FUNDS, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT,
 } from '@globalcity/shared';
@@ -109,7 +109,7 @@ export class Net {
       (a) => { for (const c of this.clients) if (c.player) this.sendAnnouncement(c, a); },
       (who, amount) => this.adminGrant(who, amount));
     this.leaderboard = new Leaderboard(players);
-    if (this.devHooks) log('DEV_HOOKS enabled: devIgnite/devFunds/devTraffic/devPeak/devRailLink/devPlace accepted');
+    if (this.devHooks) log('DEV_HOOKS enabled: devIgnite/devFunds/devTraffic/devPeak/devRailLink/devPlace/devDisaster accepted');
   }
 
   private get buildCtx(): { world: World; players: Players; railCitiesAt: (x: number, y: number) => number } {
@@ -316,6 +316,17 @@ export class Net {
       if (isInt(m.x) && isInt(m.y) && inWorld(m.x, m.y) && isInt(m.amount) && m.amount > 0 && m.amount <= 255) this.sim.devTraffic(m.x, m.y, m.amount);
       return true;
     }
+    if (m.t === 'devDisaster') {
+      // start a disaster of kind m.kind in the sender's city now, wherever it is (no hazard check, no hourly limit)
+      const p = client.player;
+      if (p && isInt(m.kind) && m.kind >= 0 && m.kind < DISASTER_COUNT) {
+        const ok = this.sim.disasters.start(p, m.kind as Disaster, Date.now());
+        if (ok) this.broadcast({ t: 'disasters', list: this.sim.disasters.active() });
+        for (const t of this.sim.disasters.takeToasts()) for (const c of this.clients) if (c.player?.id === t.playerId) this.toast(c, t.msg, t.kind, t.at);
+        this.toast(client, `devDisaster ${DISASTERS[m.kind as Disaster].name}: ${ok ? 'started' : 'nothing to hit'}`, 'info');
+      }
+      return true;
+    }
     if (m.t === 'devFunds') {
       const p = client.player;
       if (p && isInt(m.amount) && m.amount > 0 && m.amount <= 100_000_000) {
@@ -394,6 +405,7 @@ export class Net {
         log(`${p.name} retired ${city} (${pop} people, ${m.chunks.length} plots) as a monument; starting over`);
         this.broadcast({ t: 'claims', claims: this.players.claimInfosOf(m) });
         this.send(client, this.welcomeMsg(p));
+        this.sendDisasters(client);
         this.send(client, this.leaderboard.messageFor(p));
         client.lastStatsJson = JSON.stringify(p.stats);
         this.toast(client, `🏛 ${city} is now a monument and will stand forever. Claim a plot anywhere to start a new city.`, 'success');
@@ -411,6 +423,7 @@ export class Net {
         log(`${p.name} abandoned ${city} (${released.length} plots released); starting over`);
         for (const u of released) this.broadcast({ t: 'unclaim', cx: u.cx, cy: u.cy });
         this.send(client, this.welcomeMsg(p));
+        this.sendDisasters(client);
         this.send(client, this.leaderboard.messageFor(p));
         client.lastStatsJson = JSON.stringify(p.stats);
         this.toast(client, `You left ${city}. Anyone can claim its plots and everything built on them. Claim a plot anywhere to start again with $${STARTING_FUNDS.toLocaleString('en-US')}.`, 'info');
@@ -484,6 +497,7 @@ export class Net {
     if (p.chunks.length > 0) this.sim.initMilestones(p); // a returning mayor of a frozen city sees correct unlocks at once
     client.lastStatsJson = JSON.stringify(p.stats);
     this.send(client, this.welcomeMsg(p));
+        this.sendDisasters(client);
     this.send(client, this.leaderboard.messageFor(p));
     this.send(client, this.airportsMsg());
     this.send(client, this.shippingMsg());
@@ -493,6 +507,11 @@ export class Net {
     const ann = this.admin.active();
     if (ann) this.sendAnnouncement(client, ann);
     log(`${p.name} (${p.id.slice(0, 8)}) connected; online=${this.onlineCount()}`);
+  }
+
+  private sendDisasters(client: Client): void {
+    const list = this.sim.disasters.active();
+    if (list.length) this.send(client, { t: 'disasters', list });
   }
 
   /** The welcome message: who the player is, their stats, the world and every claim. */
@@ -596,6 +615,7 @@ export class Net {
 
   afterTick(result: TickResult): void {
     this.broadcast({ t: 'time', time: result.time, online: this.onlineCount() });
+    if (result.disasters) this.broadcast({ t: 'disasters', list: result.disasters });
     const aj = JSON.stringify(this.sim.airports);
     if (aj !== this.airportsJson) { this.airportsJson = aj; this.broadcast(this.airportsMsg()); }
     if (this.sim.shipping.version !== this.shippingVersion) { this.shippingVersion = this.sim.shipping.version; this.broadcast(this.shippingMsg()); }

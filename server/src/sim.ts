@@ -35,13 +35,16 @@ import {
   CUSTOMCENTRE, UPKEEP_UNIVERSITY, UNIVERSITY_RANGE, UNIVERSITY_POLICE_FACTOR, UNIVERSITY_IND_BOOST, GRAND_CENTRAL_RANGE, GRAND_CENTRAL_RAIL_BOOST, UPKEEP_GRANDCENTRAL,
 } from '@globalcity/shared';
 import { type World, chunkIndex, chunkCoords, type ChunkIndex } from './world.ts';
-import type { AirportInfo, PortInfo } from '@globalcity/shared';
+import type { AirportInfo, PortInfo, ActiveDisaster } from '@globalcity/shared';
+import { CHUNKS_X, CHUNKS_Y } from '@globalcity/shared';
 import type { Players, PlayerRecord } from './players.ts';
 import { unlockedOf, refreshMilestoneStats, earn, spend, repayLifeline, closeYear, budgetStats } from './players.ts';
 import { ShippingPlanner } from './shipping.ts';
 import { zoneKind, isPlantCenter, countHouses, plopZone, findZoneCenter, isBuildingTile, clearFootprint } from './zones.ts';
 import { waterNear, SEAPORT_WATER_RANGE } from './tools.ts';
 import { chance, randInt, log } from './util.ts';
+import { Disasters } from './disasters.ts';
+import { Elevation } from './elevation.ts';
 
 /** Tax multiplier: tuned so a town of ~20 full R, 8 C, 8 I zones earns ~$2600 per game year. */
 /** Growth odds per tick: one house step / one density step, scaled by demand (0..1). */
@@ -94,6 +97,8 @@ export interface SimToast { playerId: string; msg: string; kind: 'info' | 'error
 
 export interface TickResult {
   time: GameTime;
+  /** the disasters on the go, when that list changed this tick */
+  disasters: ActiveDisaster[] | null;
   /** claims whose pop or idleDays changed this tick */
   claimsChanged: ClaimInfo[];
   /** per-player notifications produced by this tick (fire, power trade) */
@@ -103,8 +108,12 @@ export interface TickResult {
 }
 
 export interface SimOptions {
-  /** random fire outbreaks (default true; tests turn them off) */
+  /** random fire outbreaks and disasters (default true; tests turn them off) */
   randomFires?: boolean;
+  /** the world's hazard map (hazards.bin, a byte per chunk): which disasters can strike where */
+  hazards?: Uint8Array;
+  /** tile elevations (floods only rise over low land) */
+  elevation?: Elevation;
 }
 
 interface PowerScan {
@@ -190,6 +199,8 @@ export class Sim {
   private seaportsNext: PortInfo[] = [];
   /** sea routes between seaports (ships sail them, see shared/ships.ts) */
   readonly shipping: ShippingPlanner;
+  readonly disasters: Disasters;
+  private disastersVersion = 0;
   /** powered police station centres: last tick's list (read by landValue) and the one being collected */
   private police: number[] = [];
   private nextPolice: number[] = [];
@@ -235,6 +246,10 @@ export class Sim {
 
   constructor(private readonly world: World, private readonly players: Players, opts: SimOptions = {}) {
     this.randomFires = opts.randomFires ?? true;
+    this.disasters = new Disasters(world, players, opts.hazards ?? new Uint8Array(CHUNKS_X * CHUNKS_Y), opts.elevation ?? new Elevation(null), {
+      ignite: (x, y) => this.ignite(x, y),
+      isFrozen: (id) => this.frozen.has(id),
+    });
     this.seedFireChunks();
     // Saved chunks may hold traffic tiles from before the restart; density starts at 0, so redraw them plain.
     for (const ci of world.loaded) { this.applyTrafficLevels(ci, null); this.trafficSeen.add(ci); }
@@ -408,6 +423,12 @@ export class Sim {
     this.lap('traffic');
     this.fireStep();
     this.lap('fire');
+    // natural disasters, only in cities whose mayor is playing right now
+    this.disasters.step(cities.filter((p) => now - p.lastSeen < FIRE_OWNER_ONLINE_MS), now, this.randomFires);
+    this.toasts.push(...this.disasters.takeToasts());
+    const disasters = this.disasters.version !== this.disastersVersion ? this.disasters.active() : null;
+    this.disastersVersion = this.disasters.version;
+    this.lap('disasters');
     this.profReport();
     // Frozen cities aren't scanned, so keep their airports from last time (planes still fly to them).
     const keepAirports = this.airports.filter((q) => this.frozen.has(q.ownerId) && this.players.players.get(q.ownerId)?.chunks.length);
@@ -418,7 +439,7 @@ export class Sim {
     this.shipping.setPorts([...this.seaportsNext, ...keep].sort((a, b) => a.y - b.y || a.x - b.x));
     this.seaportsNext = [];
     this.shipping.step();
-    return { time: { ...t }, claimsChanged, toasts: this.toasts, unclaimed };
+    return { time: { ...t }, disasters, claimsChanged, toasts: this.toasts, unclaimed };
   }
 
   /**

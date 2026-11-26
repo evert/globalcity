@@ -20,6 +20,7 @@ import { Persist } from './persist.ts';
 import { Sim } from './sim.ts';
 import { Net } from './net.ts';
 import { MapTiles } from './maptiles.ts';
+import { Elevation } from './elevation.ts';
 import fs from 'node:fs';
 import { log, warn, timed } from './util.ts';
 
@@ -51,7 +52,14 @@ log(`State: ${hadState ? `${players.players.size} players, ${players.claims.size
 
 const worldId = (() => { try { return String(JSON.parse(fs.readFileSync(path.join(worldDir, 'base.json'), 'utf8')).generatedAt); } catch { return 'fallback'; } })();
 const mapTiles = timed('Map tiles', () => new MapTiles(world, worldId));
-const sim = new Sim(world, players, { randomFires: !devHooks });
+// which disasters can strike where (a byte per chunk) and the elevation of every tile, from the world generator
+const hazards = (() => {
+  const f = path.join(worldDir, 'hazards.bin');
+  if (!fs.existsSync(f)) { warn(`${f} not found: no natural disasters (regenerate the world)`); return undefined; }
+  return new Uint8Array(fs.readFileSync(f));
+})();
+const elevation = new Elevation(path.join(worldDir, 'elevation.bin'));
+const sim = new Sim(world, players, { randomFires: !devHooks, hazards, elevation });
 const net = new Net(world, players, sim, clientDist, root, { devHooks, dataDir: saveDir, mapTiles });
 try {
   await net.listen(port, host);

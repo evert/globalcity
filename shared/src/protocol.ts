@@ -1,3 +1,4 @@
+import type { ActiveDisaster } from './disasters.ts';
 import type { ToolId } from './tools.ts';
 import type { AirportInfo } from './flights.ts';
 import type { PortInfo, SeaRoute } from './ships.ts';
@@ -203,6 +204,7 @@ export type ServerMsg =
   | { t: 'shipping'; ports: PortInfo[]; routes: SeaRoute[]; now: number } // powered seaports + sea routes (on welcome and when they change)
   | { t: 'buildings'; list: CustomBuilding[] } // every custom-layer building (sent on welcome)
   | { t: 'building'; op: 'add' | 'remove'; b: CustomBuilding } // a custom-layer building appeared / went
+  | { t: 'disasters'; list: ActiveDisaster[] } // natural disasters on the go (on welcome, and whenever they change)
   | { t: 'pong' };
 
 // ---------- binary frames (server -> client) ----------

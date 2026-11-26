@@ -22,6 +22,7 @@ export function handleServerMsg(msg: ServerMsg, { state, map, renderer, ui, upda
       break;
     }
     case 'tiles': map.applyTiles(msg.u); break;
+    case 'disasters': renderer.setDisasters(msg.list); break;
     case 'claim': {
       const prev = state.claimAt(msg.claim.cx, msg.claim.cy);
       state.setClaim(msg.claim);

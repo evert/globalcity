@@ -325,6 +325,20 @@ export class SpriteEngine {
     g.globalAlpha = 1;
   }
 
+  /** A Micropolis tornado at (x, y) device pixels, `px` wide; `t` (ms) picks the animation frame. */
+  drawTornado(g: CanvasRenderingContext2D, x: number, y: number, px: number, t: number): void {
+    const def = this.assets.defs.tornado, img = this.assets.image;
+    g.imageSmoothingEnabled = false;
+    if (img && def && def.frames.length) {
+      const f = def.frames[Math.floor(t / 120) % def.frames.length];
+      const w = px, h = px * def.h / def.w;
+      g.drawImage(img, f.x, f.y, def.w, def.h, Math.round(x - w / 2), Math.round(y - h * 0.8), Math.round(w), Math.round(h));
+    } else {
+      g.fillStyle = 'rgba(200,200,200,0.85)';
+      g.beginPath(); g.moveTo(x - px / 2, y - px); g.lineTo(x + px / 2, y - px); g.lineTo(x, y); g.closePath(); g.fill();
+    }
+  }
+
   private drawFallback(g: CanvasRenderingContext2D, p: Sprite, x: number, y: number, tp: number): void {
     const s = tp;
     g.save();

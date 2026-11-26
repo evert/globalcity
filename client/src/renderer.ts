@@ -3,7 +3,7 @@
 import {
   CHUNK, CHUNKS_X, CHUNKS_Y, WORLD_W, WORLD_H, TILE_PX, MAX_SUBSCRIBED_CHUNKS,
   LOMASK, ZONEBIT, PWRBIT, ANIMBIT, LIGHTNINGBOLT, FIRE, LASTFIRE, TOOLS, CUSTOM_BUILDINGS, footprintOrigin, toolW, toolH, chunkKey, parseChunkKey, clamp, inWorld,
-  sheetIndex,
+  sheetIndex, Disaster, DISASTERS, TICK_MS, type ActiveDisaster,
 } from '@globalcity/shared';
 import type { ClaimInfo, Flight, ToolId, Voyage } from '@globalcity/shared';
 import type { SpriteSheet, Minimap } from './assets.ts';
@@ -142,6 +142,9 @@ export class Renderer extends Emitter<RendererEvents> {
   private customAnimTimer: ReturnType<typeof setTimeout> | null = null;
   /** zoomed-out map view: per-plot pixel images + tile-coloured terrain with specks */
   readonly mapTiles = new MapTileLayer();
+  /** natural disasters on the go (server 'disasters' messages); `from`: where a tornado was, to glide from */
+  private disasters: { d: ActiveDisaster; from: { x: number; y: number }; at: number }[] = [];
+  private disasterTimer: ReturnType<typeof setTimeout> | null = null;
   /** every tile in every look (shared/src/looks.ts); until it loads, tiles are drawn from the plain sheet */
   skins: SpriteSheet | null = null;
   /** scratch canvas the zoomed-out map's night lights are drawn into before the night mask is applied */
@@ -408,12 +411,92 @@ export class Renderer extends Emitter<RendererEvents> {
     if (t >= 1) this.fly = null; else this.invalidate();
   }
 
+  /** New list of disasters on the go: tornadoes glide from where they were to where they are now. */
+  setDisasters(list: ActiveDisaster[]): void {
+    const prev = new Map(this.disasters.map((e) => [e.d.id, e]));
+    const t = performance.now();
+    this.disasters = list.map((d) => {
+      const old = prev.get(d.id);
+      const from = old ? this.disasterPos(old, t) : { x: d.x, y: d.y };
+      return { d, from, at: t };
+    });
+    this.invalidate();
+  }
+
+  /** Where a disaster is drawn right now (tornadoes move between server steps). */
+  private disasterPos(e: { d: ActiveDisaster; from: { x: number; y: number }; at: number }, t: number): { x: number; y: number } {
+    const k = Math.min(1, (t - e.at) / TICK_MS);
+    return { x: e.from.x + (e.d.x - e.from.x) * k, y: e.from.y + (e.d.y - e.from.y) * k };
+  }
+
+  /** A quake in view shakes the picture. */
+  private quakeShake(): { x: number; y: number } {
+    const v = this.viewRect(), now = Date.now();
+    for (const { d } of this.disasters) {
+      if (d.kind !== Disaster.Earthquake || now > d.until) continue;
+      if (d.x < v.x0 - 64 || d.x > v.x1 + 64 || d.y < v.y0 - 64 || d.y > v.y1 + 64) continue;
+      const a = Math.min(1, (d.until - now) / 3000) * 4 * this.dpr;
+      return { x: Math.round((Math.random() - 0.5) * a * 2), y: Math.round((Math.random() - 0.5) * a * 2) };
+    }
+    return { x: 0, y: 0 };
+  }
+
+  /** Tornadoes, snow and rain over the cities they hit; zoomed out, a marker for each disaster. */
+  private renderDisasters(g: CanvasRenderingContext2D, now: number): void {
+    if (!this.disasters.length) return;
+    const tile = this.isTileMode(), d = this.dpr, W = this.canvas.width, H = this.canvas.height;
+    let animate = false;
+    for (const e of this.disasters) {
+      const p = this.disasterPos(e, now), x = this.dx(p.x), y = this.dy(p.y);
+      const kind = e.d.kind;
+      if (!tile) {
+        if (x < -40 || y < -40 || x > W + 40 || y > H + 40) continue;
+        // a pulsing ring and the disaster's emoji
+        const r = (8 + 3 * Math.sin(now / 250)) * d;
+        g.strokeStyle = 'rgba(255,80,40,0.9)'; g.lineWidth = Math.max(1, 2 * d);
+        g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.stroke();
+        g.font = `${Math.round(14 * d)}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText(DISASTERS[kind].emoji, x, y - r - 8 * d);
+        animate = true;
+        continue;
+      }
+      const tp = this.tilePx() * d;
+      if (kind === Disaster.Tornado) {
+        if (x < -tp * 6 || y < -tp * 6 || x > W + tp * 6 || y > H + tp * 6) continue;
+        if (this.sprites) this.sprites.drawTornado(g, x, y, tp * 3, now); else { g.fillStyle = 'rgba(200,200,200,0.8)'; g.fillRect(x - tp, y - tp * 2, tp * 2, tp * 2); }
+        animate = true;
+      } else if (kind === Disaster.Blizzard || kind === Disaster.Storm) {
+        // snow or rain over the city: a deterministic field of flakes/streaks drifting with time
+        const span = 48 * tp; // about the size of a city
+        if (x < -span || y < -span || x > W + span || y > H + span) continue;
+        g.save();
+        g.beginPath(); g.arc(x, y, span, 0, Math.PI * 2); g.clip();
+        const snow = kind === Disaster.Blizzard;
+        g.fillStyle = snow ? 'rgba(255,255,255,0.85)' : 'rgba(170,200,255,0.6)';
+        g.strokeStyle = 'rgba(170,200,255,0.6)'; g.lineWidth = Math.max(1, d);
+        const n = 260, t = now / 1000;
+        for (let i = 0; i < n; i++) {
+          const fx = ((i * 7919) % 1000) / 1000, fy = ((i * 104729) % 1000) / 1000;
+          const px = x - span + ((fx * 2 * span + t * (snow ? 30 : 160) * d) % (2 * span));
+          const py = y - span + ((fy * 2 * span + t * (snow ? 60 : 420) * d) % (2 * span));
+          if (snow) g.fillRect(px, py, 2 * d, 2 * d);
+          else { g.beginPath(); g.moveTo(px, py); g.lineTo(px - 3 * d, py + 9 * d); g.stroke(); }
+        }
+        g.restore();
+        animate = true;
+      }
+    }
+    if (animate && this.animated && !this.disasterTimer) this.disasterTimer = setTimeout(() => { this.disasterTimer = null; this.invalidate(); }, 80);
+  }
+
   // ---------- rendering ----------
   render(now = performance.now()): void {
     this.frame++;
     this.stepFly(now);
     const g = this.ctx;
-    g.setTransform(1, 0, 0, 1, 0, 0);
+    const shake = this.quakeShake();
+    g.setTransform(1, 0, 0, 1, shake.x, shake.y);
+    if (shake.x || shake.y) this.invalidate();
     g.imageSmoothingEnabled = false;
     g.fillStyle = '#05080f';
     g.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -422,6 +505,7 @@ export class Renderer extends Emitter<RendererEvents> {
     this.drawnClaims.clear();
     if (this.isTileMode()) { this.ovCache = null; this.ovLastZoom = NaN; this.renderTiles(g, now); } else this.renderOverview(g);
     this.renderFlights(g);
+    this.renderDisasters(g, now);
     this.renderPresence(g, now);
     this.renderFlash(g, now);
     this.evictCanvases();

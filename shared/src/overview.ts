@@ -33,6 +33,7 @@ export const OVERVIEW_SPECK: readonly (readonly [number, number, number])[] = OV
 export function overviewClass(v: number): OvClass {
   const id = v & T.LOMASK;
   if (id >= T.FIRE && id <= T.LASTFIRE) return OvClass.Fire;
+  if (id >= T.FLOOD && id <= T.LASTFLOOD) return OvClass.Water; // floodwater shows as water on the map
   if (id >= T.WATER_LOW && id <= T.WATER_HIGH) return OvClass.Water;
   if (id >= T.WOODS2 && id <= T.WOODS5 || id === T.FOUNTAIN || (id >= T.FOUNTAIN && id <= T.FOUNTAIN + 3)) return OvClass.Park;
   if (id >= T.WOODS_LOW && id <= T.WOODS_HIGH) return OvClass.Trees;

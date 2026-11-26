@@ -2,7 +2,7 @@ import { mkdirSync, existsSync, writeFileSync, readFileSync, statSync } from 'no
 import { deflateSync } from 'node:zlib';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { WORLD_TAG, WORLD_W as W, WORLD_H as H, Biome, BASE_WATER, BASE_FROZEN, BASE_TREES, BASE_BIOME_MASK } from '@globalcity/shared';
+import { CHUNK, CHUNKS_X, CHUNKS_Y, Disaster, hazardBit, inRegions, TORNADO_REGIONS, STORM_REGIONS, WORLD_TAG, WORLD_W as W, WORLD_H as H, Biome, BASE_WATER, BASE_FROZEN, BASE_TREES, BASE_BIOME_MASK } from '@globalcity/shared';
 import { fromFile, type GeoTIFFImage } from 'geotiff';
 import { genPlaces } from './gen-places.js';
 
@@ -175,6 +175,10 @@ const KOPPEN_FILE = resolve(RAW, 'koppen/1991_2020/koppen_geiger_0p00833333.tif'
 const KOPPEN_URL = 'https://figshare.com/articles/dataset/21789074 (koppen_geiger_tif.zip: 1991_2020/koppen_geiger_0p00833333.tif)';
 const TREE_FILE = resolve(RAW, 'treecover/tree_cover_1km_2022.tif');
 const TREE_URL = 'https://zenodo.org/records/14439377 (tree.cover_glc.fcd30d_p_1km_20220101_20221231_go_epsg4326_v20241210.tif)';
+const ELEV_FILE = resolve(RAW, 'elevation/ETOPO_2022_v1_60s_N90W180_surface.tif');
+const ELEV_URL = 'https://www.ngdc.noaa.gov/mgg/global/relief/ETOPO2022/data/60s/60s_surface_elev_gtif/ETOPO_2022_v1_60s_N90W180_surface.tif';
+const PLATES_FILE = resolve(RAW, 'plates/PB2002_boundaries.json');
+const PLATES_URL = 'https://raw.githubusercontent.com/fraxen/tectonicplates/master/GeoJSON/PB2002_boundaries.json';
 const SEAICE_DIR = resolve(RAW, 'seaice');
 const SEAICE_URL = 'https://noaadata.apps.nsidc.org/NOAA/G02135/{north,south}/monthly/geotiff/ ({N,S}_YYYYMM_extent_v4.0.tif, 2015-2024)';
 const SEAICE_YEARS = [2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024];
@@ -190,7 +194,9 @@ async function openRaster(file: string): Promise<Raster> {
   return { im, w: im.getWidth(), h: im.getHeight(), lon0, lat0, res: im.getResolution()[0], nodata: Number(im.getGDALNoData() ?? -1) };
 }
 /** Source rows [r0, r1) of a raster, full width. */
-async function readRows(r: Raster, r0: number, r1: number): Promise<Uint8Array> {
+async function readRows(r: Raster, r0: number, r1: number): Promise<Uint8Array>;
+async function readRows(r: Raster, r0: number, r1: number, float: true): Promise<Float32Array>;
+async function readRows(r: Raster, r0: number, r1: number, _float?: boolean): Promise<Uint8Array | Float32Array> {
   r0 = Math.max(0, r0); r1 = Math.min(r.h, r1);
   if (r1 <= r0) return new Uint8Array(0);
   const [band] = (await r.im.readRasters({ window: [0, r0, r.w, r1] })) as unknown as Uint8Array[];
@@ -208,6 +214,8 @@ for (let c = 0; c <= 30; c++) {
     : c === 30 ? Biome.Snow
     : Biome.Temperate;
 }
+/** Climates where forests burn in dry seasons: savanna, steppe, Mediterranean, and the boreal forest. */
+const DRY_FOREST_KOPPEN = new Set([3, 6, 7, 8, 9, 19, 20, 23, 24, 27, 28]);
 /** Lakes and rivers in these climates are frozen for at least half of the year (subarctic, polar). */
 const KOPPEN_FROZEN_INLAND = new Set([19, 20, 23, 24, 27, 28, 29, 30]);
 
@@ -294,6 +302,8 @@ async function main() {
   const shelves = await getData('antarctic_ice_shelves_polys', 'ice shelves');
   need(KOPPEN_FILE, KOPPEN_URL);
   need(TREE_FILE, TREE_URL);
+  need(ELEV_FILE, ELEV_URL);
+  need(PLATES_FILE, PLATES_URL);
 
   // 1. land / water: Natural Earth land plus the Antarctic ice shelves, minus lakes and major rivers
   const grid = new Uint8Array(W * H); // 0 sea, 1 land, 2 lake or river
@@ -326,7 +336,12 @@ async function main() {
 
   // 3. per strip of rows: climate (Koppen, sampled at a noise-jittered point so borders wiggle like real
   // ones instead of following the 1 km raster), tree cover (box average), sea ice
-  const kop = await openRaster(KOPPEN_FILE), tree = await openRaster(TREE_FILE);
+  const kop = await openRaster(KOPPEN_FILE), tree = await openRaster(TREE_FILE), etopo = await openRaster(ELEV_FILE);
+  // elevation of every tile, metres above sea level (negative: the sea floor), from ETOPO 2022 at the tile centre
+  const elev = new Int16Array(W * H);
+  const ept = etopo.w / W; // source px per tile
+  // per chunk, for hazards: forest in fire-prone climates, land with cold winters
+  const dryForest = new Uint32Array(CHUNKS_X * CHUNKS_Y), coldLand = new Uint32Array(CHUNKS_X * CHUNKS_Y);
   const out = new Uint8Array(W * H);
   const STRIP = 128, JIT = 6; // rows per strip, max jitter in tiles
   const kpt = kop.w / W; // source px per tile (both rasters are 1/120 degree)
@@ -340,8 +355,15 @@ async function main() {
     const tr0 = Math.floor((tree.lat0 - lat0) / tree.res), tr1 = Math.ceil((tree.lat0 - lat1) / tree.res);
     const tRows = await readRows(tree, tr0, tr1), tBase = Math.max(0, tr0);
     const tRowsN = tRows.length / tree.w;
+    const er0 = Math.floor(y0 * ept), er1 = Math.ceil(y1 * ept) + 1;
+    const eRows = await readRows(etopo, er0, er1, true), eBase = Math.max(0, er0);
     for (let y = y0; y < y1; y++) {
       const lat = 90 - ((y + 0.5) / H) * 180;
+      const eRow = Math.min(eRows.length / etopo.w - 1, Math.floor((y + 0.5) * ept) - eBase) * etopo.w;
+      for (let x = 0; x < W; x++) {
+        const e = eRows[eRow + Math.min(etopo.w - 1, Math.floor((x + 0.5) * ept))];
+        elev[y * W + x] = e > -99000 ? Math.max(-32768, Math.min(32767, Math.round(e))) : 0;
+      }
       // tree source rows for this tile row
       const ta = Math.floor((tree.lat0 - (90 - (y / H) * 180)) / tree.res) - tBase;
       const tb = Math.max(ta + 1, Math.floor((tree.lat0 - (90 - ((y + 1) / H) * 180)) / tree.res) - tBase);
@@ -400,6 +422,9 @@ async function main() {
         const n = spread(fbm(x / 16, y / 16, 1337, 4), 2.6);
         const forest = pForest > 0 && n < pForest;
         out[i] = biome | (forest ? BASE_TREES : 0);
+        const ci = (y >> 6) * CHUNKS_X + (x >> 6);
+        if (forest && DRY_FOREST_KOPPEN.has(k)) dryForest[ci]++;
+        if ((k >= 17 && k <= 30) || biome === Biome.Snow) coldLand[ci]++;
         stats[2 + biome]++;
         if (forest) stats[10]++;
       }
@@ -428,13 +453,76 @@ async function main() {
   }
   log('shore biomes');
 
+  // 5. hazards: which disasters can strike each chunk (shared/src/disasters.ts)
+  const hazards = new Uint8Array(CHUNKS_X * CHUNKS_Y);
+  {
+    // earthquakes: within about a chunk of a plate boundary (Bird's PB2002 model)
+    const near = new Uint8Array(CHUNKS_X * CHUNKS_Y);
+    const plates = JSON.parse(readFileSync(PLATES_FILE, 'utf8'));
+    for (const f of plates.features) {
+      const g = f.geometry;
+      const lines: number[][][] = g?.type === 'LineString' ? [g.coordinates] : g?.type === 'MultiLineString' ? g.coordinates : [];
+      for (const ls of lines) for (let i = 0; i + 1 < ls.length; i++) {
+        const [lon0, lat0] = ls[i], [lon1, lat1] = ls[i + 1];
+        if (Math.abs(lon1 - lon0) > 180) continue; // crosses the date line
+        const n = Math.ceil(Math.max(Math.abs(lon1 - lon0), Math.abs(lat1 - lat0)) / 0.5) + 1;
+        for (let k = 0; k <= n; k++) {
+          const lon = lon0 + ((lon1 - lon0) * k) / n, lat = lat0 + ((lat1 - lat0) * k) / n;
+          const cx = Math.floor(px(lon) / CHUNK), cy = Math.floor(py(lat) / CHUNK);
+          if (cx >= 0 && cy >= 0 && cx < CHUNKS_X && cy < CHUNKS_Y) near[cy * CHUNKS_X + cx] = 1;
+        }
+      }
+    }
+    const counts = new Array(6).fill(0);
+    for (let cy = 0; cy < CHUNKS_Y; cy++) for (let cx = 0; cx < CHUNKS_X; cx++) {
+      const ci = cy * CHUNKS_X + cx;
+      let land = 0, low = 0, coast = 0;
+      for (let y = cy * CHUNK; y < cy * CHUNK + CHUNK; y++) for (let x = cx * CHUNK; x < cx * CHUNK + CHUNK; x++) {
+        const i = y * W + x;
+        if (grid[i] !== 1) continue;
+        land++;
+        const seaSide = (x > 0 && grid[i - 1] === 0) || (x < W - 1 && grid[i + 1] === 0) || (y > 0 && grid[i - W] === 0) || (y < H - 1 && grid[i + W] === 0);
+        if (seaSide) coast++;
+        if (elev[i] > 8) continue;
+        // low land within two tiles of water (sea, lake or river)
+        let wet = false;
+        for (let dy = -2; dy <= 2 && !wet; dy++) for (let dx = -2; dx <= 2; dx++) {
+          const xx = x + dx, yy = y + dy;
+          if (xx >= 0 && yy >= 0 && xx < W && yy < H && grid[yy * W + xx] !== 1) { wet = true; break; }
+        }
+        if (wet) low++;
+      }
+      if (land < 64) continue;
+      const lat = 90 - ((cy + 0.5) * CHUNK / H) * 180, lon = ((cx + 0.5) * CHUNK / W) * 360 - 180;
+      let h = 0;
+      let quake = false;
+      for (let dy = -1; dy <= 1 && !quake; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const xx = (cx + dx + CHUNKS_X) % CHUNKS_X, yy = cy + dy;
+        if (yy >= 0 && yy < CHUNKS_Y && near[yy * CHUNKS_X + xx]) { quake = true; break; }
+      }
+      if (quake) h |= hazardBit(Disaster.Earthquake);
+      if (low >= 150) h |= hazardBit(Disaster.Flood);
+      if (inRegions(TORNADO_REGIONS, lat, lon)) h |= hazardBit(Disaster.Tornado);
+      if (coast >= 16 && inRegions(STORM_REGIONS, lat, lon)) h |= hazardBit(Disaster.Storm);
+      if (dryForest[ci] >= 200) h |= hazardBit(Disaster.Wildfire);
+      if (coldLand[ci] >= land / 2) h |= hazardBit(Disaster.Blizzard);
+      hazards[ci] = h;
+      for (let d = 0; d < 6; d++) if (h & (1 << d)) counts[d]++;
+    }
+    log(`hazards (chunks): earthquake ${counts[0]}, flood ${counts[1]}, tornado ${counts[2]}, storm ${counts[3]}, wildfire ${counts[4]}, blizzard ${counts[5]}`);
+  }
+
   mkdirSync(OUT, { recursive: true });
+  writeFileSync(resolve(OUT, 'elevation.bin'), Buffer.from(elev.buffer));
+  writeFileSync(resolve(OUT, 'hazards.bin'), hazards);
   writeFileSync(resolve(OUT, 'base.bin'), out);
   writeFileSync(resolve(OUT, 'base.json'), JSON.stringify({
     w: W, h: H, version: 2,
     layout: 'one byte per tile: bits 0-3 biome (0 temperate, 1 desert, 2 steppe, 3 tundra, 4 boreal, 5 snow), 0x20 trees, 0x40 frozen, 0x80 water',
     generatedAt: new Date().toISOString(),
-    sources: [land.url, lakes.url, rivers.url, glaciers.url, shelves.url, KOPPEN_URL, TREE_URL, SEAICE_URL],
+    elevation: 'elevation.bin: Int16 little-endian per tile, metres above sea level (negative below), ETOPO 2022 surface',
+    hazards: 'hazards.bin: one byte per chunk (row-major 256x128), bit d set = Disaster d possible there (shared/src/disasters.ts)',
+    sources: [land.url, lakes.url, rivers.url, glaciers.url, shelves.url, KOPPEN_URL, TREE_URL, SEAICE_URL, ELEV_URL, PLATES_URL],
   }, null, 2));
 
   // preview, 4x4 tiles per pixel: the most common kind wins
