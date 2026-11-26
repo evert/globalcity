@@ -18,9 +18,13 @@ import { Places } from './places.ts';
 import { Persist } from './persist.ts';
 import { Sim } from './sim.ts';
 import { Net } from './net.ts';
+import { MapTiles } from './maptiles.ts';
+import fs from 'node:fs';
 import { log, warn, timed } from './util.ts';
 
 const TILE_FLUSH_MS = 100;
+/** How often the zoomed-out map catches up with what was built. */
+const MAP_REFRESH_MS = 10_000;
 
 const root = path.resolve(import.meta.dirname, '../..');
 const worldDir = path.join(root, `data/world-${WORLD_TAG}`);
@@ -44,8 +48,10 @@ const hadState = persist.loadState();
 const chunksLoaded = timed('Overlay saved chunks', () => persist.loadChunks());
 log(`State: ${hadState ? `${players.players.size} players, ${players.claims.size} claims` : 'fresh'}; ${chunksLoaded} saved chunk(s); clock ${players.time.year}-${String(players.time.month + 1).padStart(2, '0')}`);
 
+const worldId = (() => { try { return String(JSON.parse(fs.readFileSync(path.join(worldDir, 'base.json'), 'utf8')).generatedAt); } catch { return 'fallback'; } })();
+const mapTiles = timed('Map tiles', () => new MapTiles(world, worldId));
 const sim = new Sim(world, players, { randomFires: !devHooks });
-const net = new Net(world, players, sim, clientDist, root, { devHooks, dataDir: saveDir });
+const net = new Net(world, players, sim, clientDist, root, { devHooks, dataDir: saveDir, mapTiles });
 try {
   await net.listen(port, host);
 } catch (e) {
@@ -63,6 +69,7 @@ const tickTimer = setInterval(() => {
   if (dt > tickMs / 2) warn(`Slow tick #${sim.tickCount}: ${dt.toFixed(0)} ms`);
 }, tickMs);
 const flushTimer = setInterval(() => net.flushTiles(), TILE_FLUSH_MS);
+const mapTimer = setInterval(() => mapTiles.refresh(), MAP_REFRESH_MS);
 
 let shuttingDown = false;
 function shutdown(signal: string): void {

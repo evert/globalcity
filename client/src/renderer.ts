@@ -27,7 +27,7 @@ const NIGHT_CITY_DIM = 0.8;
 const NIGHT_MAP_LIGHTS = 0.8;
 /** Night level (0..1) at which a plot's lights switch on: halfway through dusk, the sun about 4° below the horizon. */
 const LIGHTS_ON = 0.5;
-import { OverviewMap, speckleTile } from './overviewmap.ts';
+import { MapTileLayer } from './maptiles.ts';
 import { WORLD_W as FLIGHT_WORLD_W } from '@globalcity/shared';
 
 export interface Camera { x: number; y: number; zoom: number }
@@ -139,12 +139,13 @@ export class Renderer extends Emitter<RendererEvents> {
   /** pending redraw for the next frame of an animated custom building on screen */
   private customAnimTimer: ReturnType<typeof setTimeout> | null = null;
   /** zoomed-out map view: per-plot pixel images + tile-coloured terrain with specks */
-  readonly overviewMap = new OverviewMap();
+  readonly mapTiles = new MapTileLayer();
+  /** scratch canvas the zoomed-out map's night lights are drawn into before the night mask is applied */
+  private lightsLayer: HTMLCanvasElement | null = null;
   /** real-time day and night (the actual sun over the actual Earth) */
   readonly night = new NightLayer();
   /** lit windows for the zoomed-in view at night (derived from the tile art once the sheet loads) */
   private nightLights: NightLights | null = null;
-  private speckle: CanvasPattern | null = null;
   /** the zoomed-out map drawn ahead of time (see renderOverview); x, y: its offset from the world's top-left */
   private ovCache: { canvas: HTMLCanvasElement; key: string; x: number; y: number; claims: Map<string, ClaimStyle> } | null = null;
   private ovLastZoom = NaN;
@@ -809,14 +810,14 @@ export class Renderer extends Emitter<RendererEvents> {
    * snapshot or the night change, or when the view pans past the margin.
    */
   private renderOverview(g: CanvasRenderingContext2D): void {
-    this.overviewMap.maybeRefresh();
+    this.mapTiles.maybeRefresh();
     this.night.update();
     const W = this.canvas.width, H = this.canvas.height;
     const left = this.dx(0), top = this.dy(0), right = this.dx(WORLD_W), bottom = this.dy(WORLD_H);
     const vx0 = Math.max(0, left), vy0 = Math.max(0, top), vx1 = Math.min(W, right), vy1 = Math.min(H, bottom);
     const zoom = this.cam.zoom, zooming = zoom !== this.ovLastZoom;
     this.ovLastZoom = zoom;
-    const key = `${zoom}|${this.dpr}|${W}x${H}|${this.claimsVersion}|${this.overviewMap.version}|${this.night.version}|${this.state.me?.id ?? ''}`;
+    const key = `${zoom}|${this.dpr}|${W}x${H}|${this.claimsVersion}|${this.mapTiles.version}|${this.night.version}|${this.state.me?.id ?? ''}`;
     let c = this.ovCache;
     // the cache's position is kept relative to the world's top-left corner, so it moves with the map
     const fits = !!c && c.key === key && vx0 - left >= c.x && vy0 - top >= c.y
@@ -852,62 +853,35 @@ export class Renderer extends Emitter<RendererEvents> {
   /** Draw the zoomed-out map for the screen rectangle (rx0, ry0)-(rx1, ry1), in device pixels. */
   private drawOverview(g: CanvasRenderingContext2D, rx0: number, ry0: number, rx1: number, ry1: number): void {
     const left = this.dx(0), top = this.dy(0), right = this.dx(WORLD_W), bottom = this.dy(WORLD_H);
-    g.imageSmoothingEnabled = false;
-    g.drawImage(this.minimap.image, 0, 0, this.minimap.width, this.minimap.height, left, top, right - left, bottom - top);
-    // static speckle, anchored to the world one pattern pixel per tile (from one screen pixel per tile up)
     const tpx = this.tilePx() * this.dpr;
-    if (tpx >= 1) {
-      if (!this.speckle) this.speckle = g.createPattern(speckleTile(), 'repeat');
-      if (this.speckle) {
-        this.speckle.setTransform(new DOMMatrix().translateSelf(left, top).scaleSelf(tpx, tpx));
-        g.fillStyle = this.speckle;
-        g.fillRect(rx0, ry0, rx1 - rx0, ry1 - ry0);
-      }
-    }
-    // plots as one-pixel-per-tile images of what is built there (snapshot refreshed every 30 s)
     const vr = this.chunkRectOf(rx0, ry0, rx1, ry1);
-    {
-      g.imageSmoothingEnabled = tpx < 1; // average when shrinking below a pixel per tile, crisp otherwise
-      for (const claim of this.state.claims.values()) {
-        if (claim.cx < vr.cx0 || claim.cx > vr.cx1 || claim.cy < vr.cy0 || claim.cy > vr.cy1) continue;
-        const img = this.overviewMap.canvasFor(claim.cx, claim.cy);
-        if (!img) continue;
-        const x0 = this.dx(claim.cx * CHUNK), x1 = this.dx((claim.cx + 1) * CHUNK);
-        const y0 = this.dy(claim.cy * CHUNK), y1 = this.dy((claim.cy + 1) * CHUNK);
-        g.drawImage(img, x0, y0, x1 - x0, y1 - y0);
-      }
-      g.imageSmoothingEnabled = false;
-    }
-    // night: the real-time shade over the whole map, then the lights of every city on the dark side
+    const level = MapTileLayer.levelFor(tpx);
+    const view = { x: (tx: number) => this.dx(tx), y: (ty: number) => this.dy(ty) };
+    // the map: terrain and every city, as server-rendered images (one pixel per tile at the closest zoom)
+    g.imageSmoothingEnabled = false;
+    if (this.mapTiles.ready) this.mapTiles.draw(g, 'day', level, view, rx0, ry0, rx1, ry1);
+    else g.drawImage(this.minimap.image, 0, 0, this.minimap.width, this.minimap.height, left, top, right - left, bottom - top);
+    // night: the real-time shade over the whole map, then the lights of the cities on the dark side
     g.imageSmoothingEnabled = true;
     g.drawImage(this.night.canvas, left, top, right - left, bottom - top);
-    {
-      g.imageSmoothingEnabled = tpx < 1;
-      for (const claim of this.state.claims.values()) {
-        if (claim.cx < vr.cx0 || claim.cx > vr.cx1 || claim.cy < vr.cy0 || claim.cy > vr.cy1) continue;
-        const lights = this.overviewMap.lightsFor(claim.cx, claim.cy);
-        if (!lights) continue;
-        if (!this.lightsOnAt(claim.cx, claim.cy)) continue;
-        const x0 = this.dx(claim.cx * CHUNK), x1 = this.dx((claim.cx + 1) * CHUNK);
-        const y0 = this.dy(claim.cy * CHUNK), y1 = this.dy((claim.cy + 1) * CHUNK);
-        // zoomed far out a plot is a few pixels: a faint warm glow under the lights, like Earth at night
-        const share = this.overviewMap.litShareOf(claim.cx, claim.cy);
-        if (tpx < 0.6 && share > 0.01) {
-          const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, rad = Math.max(4 * this.dpr, (x1 - x0) * 0.9);
-          const grad = g.createRadialGradient(mx, my, 0, mx, my, rad);
-          grad.addColorStop(0, `rgba(255, 200, 120, ${Math.min(0.22, 0.05 + share)})`);
-          grad.addColorStop(1, 'rgba(255, 200, 120, 0)');
-          g.globalAlpha = 1;
-          g.fillStyle = grad;
-          g.fillRect(mx - rad, my - rad, rad * 2, rad * 2);
-        }
-        g.globalAlpha = NIGHT_MAP_LIGHTS;
-        g.drawImage(lights, x0, y0, x1 - x0, y1 - y0);
-      }
+    if (this.mapTiles.ready && rx1 > rx0 && ry1 > ry0) {
+      const lc = this.lightsLayer ??= document.createElement('canvas');
+      if (lc.width !== rx1 - rx0 || lc.height !== ry1 - ry0) { lc.width = rx1 - rx0; lc.height = ry1 - ry0; } else lc.getContext('2d')!.clearRect(0, 0, lc.width, lc.height);
+      const lg = lc.getContext('2d')!;
+      lg.setTransform(1, 0, 0, 1, -rx0, -ry0);
+      lg.imageSmoothingEnabled = level > 0; // far out the lights are a glow: let it blur
+      lg.globalCompositeOperation = 'source-over';
+      this.mapTiles.draw(lg, 'lights', level, view, rx0, ry0, rx1, ry1);
+      lg.globalCompositeOperation = 'destination-in';
+      lg.imageSmoothingEnabled = true;
+      lg.drawImage(this.night.mask, left, top, right - left, bottom - top);
+      lg.globalCompositeOperation = 'source-over';
+      lg.setTransform(1, 0, 0, 1, 0, 0);
+      g.globalAlpha = NIGHT_MAP_LIGHTS;
+      g.drawImage(lc, rx0, ry0);
       g.globalAlpha = 1;
-      g.globalCompositeOperation = 'source-over';
-      g.imageSmoothingEnabled = false;
     }
+    g.imageSmoothingEnabled = false;
     // chunk grid at the higher overview zooms
     if (this.cam.zoom >= 0.125) {
       const r = vr;
@@ -946,7 +920,7 @@ export class Renderer extends Emitter<RendererEvents> {
         const x0 = this.dx(claim.cx * CHUNK), x1 = this.dx((claim.cx + 1) * CHUNK);
         const y0 = this.dy(claim.cy * CHUNK), y1 = this.dy((claim.cy + 1) * CHUNK);
         w = Math.max(1, x1 - x0); h = Math.max(1, y1 - y0);
-        const hasImg = !!this.overviewMap.canvasFor(claim.cx, claim.cy);
+        const hasImg = this.mapTiles.ready;
         // at night the owner tint fades so the city lights (drawn underneath) show through
         const alpha = (!hasImg ? (st.abandoned ? 0.45 : own ? 0.7 : 0.5) : farOut ? 0 : tpxNow < 0.5 ? 0.55 : tpxNow < 1 ? 0.3 : 0)
           * (1 - 0.85 * this.nightAtChunk(claim.cx, claim.cy));

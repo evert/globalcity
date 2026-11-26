@@ -23,12 +23,14 @@ const NIGHT_RGB = [6, 10, 34];
 
 export class NightLayer {
   readonly canvas = document.createElement('canvas');
+  /** where city lights are on: white, opaque where it's night (for 'destination-in' over a lights layer) */
+  readonly mask = document.createElement('canvas');
   private computedAt = -Infinity;
   private sub = subsolarPoint(sunNow());
   /** bumped every time the shade is recomputed */
   version = 0;
 
-  constructor() { this.canvas.width = W; this.canvas.height = H; }
+  constructor() { this.canvas.width = this.mask.width = W; this.canvas.height = this.mask.height = H; }
 
   /** Recompute the darkness grid if it is more than a minute (of sun time) old. Returns true when it changed. */
   update(): boolean {
@@ -39,6 +41,8 @@ export class NightLayer {
     this.version++;
     const g = this.canvas.getContext('2d')!;
     const img = g.createImageData(W, H);
+    const mg = this.mask.getContext('2d')!;
+    const mimg = mg.createImageData(W, H);
     for (let y = 0; y < H; y++) {
       const lat = 90 - (y + 0.5);
       for (let x = 0; x < W; x++) {
@@ -47,9 +51,12 @@ export class NightLayer {
         const i = (y * W + x) * 4;
         img.data[i] = NIGHT_RGB[0]; img.data[i + 1] = NIGHT_RGB[1]; img.data[i + 2] = NIGHT_RGB[2];
         img.data[i + 3] = Math.round(a * 255);
+        mimg.data[i] = mimg.data[i + 1] = mimg.data[i + 2] = 255;
+        mimg.data[i + 3] = Math.round(Math.min(1, (a / NIGHT_MAX) * 2.5) * 255); // lights come on at dusk
       }
     }
     g.putImageData(img, 0, 0);
+    mg.putImageData(mimg, 0, 0);
     return true;
   }
 

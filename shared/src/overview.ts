@@ -1,7 +1,6 @@
-// Zoomed-out "map view" of cities: one pixel per tile, coloured by what the tile is. The server sends
-// claimed chunks as class indices (GET /overview.bin); the client turns them into static images.
+// Zoomed-out "map view": one pixel per tile, coloured by what the tile is (see maptiles.ts, which renders
+// it into images for the client).
 import * as T from './tiles.ts';
-import { CHUNK } from './constants.ts';
 
 export enum OvClass {
   Dirt, Water, Trees, Park, Road, Traffic, Rail, Wire, Res, Com, Ind, Civic, Power, Special, Rubble, Fire,
@@ -75,18 +74,4 @@ const isEmptyZone = (id: number): boolean =>
 export function overviewByte(v: number): number {
   const c = overviewClass(v);
   return LIT_CLASSES.has(c) && (!(v & T.PWRBIT) || isEmptyZone(v & T.LOMASK)) ? c | OV_DARK : c;
-}
-
-/** Wire format of /overview.bin: u16 count, then per chunk u16 cx, u16 cy and CHUNK*CHUNK overview bytes (class, plus OV_DARK) (LE). */
-export const OVERVIEW_CHUNK_BYTES = 4 + CHUNK * CHUNK;
-
-export function decodeOverview(buf: ArrayBuffer): { cx: number; cy: number; classes: Uint8Array }[] {
-  const dv = new DataView(buf);
-  if (buf.byteLength < 2) return [];
-  const n = dv.getUint16(0, true);
-  const out: { cx: number; cy: number; classes: Uint8Array }[] = [];
-  for (let i = 0, o = 2; i < n && o + OVERVIEW_CHUNK_BYTES <= buf.byteLength; i++, o += OVERVIEW_CHUNK_BYTES) {
-    out.push({ cx: dv.getUint16(o, true), cy: dv.getUint16(o + 2, true), classes: new Uint8Array(buf, o + 4, CHUNK * CHUNK) });
-  }
-  return out;
 }

@@ -27,6 +27,8 @@ export class World {
   readonly buildings = new Buildings();
   /** Chunks modified since the last save (only ever-edited chunks get a file). */
   readonly dirty = new Set<ChunkIndex>();
+  /** Chunks changed since the zoomed-out map (MapTiles) last caught up. */
+  readonly mapDirty = new Set<ChunkIndex>();
   /** Tile updates since the last network flush, grouped by chunk as flat [x, y, v, ...]. */
   readonly pending = new Map<ChunkIndex, number[]>();
   /** A tile gained/lost rail or zone-ness since the sim last rebuilt its rail networks (cleared by the sim). */
@@ -68,6 +70,7 @@ export class World {
     if (isRail(old) !== isRail(v) || (zoneLike(old) !== zoneLike(v) && this.railAround(x, y))) this.railDirty = true;
     const ci = chunkIndex(cx, cy);
     this.dirty.add(ci);
+    this.mapDirty.add(ci);
     let arr = this.pending.get(ci);
     if (!arr) { arr = []; this.pending.set(ci, arr); }
     arr.push(x, y, v);

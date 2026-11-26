@@ -46,16 +46,6 @@ export async function loadSpriteSheet(url = versioned('/assets/micropolis/tiles.
   }
 }
 
-export async function loadMinimap(url = versioned('/assets/world-minimap.png')): Promise<Minimap> {
-  try {
-    const img = await loadImage(url);
-    return { image: img, width: img.naturalWidth, height: img.naturalHeight, procedural: false };
-  } catch (e) {
-    console.warn('[assets] using procedural minimap:', (e as Error).message);
-    return proceduralMinimap();
-  }
-}
-
 /** Colour class for a tile id, used by the procedural sheet. */
 export function tileClassColor(id: number): string {
   if (id === T.DIRT || id === 1) return '#7a6a45';

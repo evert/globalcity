@@ -1421,6 +1421,8 @@ export class UI {
   closePanels(): void { this.hide(this.about); this.hide(this.leaderboard); this.hideQuery(); }
 
   // ---------- minimap ----------
+  /** Redraw the corner map (its image changed). */
+  refreshMinimap(): void { this.miniDirty = true; this.scheduleMini(); }
   private miniScheduled = false;
   private scheduleMini(): void {
     if (this.miniScheduled) return;

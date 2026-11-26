@@ -7,7 +7,6 @@
 // silently dropped like any unknown message.
 
 import http from 'node:http';
-import zlib from 'node:zlib';
 import fs from 'node:fs';
 import path from 'node:path';
 import { WebSocketServer, WebSocket, type RawData } from 'ws';
@@ -16,9 +15,9 @@ import {
   PRESENCE_INTERVAL_MS, PRESENCE_MAX,
   encodeChunk, inWorld, clamp,
   type ClientMsg, type ServerMsg, type ToolId, type Presence,
-  overviewByte, OVERVIEW_CHUNK_BYTES, parseChunkKey,
   LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, STARTING_FUNDS, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT,
 } from '@globalcity/shared';
+import type { MapTiles } from './maptiles.ts';
 import { World, chunkIndex, chunkCoords, type ChunkIndex } from './world.ts';
 import { Players, NAMES_LOCKED_MSG, sanitizeName, sanitizeCityName, refreshMilestoneStats, refreshLifeline, earn, type PlayerRecord } from './players.ts';
 import { Sim, type TickResult } from './sim.ts';
@@ -81,6 +80,8 @@ export interface NetOptions {
   devHooks?: boolean;
   /** save directory (admin token lives there) */
   dataDir?: string;
+  /** the zoomed-out map images (/map/...) */
+  mapTiles?: MapTiles;
 }
 
 export class Net {
@@ -90,6 +91,7 @@ export class Net {
   readonly admin: Admin;
   private readonly leaderboard: Leaderboard;
   private readonly devHooks: boolean;
+  private readonly mapTiles: MapTiles | null;
 
   constructor(
     private readonly world: World,
@@ -100,6 +102,7 @@ export class Net {
     opts: NetOptions = {},
   ) {
     this.devHooks = opts.devHooks ?? false;
+    this.mapTiles = opts.mapTiles ?? null;
     world.buildings.onChange = (op, b) => this.broadcast({ t: 'building', op, b });
     this.admin = new Admin(clientDist, opts.dataDir ?? path.join(repoRoot, 'data/save'),
       (v) => this.broadcast({ t: 'version', version: v }),
@@ -158,39 +161,35 @@ export class Net {
   // ---------------------------------------------------------------------------
   // HTTP: /health, static client build with index.html fallback
   // ---------------------------------------------------------------------------
-  // Zoomed-out map view: every claimed chunk as one class byte per tile, gzipped, cached for 10 s.
-  private overviewCache: { at: number; gz: Buffer; raw: Buffer } | null = null;
-  private serveOverview(req: http.IncomingMessage, res: http.ServerResponse): void {
-    const now = Date.now();
-    if (!this.overviewCache || now - this.overviewCache.at > 10_000) {
-      const keys = [...this.players.claims.keys()];
-      const raw = Buffer.alloc(2 + keys.length * OVERVIEW_CHUNK_BYTES);
-      raw.writeUInt16LE(keys.length, 0);
-      let o = 2;
-      for (const key of keys) {
-        const { cx, cy } = parseChunkKey(key);
-        raw.writeUInt16LE(cx, o); raw.writeUInt16LE(cy, o + 2);
-        const view = this.world.chunkView(cx, cy);
-        for (let i = 0; i < view.length; i++) raw[o + 4 + i] = overviewByte(view[i]);
-        o += OVERVIEW_CHUNK_BYTES;
-      }
-      this.overviewCache = { at: now, raw, gz: zlib.gzipSync(raw, { level: 6 }) };
+  // Zoomed-out map (shared/src/maptiles.ts): the manifest of region versions, and region images. An image asked
+  // for at its current version never changes, so it may be cached for good (by browsers and the CDN).
+  private serveMap(req: http.IncomingMessage, res: http.ServerResponse, url: URL): void {
+    const m = this.mapTiles;
+    if (!m) { res.writeHead(404); res.end(); return; }
+    if (url.pathname === '/map/manifest') {
+      const { json, gz } = m.manifest();
+      const gzip = /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''));
+      const body = gzip ? gz : Buffer.from(json);
+      res.writeHead(200, { 'content-type': 'application/json', 'content-length': body.length, 'cache-control': 'no-cache', ...(gzip ? { 'content-encoding': 'gzip' } : {}) });
+      res.end(req.method === 'HEAD' ? undefined : body);
+      return;
     }
-    const gzip = /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''));
-    const body = gzip ? this.overviewCache.gz : this.overviewCache.raw;
+    const r = /^\/map\/(day|lights)\/(\d+)\/(\d+)\/(\d+)\.png$/.exec(url.pathname);
+    const level = Number(r?.[2]), rx = Number(r?.[3]), ry = Number(r?.[4]);
+    if (!r || !m.valid(level, rx, ry)) { res.writeHead(404); res.end(); return; }
+    const { png, ver } = m.image(r[1] as 'day' | 'lights', level, rx, ry);
+    const current = url.searchParams.get('v') === String(ver);
     res.writeHead(200, {
-      'content-type': 'application/octet-stream',
-      'content-length': body.length,
-      'cache-control': 'no-cache',
-      ...(gzip ? { 'content-encoding': 'gzip' } : {}),
+      'content-type': 'image/png', 'content-length': png.length,
+      'cache-control': current ? 'public, max-age=31536000, immutable' : 'no-cache',
     });
-    res.end(req.method === 'HEAD' ? undefined : body);
+    res.end(req.method === 'HEAD' ? undefined : png);
   }
 
   private handleHttp(req: http.IncomingMessage, res: http.ServerResponse): void {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (this.admin.handle(req, res, url.pathname)) return;
-    if (url.pathname === '/overview.bin') { this.serveOverview(req, res); return; }
+    if (url.pathname.startsWith('/map/')) { this.serveMap(req, res, url); return; }
     if (url.pathname === '/health') {
       const body = JSON.stringify({
         online: this.onlineCount(),

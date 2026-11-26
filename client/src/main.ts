@@ -3,8 +3,7 @@ import type { ServerMsg } from '@globalcity/shared';
 import { chunkKey } from '@globalcity/shared';
 import { Actions } from './actions.ts';
 import { handleServerMsg } from './dispatch.ts';
-import { loadMinimap, loadSpriteSheet } from './assets.ts';
-import { recolourMinimap } from './overviewmap.ts';
+import { loadSpriteSheet, proceduralMinimap } from './assets.ts';
 import { Updater } from './updater.ts';
 import { Input, PAINT_TOOLS, ZONE_TOOLS } from './input.ts';
 import { TileMap } from './map.ts';
@@ -43,11 +42,9 @@ async function boot(): Promise<void> {
   const canvas = document.getElementById('map') as HTMLCanvasElement | null;
   if (!canvas) throw new Error('#map canvas missing');
 
-  const [sheet, minimap, spriteAssets] = await Promise.all([loadSpriteSheet(), loadMinimap(), loadSprites()]);
-  // Recolour the terrain once to the Micropolis tile palette; the world view and the corner minimap share it.
-  if (!minimap.procedural) {
-    try { minimap.image = recolourMinimap(minimap.image, minimap.width, minimap.height); } catch { /* keep the original colours */ }
-  }
+  const [sheet, spriteAssets] = await Promise.all([loadSpriteSheet(), loadSprites()]);
+  // the corner minimap starts plain and becomes the server's whole-world map image once that loads
+  const minimap = proceduralMinimap();
 
   const state = new AppState();
   const map = new TileMap();
@@ -70,7 +67,12 @@ async function boot(): Promise<void> {
   });
 
   window.addEventListener('resize', () => renderer.resizeToWindow());
-  renderer.overviewMap.onUpdate = () => renderer.invalidate();
+  renderer.mapTiles.onUpdate = () => renderer.invalidate();
+  renderer.mapTiles.onWorldImage = (img) => {
+    Object.assign(minimap, { image: img, width: img.width, height: img.height, procedural: false });
+    ui.refreshMinimap();
+  };
+  renderer.mapTiles.maybeRefresh();
   window.visualViewport?.addEventListener('resize', () => renderer.resizeToWindow());
   // fires after layout, with the size the canvas really has (resize events can come before it settles)
   if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => renderer.syncSize()).observe(canvas);

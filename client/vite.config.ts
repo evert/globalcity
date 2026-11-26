@@ -26,7 +26,7 @@ export default defineConfig(({ command }) => ({
       '/ATTRIBUTION.md': `http://localhost:${process.env.PORT ?? 8787}`,
       '/LICENSE': `http://localhost:${process.env.PORT ?? 8787}`,
       '/health': `http://localhost:${process.env.PORT ?? 8787}`,
-      '/overview.bin': `http://localhost:${process.env.PORT ?? 8787}`,
+      '/map': `http://localhost:${process.env.PORT ?? 8787}`,
     },
     fs: { allow: [repoRoot] },
   },
