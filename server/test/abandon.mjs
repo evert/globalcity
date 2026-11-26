@@ -2,6 +2,7 @@
 // plots are released (unclaim broadcast), the mayor starts over ($20,000, no debt), and the ruins crumble
 // (rubble appears) until someone claims a plot. Needs DEV_HOOKS=1.
 import WebSocket from 'ws';
+import { decodeChunk } from '@globalcity/shared';
 const PORT = process.env.PORT, TICK = Number(process.env.TICK_MS) || 500;
 const LOMASK = 0x3ff, isWater = (t) => t >= 2 && t <= 20, isRubble = (t) => t >= 44 && t <= 47;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -9,7 +10,7 @@ const fail = (m) => { console.log('FAIL:', m); process.exit(1); };
 const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`); ws.binaryType = 'arraybuffer';
 let me = null, stats = null, spot = null, chunk = null, welcomes = 0; const toasts = [], unclaims = [];
 ws.on('message', (d, bin) => {
-  if (bin) { const dv = new DataView(d instanceof ArrayBuffer ? d : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength)); const a = new Uint16Array(4096); for (let i = 0; i < 4096; i++) a[i] = dv.getUint16(5 + i * 2, true); chunk = { cx: dv.getUint16(1, true), cy: dv.getUint16(3, true), a }; return; }
+  if (bin) { const f = decodeChunk(d instanceof ArrayBuffer ? d : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength)); chunk = { cx: f.cx, cy: f.cy, a: f.tiles }; return; }
   const m = JSON.parse(d.toString());
   if (m.t === 'welcome') { me = m.player; stats = m.stats; welcomes++; } else if (m.t === 'stats') stats = m.stats;
   else if (m.t === 'freeSpot') spot = m; else if (m.t === 'toast') toasts.push(`${m.kind}: ${m.msg}`);
@@ -19,7 +20,7 @@ ws.on('message', (d, bin) => {
 const send = (m) => ws.send(JSON.stringify(m));
 const last = () => toasts[toasts.length - 1] ?? '';
 await new Promise((r) => ws.on('open', r)); send({ t: 'hello', name: 'Unlucky Mayor', v: 'test' }); while (!me) await sleep(20);
-send({ t: 'findFree', cx: 75, cy: 15 }); while (!spot) await sleep(20);
+send({ t: 'findFree', cx: 150, cy: 30 }); while (!spot) await sleep(20);
 send({ t: 'sub', chunks: [[spot.cx, spot.cy]] }); while (!chunk) await sleep(20);
 let X = -1, Y = -1;
 for (let y = 3; y < 48 && X < 0; y++) for (let x = 3; x < 40 && X < 0; x++) {

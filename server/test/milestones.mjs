@@ -1,6 +1,7 @@
 // Milestones: locked until the population threshold, one per city, rebuildable, grandfathered extras;
 // plus rail counting as transport access for zone growth. Needs DEV_HOOKS=1.
 import WebSocket from 'ws';
+import { decodeChunk, WIND_POWER } from '@globalcity/shared';
 const PORT = process.env.PORT, TICK = Number(process.env.TICK_MS) || 500;
 const CHUNK = 64, LOMASK = 0x3ff, ZONEBIT = 0x400, isWater = (t) => t >= 2 && t <= 20;
 const CITYHALL = 965, AIRPORT = 716;
@@ -11,7 +12,7 @@ class C {
   async connect() {
     this.ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`); this.ws.binaryType = 'arraybuffer';
     this.ws.on('message', (d, bin) => {
-      if (bin) { const dv = new DataView(d instanceof ArrayBuffer ? d : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength)); const a = new Uint16Array(4096); for (let i = 0; i < 4096; i++) a[i] = dv.getUint16(5 + i * 2, true); this.chunk = { cx: dv.getUint16(1, true), cy: dv.getUint16(3, true), a }; return; }
+      if (bin) { const f = decodeChunk(d instanceof ArrayBuffer ? d : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength)); this.chunk = { cx: f.cx, cy: f.cy, a: f.tiles }; return; }
       const m = JSON.parse(d.toString());
       if (m.t === 'welcome') { this.id = m.player.id; this.stats = m.stats; }
       else if (m.t === 'stats') this.stats = m.stats;
@@ -26,7 +27,7 @@ class C {
   tile(x, y) { return this.chunk.a[(y - this.chunk.cy * CHUNK) * CHUNK + (x - this.chunk.cx * CHUNK)]; }
   async build(tool, x, y) { const n = this.toasts.length; this.send({ t: 'build', tool, x, y }); await sleep(250); return this.toasts.slice(n); }
   async settle(cx, cy, w, h) {
-    for (const [sx, sy] of [[cx, cy], [cx + 6, cy + 2], [cx - 8, cy + 4], [cx + 12, cy - 3]]) {
+    for (const [sx, sy] of [[cx, cy], [cx + 12, cy + 4], [cx - 16, cy + 8], [cx + 24, cy - 6], [cx + 2, cy + 2]]) {
       this.spot = null; this.send({ t: 'findFree', cx: sx, cy: sy }); while (!this.spot) await sleep(20);
       if (this.spot.cx === null) continue;
       this.chunk = null; this.send({ t: 'sub', chunks: [[this.spot.cx, this.spot.cy]] }); while (!this.chunk) await sleep(20);
@@ -41,7 +42,7 @@ class C {
 const ticks = (n) => sleep(n * TICK);
 // --- 1. city hall: locked, unlock by milestone, one per city, rebuildable ---
 const A = new C('Mayor-A'); await A.connect();
-const a = await A.settle(70, 14, 20, 12);
+const a = await A.settle(140, 28, 20, 12);
 await A.build('residential', a.X + 15, a.Y + 9); // a city with a zone, so it is simulated
 let t = await A.build('cityhall', a.X + 1, a.Y + 1);
 console.log('city hall at 0 people:', t.join(' | '));
@@ -64,7 +65,7 @@ if ((A.tile(a.X + 7, a.Y + 1) & LOMASK) !== CITYHALL) fail('rebuild refused: ' +
 console.log('destroyed city hall rebuilt: ok');
 // --- 2. grandfathering: a pre-milestone city with two airports keeps both, can't add a third ---
 const B = new C('Mayor-B'); await B.connect();
-const b = await B.settle(90, 20, 15, 15);
+const b = await B.settle(180, 40, 15, 15);
 B.send({ t: 'devPlace', tool: 'airport', x: b.X + 1, y: b.Y + 1 }); await sleep(200);
 B.send({ t: 'devPlace', tool: 'airport', x: b.X + 8, y: b.Y + 1 }); await sleep(200);
 await ticks(3);
@@ -77,7 +78,7 @@ console.log('third airport (no per-city limit any more):', t.join(' | ') || 'pla
 if (t.some((x) => /^error/.test(x))) fail('third airport should be allowed');
 // --- 3. rail counts as transport access ---
 const R = new C('Mayor-R'); await R.connect();
-const r = await R.settle(110, 22, 16, 8);
+const r = await R.settle(220, 44, 16, 8);
 await R.build('coal', r.X + 1, r.Y + 1);
 for (let x = r.X + 4; x < r.X + 9; x++) await R.build('wire', x, r.Y + 1);
 await R.build('residential', r.X + 10, r.Y + 1);
@@ -88,7 +89,7 @@ console.log('rail-only zone population:', R.stats.population);
 if (!grew) fail('zone with only rail access did not grow');
 // --- 4. early milestones, wind and offshore power, no fires before the fire milestone ---
 const W = new C('Mayor-W'); await W.connect();
-const w = await W.settle(66, 18, 20, 10);
+const w = await W.settle(132, 36, 20, 10);
 t = await W.build('fire', w.X + 1, w.Y + 1);
 console.log('fire station at 0 people:', t.join(' | '));
 if (!t.some((x) => /unlocks at 15,000 people/.test(x))) fail('fire station should be locked below 15,000');
@@ -108,11 +109,11 @@ await W.build('residential', w.X + 15, w.Y + 2); // keep the city simulated
 t = await W.build('windfarm', w.X + 1, w.Y + 2);
 await ticks(3);
 console.log('wind farm:', t.join(' | ') || 'placed', '| power supply', W.stats.powerSupply);
-if (W.stats.powerSupply < 100) fail('wind farm should supply 100');
+if (W.stats.powerSupply < WIND_POWER) fail(`wind farm should supply ${WIND_POWER}`);
 // offshore: needs 300,000 and a 4x4 of water
 const O = new C('Mayor-O'); await O.connect();
 let site = null;
-for (const [cx, cy] of [[64, 13], [63, 12], [70, 12], [36, 17], [33, 16], [114, 25], [60, 14]]) {
+for (const [cx, cy] of [[128, 26], [126, 24], [140, 24], [72, 34], [66, 32], [228, 50], [120, 28]]) {
   O.spot = null; O.send({ t: 'findFree', cx, cy }); while (!O.spot) await sleep(20); if (O.spot.cx === null) continue;
   O.chunk = null; O.send({ t: 'sub', chunks: [[O.spot.cx, O.spot.cy]] }); while (!O.chunk) await sleep(20);
   let wet = null, dry = null;

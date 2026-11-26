@@ -1,5 +1,6 @@
 // Regression: bulldozing a bridge, an underwater power line or underwater rail must leave water, never land.
 import WebSocket from 'ws';
+import { decodeChunk } from '@globalcity/shared';
 const URL = `ws://127.0.0.1:${process.env.PORT}/ws`;
 const CHUNK = 64, LOMASK = 0x3ff, RIVER = 2;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -7,7 +8,7 @@ const fail = (m) => { console.log('FAIL:', m); process.exit(1); };
 const ws = new WebSocket(URL); ws.binaryType = 'arraybuffer';
 let me = null, spot = null, chunk = null; const toasts = [];
 ws.on('message', (d, bin) => {
-  if (bin) { const dv = new DataView(d instanceof ArrayBuffer ? d : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength)); const a = new Uint16Array(4096); for (let i = 0; i < 4096; i++) a[i] = dv.getUint16(5 + i * 2, true); chunk = { cx: dv.getUint16(1, true), cy: dv.getUint16(3, true), a }; return; }
+  if (bin) { const f = decodeChunk(d instanceof ArrayBuffer ? d : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength)); chunk = { cx: f.cx, cy: f.cy, a: f.tiles }; return; }
   const m = JSON.parse(d.toString());
   if (m.t === 'welcome') me = m.player;
   else if (m.t === 'freeSpot') spot = m;
@@ -21,7 +22,7 @@ while (!me) await sleep(20);
 const tile = (x, y) => chunk.a[(y - chunk.cy * CHUNK) * CHUNK + (x - chunk.cx * CHUNK)];
 // coastal chunks: try a few until one has a row of three open-water tiles (id RIVER) away from its edges
 let row = null;
-for (const [cx, cy] of [[64, 13], [63, 12], [70, 12], [36, 17], [33, 16], [114, 25]]) {
+for (const [cx, cy] of [[128, 26], [126, 24], [140, 24], [72, 34], [66, 32], [228, 50]]) {
   spot = null; send({ t: 'findFree', cx, cy }); while (!spot) await sleep(20);
   if (spot.cx === null) continue;
   chunk = null; send({ t: 'sub', chunks: [[spot.cx, spot.cy]] }); while (!chunk) await sleep(20);

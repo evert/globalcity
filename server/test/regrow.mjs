@@ -1,8 +1,8 @@
 // Nature returns: rubble turns back into the landscape that was there before anyone built, but not while the
-// city's mayor is playing. Run the server on a throwaway save dir with a fast regrowth and freeze:
-//   PORT=8791 DATA_DIR=<tmp> DEV_HOOKS=1 TICK_MS=500 REGROW_MS=1000 REGROW_P=0.5 CITY_FREEZE_MS=3000 npx tsx src/index.ts
-//   PORT=8791 npx tsx src/test-regrow.mjs
+// city's mayor is playing. Run with:
+//   npm test -w server -- regrow   (starts a throwaway server with the settings it needs; see test/run-all.sh)
 import WebSocket from 'ws';
+import { decodeChunk } from '@globalcity/shared';
 const PORT = process.env.PORT;
 const LOMASK = 0x3ff, isWater = (t) => t >= 2 && t <= 20, isRubble = (t) => t >= 44 && t <= 47;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -13,7 +13,7 @@ async function connect(name) {
   const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`); ws.binaryType = 'arraybuffer';
   const c = { ws, me: null, spot: null, chunk: null, toasts: [] };
   ws.on('message', (d, bin) => {
-    if (bin) { const dv = new DataView(d instanceof ArrayBuffer ? d : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength)); const a = new Uint16Array(4096); for (let i = 0; i < 4096; i++) a[i] = dv.getUint16(5 + i * 2, true); c.chunk = { cx: dv.getUint16(1, true), cy: dv.getUint16(3, true), a }; return; }
+    if (bin) { const f = decodeChunk(d instanceof ArrayBuffer ? d : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength)); c.chunk = { cx: f.cx, cy: f.cy, a: f.tiles }; return; }
     const m = JSON.parse(d.toString());
     if (m.t === 'welcome') c.me = m.player; else if (m.t === 'freeSpot') c.spot = m; else if (m.t === 'toast') c.toasts.push(`${m.kind}: ${m.msg}`);
   });
@@ -30,7 +30,7 @@ async function snapshot(cx, cy) {
 }
 
 const A = await connect('Gardener');
-A.send({ t: 'findFree', cx: 70, cy: 18 }); while (!A.spot) await sleep(20);
+A.send({ t: 'findFree', cx: 139, cy: 29 }); while (!A.spot) await sleep(20); // near Vienna: inland, dry
 const { cx, cy } = A.spot;
 A.send({ t: 'sub', chunks: [[cx, cy]] }); while (!A.chunk) await sleep(20);
 const orig = A.chunk.a.slice();

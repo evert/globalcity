@@ -1,6 +1,7 @@
 // A city whose mayor goes quiet freezes (no growth/decline, no budget); a neighbour keeps drawing power
 // from its plant; the city resumes when the mayor is back. Run the server with CITY_FREEZE_MS=4000.
 import WebSocket from 'ws';
+import { decodeChunk } from '@globalcity/shared';
 const PORT = process.env.PORT, TICK = Number(process.env.TICK_MS) || 500, FREEZE = Number(process.env.CITY_FREEZE_MS) || 4000;
 const CHUNK = 64, LOMASK = 0x3ff, isWater = (t) => t >= 2 && t <= 20;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -10,7 +11,7 @@ class C {
   async connect() {
     this.ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`); this.ws.binaryType = 'arraybuffer';
     this.ws.on('message', (d, bin) => {
-      if (bin) { const dv = new DataView(d instanceof ArrayBuffer ? d : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength)); const a = new Uint16Array(4096); for (let i = 0; i < 4096; i++) a[i] = dv.getUint16(5 + i * 2, true); this.chunk = { cx: dv.getUint16(1, true), cy: dv.getUint16(3, true), a }; return; }
+      if (bin) { const f = decodeChunk(d instanceof ArrayBuffer ? d : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength)); this.chunk = { cx: f.cx, cy: f.cy, a: f.tiles }; return; }
       const m = JSON.parse(d.toString());
       if (m.t === 'welcome') { this.id = m.player.id; this.stats = m.stats; }
       else if (m.t === 'stats') { this.stats = m.stats; this.statsMsgs++; }
@@ -26,7 +27,7 @@ const A = new C('Away-A'), B = new C('Neighbour-B');
 await A.connect(); await B.connect();
 // two adjacent free chunks with a dry band across the border
 let site = null;
-for (const [cx, cy] of [[66, 14], [70, 15], [40, 12], [60, 20], [110, 22]]) {
+for (const [cx, cy] of [[132, 28], [140, 30], [80, 24], [120, 40], [220, 44]]) {
   A.spot = null; A.send({ t: 'findFree', cx, cy }); while (!A.spot) await sleep(20); if (A.spot.cx === null) continue;
   const a = A.spot; B.spot = null; B.send({ t: 'findFree', cx: a.cx + 1, cy: a.cy }); while (!B.spot) await sleep(20);
   if (B.spot.cx !== a.cx + 1 || B.spot.cy !== a.cy) continue;

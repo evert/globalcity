@@ -2,6 +2,7 @@
 // record (same names, flagged in claims, off the leaderboard, never claimable), the mayor gets a fresh start
 // (starting funds, no plots) and can found a new city. Run the server with MONUMENT_MIN_POP=1 (and DEV_HOOKS=1).
 import WebSocket from 'ws';
+import { decodeChunk } from '@globalcity/shared';
 const PORT = process.env.PORT, TICK = Number(process.env.TICK_MS) || 500;
 const LOMASK = 0x3ff, isWater = (t) => t >= 2 && t <= 20;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -12,7 +13,7 @@ class C {
   async connect() {
     this.ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`); this.ws.binaryType = 'arraybuffer';
     this.ws.on('message', (d, bin) => {
-      if (bin) { const dv = new DataView(d instanceof ArrayBuffer ? d : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength)); const a = new Uint16Array(4096); for (let i = 0; i < 4096; i++) a[i] = dv.getUint16(5 + i * 2, true); this.chunk = { cx: dv.getUint16(1, true), cy: dv.getUint16(3, true), a }; return; }
+      if (bin) { const f = decodeChunk(d instanceof ArrayBuffer ? d : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength)); this.chunk = { cx: f.cx, cy: f.cy, a: f.tiles }; return; }
       const m = JSON.parse(d.toString());
       if (m.t === 'welcome') { this.me = m.player; this.stats = m.stats; this.welcomes = (this.welcomes ?? 0) + 1; this.claims = new Map(m.claims.map((c) => [`${c.cx},${c.cy}`, c])); }
       else if (m.t === 'stats') this.stats = m.stats;
@@ -31,7 +32,7 @@ class C {
 const A = new C('Builder'), B = new C('Onlooker');
 await A.connect(); await B.connect();
 // found a small working town (coal, wire, homes, a road) and wait for people to move in
-const s = await A.findFree(75, 15);
+const s = await A.findFree(150, 30);
 A.chunk = null; A.send({ t: 'sub', chunks: [[s.cx, s.cy]] }); while (!A.chunk) await sleep(20);
 let X = -1, Y = -1;
 for (let y = 3; y < 48 && X < 0; y++) for (let x = 3; x < 40 && X < 0; x++) {

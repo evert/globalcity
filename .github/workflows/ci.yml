@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build the client
+        run: npm run build
+
+      # The server tests play on the real map (they look for land and water at real places), so CI needs the
+      # generated world. Its sources (~300 MB) and the result are cached; the world is only regenerated when the
+      # generator or the world's shape changes.
+      - name: Cache terrain sources
+        uses: actions/cache@v4
+        with:
+          path: data/raw
+          key: terrain-raw-${{ hashFiles('tools/fetch-terrain-data.sh') }}
+
+      - name: Cache the generated world
+        id: world
+        uses: actions/cache@v4
+        with:
+          path: data/world-*
+          key: world-${{ hashFiles('tools/src/gen-world.ts', 'tools/src/gen-places.ts', 'tools/fetch-terrain-data.sh', 'shared/src/constants.ts', 'shared/src/terrain.ts') }}
+
+      - name: Generate the world
+        if: steps.world.outputs.cache-hit != 'true'
+        run: |
+          bash tools/fetch-terrain-data.sh
+          npm run gen:world
+
+      - name: Server tests
+        run: npm test
+        env:
+          TMPDIR: ${{ runner.temp }}
+
+      - name: Keep the test logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-test-logs
+          path: ${{ runner.temp }}/globalcity-tests.*

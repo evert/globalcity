@@ -52,14 +52,14 @@ process with in-memory state, so run it on a VM or container, not on a serverles
 
 Server environment variables: `PORT`, `HOST`, `DATA_DIR` (save directory relative to the repo
 root, default `data/save`), `TICK_MS` (game-month length, default 5000) and `DEV_HOOKS=1`, which
-is for tests only: it accepts the non-protocol socket message `{t:'devIgnite', x, y}` to start a
-fire and turns random fire outbreaks off. Tests run against a throwaway instance:
+is for tests only: it accepts non-protocol socket messages (start a fire, grant money, ...) and turns
+random fire outbreaks off.
 
-```sh
-cd server
-PORT=8791 DATA_DIR=data/save-test DEV_HOOKS=1 TICK_MS=500 npx tsx src/index.ts   # one terminal
-PORT=8791 npm run smoke; PORT=8791 TICK_MS=500 npm run smoke:features             # another
-```
+Tests live in `server/test/`. `npm test` runs them all, each against its own throwaway server
+(fresh save dir, fast clock, the settings that test needs); `npm test -- water social` runs a few.
+They play on the generated world, so run `npm run gen:world` first. CI (`.github/workflows/ci.yml`)
+typechecks, builds the client, generates the world (cached) and runs the tests.
+
 Ready-made recipes: a Raspberry Pi behind a Cloudflare Tunnel in [deploy/pi/README.md](deploy/pi/README.md),
 or an Oracle Cloud Always Free VM with Caddy TLS in [deploy/oracle/README.md](deploy/oracle/README.md).
 

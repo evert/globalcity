@@ -30,7 +30,7 @@ class C {
 }
 const W = new C('Watcher'), S = new C('Small'), B = new C('Builder');
 await W.connect(); await S.connect(); await B.connect();
-const s = await S.settle(70, 14), b = await B.settle(90, 20);
+const s = await S.settle(140, 28), b = await B.settle(180, 40);
 // Small builds 3 road tiles; Builder builds 6
 for (let k = 0; k < 3; k++) { S.send({ t: 'build', tool: 'road', x: s.cx * 64 + 10 + k, y: s.cy * 64 + 10 }); await sleep(40); }
 for (let k = 0; k < 6; k++) { B.send({ t: 'build', tool: 'road', x: b.cx * 64 + 10 + k, y: b.cy * 64 + 10 }); await sleep(40); }
