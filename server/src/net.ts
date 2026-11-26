@@ -409,12 +409,12 @@ export class Net {
         const city = p.cityName || `${p.name}'s city`;
         const released = this.players.abandon(p);
         this.sim.clearReleased(released);
-        log(`${p.name} abandoned ${city} (${released.length} plots released as ruins); starting over`);
+        log(`${p.name} abandoned ${city} (${released.length} plots released); starting over`);
         for (const u of released) this.broadcast({ t: 'unclaim', cx: u.cx, cy: u.cy });
         this.send(client, this.welcomeMsg(p));
         this.send(client, this.leaderboard.messageFor(p));
         client.lastStatsJson = JSON.stringify(p.stats);
-        this.toast(client, `You left ${city}. Its ruins are free for anyone to claim. Claim a plot anywhere to start again with $${STARTING_FUNDS.toLocaleString('en-US')}.`, 'info');
+        this.toast(client, `You left ${city}. Anyone can claim its plots and everything built on them. Claim a plot anywhere to start again with $${STARTING_FUNDS.toLocaleString('en-US')}.`, 'info');
         break;
       }
       case 'renameCity': {
@@ -527,9 +527,10 @@ export class Net {
     const r = this.players.claim(p, cx, cy);
     if (!r.ok) { this.toast(client, r.msg, 'error'); return; }
     this.broadcast({ t: 'claim', claim: this.players.claimInfo(cx, cy, p) });
-    this.toast(client, r.cost > 0 ? `Claimed chunk ${cx},${cy} for $${r.cost}` : `Welcome, Mayor! You founded your city at chunk ${cx},${cy}`, 'success');
+    const took = r.inherited > 0 ? `, with the ${r.inherited === 1 ? 'building' : `${r.inherited} zones and buildings`} already standing there` : '';
+    this.toast(client, r.cost > 0 ? `Claimed chunk ${cx},${cy} for $${r.cost}${took}` : `Welcome, Mayor! You founded your city at chunk ${cx},${cy}${took}`, 'success');
     this.sendStatsIfChanged(client);
-    log(`${p.name} claimed ${cx},${cy} (cost ${r.cost})`);
+    log(`${p.name} claimed ${cx},${cy} (cost ${r.cost}${r.inherited ? `, ${r.inherited} zones/buildings inherited` : ''})`);
   }
 
   private onBuild(client: Client, p: PlayerRecord, tool: ToolId, x: number, y: number): void {

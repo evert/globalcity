@@ -1,7 +1,7 @@
 // Central client state shared by net, renderer, input and ui.
 import type { ClaimInfo, GameTime, LeaderboardEntry, MonumentEntry, PlayerPublic, PlayerStats, Presence, ToolId } from '@globalcity/shared';
 import {
-  ABANDON_DECAY_DAYS, ABANDON_FREE_DAYS, CHUNKS_X, CHUNKS_Y, MAX_CHUNKS_PER_PLAYER, chunkKey, parseChunkKey, STARTING_FUNDS, START_YEAR,
+  ABANDON_IDLE_DAYS, ABANDON_FREE_DAYS, CHUNKS_X, CHUNKS_Y, MAX_CHUNKS_PER_PLAYER, chunkKey, parseChunkKey, STARTING_FUNDS, START_YEAR,
 } from '@globalcity/shared';
 import { Emitter } from './emitter.ts';
 
@@ -30,9 +30,9 @@ export function claimCity(c: ClaimInfo): string { return c.cityName ?? ''; }
 export function claimIdleDays(c: ClaimInfo): number { return Math.max(0, Math.floor(c.idleDays ?? 0)); }
 
 export function claimIdleState(c: ClaimInfo): ClaimIdle {
-  if (c.monument) return 'active'; // monuments never decay
+  if (c.monument) return 'active'; // monuments are never abandoned
   const d = claimIdleDays(c);
-  if (d >= ABANDON_DECAY_DAYS) return 'abandoned';
+  if (d >= ABANDON_IDLE_DAYS) return 'abandoned';
   if (d >= IDLE_HINT_DAYS) return 'idle';
   return 'active';
 }
@@ -40,14 +40,14 @@ export function claimIdleState(c: ClaimInfo): ClaimIdle {
 /** Short label: the city name if the mayor has one, else the mayor. */
 export function claimShortLabel(c: ClaimInfo): string { return claimCity(c) || c.ownerName; }
 
-/** Full label for the tile view: "Tilburg — Evert (you) (abandoned, free in 19 days)". */
+/** Full label for the tile view: "Tilburg — Evert (you) (abandoned, up for grabs in 19 days)". */
 export function claimLabel(c: ClaimInfo, own: boolean): string {
   const city = claimCity(c);
   let s = city ? `${city} — ${c.ownerName}` : c.ownerName;
   if (own) s += ' (you)';
   if (c.monument) s += ' · 🏛 monument';
   const idle = claimIdleState(c);
-  if (idle === 'abandoned') s += ` (abandoned, free in ${Math.max(0, ABANDON_FREE_DAYS - claimIdleDays(c))} days)`;
+  if (idle === 'abandoned') s += ` (abandoned, up for grabs in ${Math.max(0, ABANDON_FREE_DAYS - claimIdleDays(c))} days)`;
   else if (idle === 'idle') s += ` · idle ${claimIdleDays(c)}d`;
   return s;
 }
@@ -172,7 +172,7 @@ export class AppState extends Emitter<StateEvents> {
     return this.ownsChunk(cx - 1, cy) || this.ownsChunk(cx + 1, cy) || this.ownsChunk(cx, cy - 1) || this.ownsChunk(cx, cy + 1);
   }
   atClaimCap(): boolean { return this.ownedChunkCount() >= MAX_CHUNKS_PER_PLAYER; }
-  /** Client-side hint only; the server is authoritative. Released (unclaimed) ruins are plain unclaimed chunks. */
+  /** Client-side hint only; the server is authoritative. Released plots, buildings and all, are plain unclaimed chunks. */
   canClaim(cx: number, cy: number): boolean {
     if (cx < 0 || cy < 0 || cx >= CHUNKS_X || cy >= CHUNKS_Y) return false;
     if (this.claims.has(chunkKey(cx, cy))) return false;

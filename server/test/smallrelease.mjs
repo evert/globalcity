@@ -1,5 +1,6 @@
 // A city with fewer than SMALL_CITY_MAX_ITEMS things built is released once its mayor has been away
-// SMALL_CITY_RELEASE_MS; a city with more is kept; the mayor is told why on the next visit.
+// SMALL_CITY_RELEASE_MS; a city with more is kept; the mayor is told why on the next visit. What was built on
+// the released plot stays there for the next claimant.
 // Run the server with SMALL_CITY_RELEASE_MS=3000.
 import WebSocket from 'ws';
 const PORT = process.env.PORT, WAIT = Number(process.env.SMALL_CITY_RELEASE_MS) || 3000, TICK = Number(process.env.TICK_MS) || 500;
@@ -16,12 +17,14 @@ class C {
       else if (m.t === 'unclaim') this.unclaims.push(`${m.cx},${m.cy}`);
       else if (m.t === 'freeSpot') this.spot = m;
       else if (m.t === 'toast') this.toasts.push(m.msg);
+      else if (m.t === 'query') this.query = m.info;
     });
     await new Promise((r) => this.ws.on('open', r));
     this.id = null; this.send(id ? { t: 'hello', id, token, name: this.name } : { t: 'hello', name: this.name });
     while (!this.id) await sleep(20);
   }
   send(m) { this.ws.send(JSON.stringify(m)); }
+  async ask(x, y) { this.query = null; this.send({ t: 'query', x, y }); while (!this.query) await sleep(20); return this.query; }
   async settle(cx, cy) {
     this.spot = null; this.send({ t: 'findFree', cx, cy }); while (!this.spot) await sleep(20);
     this.send({ t: 'claim', cx: this.spot.cx, cy: this.spot.cy }); await sleep(300);
@@ -43,6 +46,11 @@ console.log(`after ${((Date.now() - t0) / 1000).toFixed(1)} s away: small city r
 if (!W.unclaims.includes(`${s.cx},${s.cy}`)) fail('small city was not released');
 for (let k = 0; k < 4; k++) { W.send({ t: 'ping' }); await sleep(TICK); }
 if (W.unclaims.includes(`${b.cx},${b.cy}`)) fail('city with 6 things built was released');
+for (let k = 0; k < 3; k++) {
+  const q = await W.ask(s.cx * 64 + 10 + k, s.cy * 64 + 10);
+  if (q.name !== 'Road' || q.owner) fail(`road ${k} of the released plot: ${q.name}, owner ${q.owner?.name}`);
+}
+console.log('the released plot keeps its 3 road tiles, unowned');
 // the small mayor comes back and is told why
 const S2 = new C('Small'); await S2.connect(sId, sTok); await sleep(400);
 console.log('returning mayor sees:', S2.toasts[0], '| plots:', S2.chunks);

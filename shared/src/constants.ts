@@ -10,7 +10,7 @@ export const TILE_PX = 16; // sprite size in tiles.png
 export const STARTING_FUNDS = 20000;
 /** A city this big can be retired as a monument: frozen forever on the map, and its mayor starts over. */
 export const MONUMENT_MIN_POP = 1_000_000;
-/** A broke city (under this many $) that owes a lifeline may be abandoned: its plots are released and the ruins crumble. */
+/** A broke city (under this many $) that owes a lifeline may be abandoned: its plots are released, buildings and all. */
 export const ABANDON_MAX_FUNDS = 100;
 // Claiming more plots: the first is free, then the price escalates geometrically with every plot you own
 // (2nd $25,000, 3rd $43,750, 4th $76,563 ... 10th about $2.2M). Must be adjacent to one you own.
@@ -40,13 +40,10 @@ export const CITY_FREEZE_MS = 15 * 60_000;
 export const POWER_PRICE_PER_UNIT = 1; // $ per zone-unit per game month, paid by importer to exporter
 export const LEADERBOARD_SIZE = 20;
 
-// Abandonment: idle cities decay, then their plots become claimable again (ruins stay on the map)
-export const ABANDON_DECAY_DAYS = 30; // owner not seen for this long -> tiles start decaying
+// Abandonment: idle cities are shown as abandoned, then their plots become claimable again. Nothing decays:
+// whoever claims a released plot gets everything built on it, at the normal plot price.
+export const ABANDON_IDLE_DAYS = 30; // owner not seen for this long -> shown as abandoned
 export const ABANDON_FREE_DAYS = 60; // ...and after this long the claims are released
-export const ABANDON_DECAY_P = 0.004;
-/** Decay of idle cities into rubble. Off for now (2026-10-05): the world is still empty, so ruins only hurt.
- *  Idle cities still show as abandoned and their plots are still released after ABANDON_FREE_DAYS. */
-export const ABANDON_DECAY_ENABLED = false;
 // Nature returns: every REGROW_MS each rubble tile has REGROW_P chance of turning back into the landscape that
 // was there before anyone built (dirt, forest, shore), except in cities whose mayor is playing right now.
 // At 2% every 5 minutes a field of rubble is half gone after about 3 hours and nearly all gone in half a day.
@@ -56,7 +53,7 @@ export const REGROW_P = 0.02;
 // (each zone/building counts once, each road/rail/power line/park tile once) and the mayor away for
 // SMALL_CITY_RELEASE_MS, the plots are released for others to claim.
 export const SMALL_CITY_MAX_ITEMS = 5;
-export const SMALL_CITY_RELEASE_MS = 60 * 60_000; // per zone/building/road tile per tick once decaying
+export const SMALL_CITY_RELEASE_MS = 60 * 60_000;
 
 // Neighbour effects
 export const NEIGHBOUR_DEMAND_MAX = 0.35; // cap on demand added by adjacent cities' pops
