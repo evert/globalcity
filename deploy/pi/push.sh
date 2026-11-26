@@ -6,6 +6,10 @@ set -euo pipefail
 TARGET=node05; RESTART=0
 for a in "$@"; do case "$a" in --restart) RESTART=1 ;; *) TARGET="$a" ;; esac; done
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
+# Production runs main. The `next` branch is the post-reset world (different size and terrain): syncing it
+# would boot prod on the wrong map, so only main may be pushed.
+BRANCH="$(git -C "$HERE" branch --show-current)"
+if [ "$BRANCH" != main ]; then echo "Refusing to deploy branch '$BRANCH': only main goes to production." >&2; exit 1; fi
 # Hand the code (not data/: the running server saves there every 10 s) to the ssh user for the rsync.
 ssh "$TARGET" 'sudo mkdir -p /opt/globalcity && sudo chown "$USER" /opt/globalcity && for d in /opt/globalcity/* /opt/globalcity/.[!.]*; do [ -e "$d" ] && [ "$(basename "$d")" != data ] && sudo chown -R "$USER" "$d"; done; true'
 rsync -az --delete \
