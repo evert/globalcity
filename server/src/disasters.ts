@@ -20,7 +20,7 @@ const MIN_GAP_MS = EVERY_MS || DISASTER_MIN_GAP_MS, STEP_P = EVERY_MS ? 1 : DISA
 const FLOOD_MAX_ELEV = 10;
 const FLOOD_RISE_STEPS = 8, FLOOD_SPREAD_P = 0.35, FLOOD_RECEDE_P = 0.12, FLOOD_STRETCH = 12;
 const TORNADO_STEPS = 36, TORNADO_SPEED = 1.6, TORNADO_HIT_P = 0.7;
-const QUAKE_SHAKE_MS = 6_000;
+const QUAKE_SHAKE_MS = 12_000;
 
 const rand = Math.random;
 const randInt = (n: number): number => Math.floor(rand() * n);
