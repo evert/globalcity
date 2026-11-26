@@ -96,14 +96,23 @@ function fillPolygons(grid: Uint8Array, features: any[], value: number) {
   }
 }
 
-function line(grid: Uint8Array, xa: number, ya: number, xb: number, yb: number, v: number) {
+/**
+ * Draw a line `width` tiles wide (a width x width square stamped at every step), writing v over land only, so the
+ * sea stays sea. Any width of 2 or more keeps the line joined through tile sides, never only through a corner:
+ * shoreline smoothing looks at the four sides, so a corner-only join would draw as a break in the river.
+ */
+function line(grid: Uint8Array, xa: number, ya: number, xb: number, yb: number, v: number, width = 1) {
   let x0 = Math.floor(xa), y0 = Math.floor(ya);
   const x1 = Math.floor(xb), y1 = Math.floor(yb);
   const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0);
   const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  const lo = -Math.floor((width - 1) / 2), hi = lo + width - 1;
   let err = dx + dy;
   for (;;) {
-    if (x0 >= 0 && x0 < W && y0 >= 0 && y0 < H) grid[y0 * W + x0] = v;
+    for (let oy = lo; oy <= hi; oy++) for (let ox = lo; ox <= hi; ox++) {
+      const x = x0 + ox, y = y0 + oy;
+      if (x >= 0 && x < W && y >= 0 && y < H && grid[y * W + x] !== 0) grid[y * W + x] = v;
+    }
     if (x0 === x1 && y0 === y1) break;
     const e2 = 2 * err;
     if (e2 >= dy) { err += dy; x0 += sx; }
@@ -320,9 +329,11 @@ async function main() {
     const lines: number[][][] = g?.type === 'LineString' ? [g.coordinates] : g?.type === 'MultiLineString' ? g.coordinates : [];
     if (!lines.length) continue;
     nRivers++;
+    // the great rivers (scalerank 0-3: Danube, Nile, Volga, Ganges...) 3 tiles wide, the rest 2
+    const width = typeof sr === 'number' && sr <= 3 ? 3 : 2;
     for (const ls of lines)
       for (let i = 0; i < ls.length - 1; i++)
-        line(grid, px(ls[i][0]), py(ls[i][1]), px(ls[i + 1][0]), py(ls[i + 1][1]), 2);
+        line(grid, px(ls[i][0]), py(ls[i][1]), px(ls[i + 1][0]), py(ls[i + 1][1]), 2, width);
   }
   log(`rivers drawn: ${nRivers}`);
   // 2. ice: glaciers and ice shelves are snow-covered land
