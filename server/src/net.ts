@@ -18,6 +18,7 @@ import {
   LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, STARTING_FUNDS, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT,
 } from '@globalcity/shared';
 import type { MapTiles } from './maptiles.ts';
+import { WorldStatsCounter } from './worldstats.ts';
 import { World, chunkIndex, chunkCoords, type ChunkIndex } from './world.ts';
 import { Players, NAMES_LOCKED_MSG, sanitizeName, sanitizeCityName, refreshMilestoneStats, refreshLifeline, earn, type PlayerRecord } from './players.ts';
 import { Sim, type TickResult } from './sim.ts';
@@ -90,6 +91,7 @@ export class Net {
   private presenceTimer: NodeJS.Timeout | null = null;
   readonly admin: Admin;
   private readonly leaderboard: Leaderboard;
+  private readonly worldStats: WorldStatsCounter;
   private readonly devHooks: boolean;
   private readonly mapTiles: MapTiles | null;
 
@@ -109,6 +111,7 @@ export class Net {
       (a) => { for (const c of this.clients) if (c.player) this.sendAnnouncement(c, a); },
       (who, amount) => this.adminGrant(who, amount));
     this.leaderboard = new Leaderboard(players);
+    this.worldStats = new WorldStatsCounter(world, players, sim);
     if (this.devHooks) log('DEV_HOOKS enabled: devIgnite/devFunds/devTraffic/devPeak/devRailLink/devPlace/devDisaster accepted');
   }
 
@@ -358,6 +361,7 @@ export class Net {
     switch (msg.t) {
       case 'ping': this.send(client, { t: 'pong' }); break;
       case 'leaderboard': this.send(client, this.leaderboard.messageFor(p)); break;
+      case 'worldStats': this.send(client, { t: 'worldStats', stats: this.worldStats.get(this.onlineCount()) }); break;
       case 'sub': this.onSub(client, msg.chunks); break;
       case 'claim': this.onClaim(client, p, msg.cx, msg.cy); break;
       case 'build': this.onBuild(client, p, msg.tool, msg.x, msg.y); break;
@@ -679,6 +683,7 @@ function parseClientMsg(raw: unknown): ClientMsg | null {
       return out;
     }
     case 'leaderboard': return { t: 'leaderboard' };
+    case 'worldStats': return { t: 'worldStats' };
     case 'lifeline': return { t: 'lifeline' };
     case 'monument': return { t: 'monument' };
     case 'abandon': return { t: 'abandon' };

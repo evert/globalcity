@@ -3,6 +3,7 @@ import type { BudgetYear, ClaimInfo, Demand, LeaderboardEntry, MonumentEntry, Qu
 import { OVERLAY_INFO, OVERLAY_MODES, type OverlayMode } from './overlays.ts';
 import { budgetTotals, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, STARTING_FUNDS, LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, LIFELINE_REPAY_SHARE, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT, LOMASK, FIRESTBASE, POLICESTBASE, CITYHALLBASE, LASTCITYHALL, chunkKey, shipCargo, flightLoad } from '@globalcity/shared';
 import { CHUNK, claimCost, MILESTONE_BUILDINGS, MILESTONE_ORDER, isMilestoneTool, nextMilestone, type MilestoneBuilding, MAX_CHUNKS_PER_PLAYER, POWER_PRICE_PER_UNIT, TOOLS, TOOL_ORDER, PLANT_OUTPUT, CUSTOM_BUILDINGS, GRAND_CENTRAL, WORLD_H, WORLD_W, chunkOf, lonLatToTile } from '@globalcity/shared';
+import { DISASTERS, Disaster, type WorldStats } from '@globalcity/shared';
 import type { Actions } from './actions.ts';
 import type { Minimap, SpriteSheet } from './assets.ts';
 import { drawTile } from './assets.ts';
@@ -150,6 +151,7 @@ export class UI {
     this.buildWelcome();
     this.buildAbout();
     this.buildLeaderboard();
+    this.buildWorldStats();
     this.buildMilestones();
     this.buildOverlayBar();
     this.buildLifeline();
@@ -215,7 +217,7 @@ export class UI {
       el('div', { class: 'stat', title: 'Population' }, el('span', { class: 'ico' }, '👥'), this.pop),
       el('div', { class: 'stat', title: 'Date' }, el('span', { class: 'ico' }, '📅'), this.date),
       el('div', { class: 'stat', title: 'Players online' }, el('span', { class: 'ico online-dot' }, '●'), this.online),
-      el('div', { class: 'stat world-pop', title: 'World population: every city on the planet combined' }, el('span', { class: 'ico' }, '🌍'), this.worldPop),
+      this.worldPopStat = el('div', { class: 'stat world-pop clickable', title: 'World population: every city on the planet combined. Click for the world stats', role: 'button', tabindex: '0' }, el('span', { class: 'ico' }, '🌍'), this.worldPop),
       this.plotsStat,
       this.claimBtn, this.findBtn, this.cityBtn, this.worldBtn, this.msBtn, this.budgetBtn, this.lbBtn, this.lifelineBtn, this.abandonBtn, this.monumentBtn, this.fireBtn,
       el('div', { class: 'spacer' }),
@@ -460,6 +462,94 @@ export class UI {
       this.monView,
     );
     this.root.append(this.leaderboard);
+  }
+
+  // ---------- world stats ----------
+  private worldPopStat!: HTMLElement;
+  private worldStats!: HTMLElement;
+  private wsBody!: HTMLElement;
+  private wsTitle!: HTMLElement;
+  private wsTimer: ReturnType<typeof setInterval> | null = null;
+
+  private buildWorldStats(): void {
+    const close = el('button', { class: 'btn ghost round close', title: 'Close' }, '×');
+    close.onclick = () => this.closeWorldStats();
+    this.wsTitle = el('h2', { text: '🌍 The world' });
+    this.wsBody = el('div', { class: 'ws-body' }, el('p', { class: 'muted', text: 'Counting…' }));
+    this.worldStats = el('div', { id: 'worldStats', class: 'panel card hidden' }, close, this.wsTitle, this.wsBody);
+    this.root.append(this.worldStats);
+    const open = () => this.openWorldStats();
+    this.worldPopStat.onclick = open;
+    this.worldPopStat.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } };
+  }
+
+  openWorldStats(): void {
+    this.closePanels();
+    this.show(this.worldStats);
+    this.net.send({ t: 'worldStats' });
+    // fresh numbers while it's open (the server counts them at most every 30 s)
+    if (!this.wsTimer) this.wsTimer = setInterval(() => { if (!this.worldStats.classList.contains('hidden')) this.net.send({ t: 'worldStats' }); else this.closeWorldStats(); }, 30_000);
+  }
+
+  private closeWorldStats(): void {
+    this.hide(this.worldStats);
+    if (this.wsTimer) { clearInterval(this.wsTimer); this.wsTimer = null; }
+  }
+
+  /** Fill the world stats dialog (a 'worldStats' message). */
+  showWorldStats(s: WorldStats): void {
+    const n = (v: number) => v.toLocaleString('en-US');
+    this.wsTitle.textContent = `🌍 The world in ${s.year}`;
+    const tile = (value: string, label: string, title?: string) => el('div', { class: 'ws-tile', title: title ?? '' }, el('div', { class: 'ws-val', text: value }), el('div', { class: 'ws-label', text: label }));
+    const share = s.landPlots ? Math.round((s.plots / s.landPlots) * 1000) / 10 : 0;
+    const top = el('div', { class: 'ws-grid' },
+      tile(fmtCompact(s.population), 'people', `${n(s.population)} people in every city combined`),
+      tile(n(s.cities), s.cities === 1 ? 'city' : 'cities'),
+      tile(n(s.online), 'mayors online'),
+      tile(`${share}%`, 'of the land claimed', `${n(s.plots)} of ${n(s.landPlots)} plots with land`),
+    );
+    const visit = (cx: number, cy: number, name: string) => {
+      const b = el('button', { class: 'btn visit', title: `Fly to ${name}` }, 'Visit');
+      b.onclick = () => { this.actions.flyToChunk(cx, cy, 1, 900); this.closeWorldStats(); };
+      return b;
+    };
+    const cityRow = (label: string, c: { name: string; cx: number; cy: number } | null, extra: string) =>
+      c ? el('div', { class: 'ws-row' }, el('span', { class: 'ws-k', text: label }), el('span', { class: 'ws-v', text: `${c.name}${extra}` }), visit(c.cx, c.cy, c.name)) : null;
+    const present = (...xs: (HTMLElement | null)[]): HTMLElement[] => xs.filter((x): x is HTMLElement => x !== null);
+    const cities = el('div', { class: 'ws-section' }, ...present(
+      cityRow('Biggest city', s.biggest, s.biggest ? ` · ${n(s.biggest.population)} people` : ''),
+      cityRow('Newest city', s.newest, ''),
+      el('div', { class: 'ws-row' }, el('span', { class: 'ws-k', text: 'Monuments' }), el('span', { class: 'ws-v', text: `${n(s.monuments)} retired cities, standing forever` })),
+      el('div', { class: 'ws-row' }, el('span', { class: 'ws-k', text: 'Abandoned' }), el('span', { class: 'ws-v', text: `${n(s.abandoned)} cities whose mayor has been away a month` })),
+    ));
+    const built = el('div', { class: 'ws-grid small' },
+      tile(n(s.zones.res), 'homes', 'residential zones'), tile(n(s.zones.com), 'shops & offices', 'commercial zones'), tile(n(s.zones.ind), 'factories', 'industrial zones'),
+      tile(n(s.roads), 'road tiles'), tile(n(s.rail), 'rail tiles'), tile(n(s.powerLines), 'power line tiles'),
+      tile(n(s.plants), 'power plants'), tile(n(s.powerSupply), 'power supplied', 'zones the world\'s plants can power'),
+      tile(n(s.airports), 'airports'), tile(n(s.seaports), 'seaports'), tile(n(s.seaRoutes), 'sea routes'),
+    );
+    const quakes = s.disasters.map((c: number, k: number) => (c ? `${DISASTERS[k as Disaster].emoji} ${n(c)} ${DISASTERS[k as Disaster].name.toLowerCase()}${c === 1 ? '' : 's'}` : null)).filter(Boolean) as string[];
+    const disasters = el('div', { class: 'ws-section' }, ...present(
+      el('div', { class: 'ws-row' }, el('span', { class: 'ws-k', text: 'Last 24 hours' }),
+        el('span', { class: 'ws-v', text: quakes.length ? quakes.join(' · ') : 'No disasters: a quiet day on Earth' })),
+      s.activeDisasters ? el('div', { class: 'ws-row' }, el('span', { class: 'ws-k', text: 'Right now' }), el('span', { class: 'ws-v', text: `${n(s.activeDisasters)} on the go` })) : null,
+    ));
+    const totalBiome = s.biomes.reduce((a: number, b: number) => a + b, 0) || 1;
+    const biomeLabels = ['Temperate', 'Desert', 'Steppe', 'Tundra', 'Boreal', 'Ice sheet'];
+    const biomeColours = ['#cc7f66', '#e6c68a', '#b8b47c', '#a8a48c', '#dde4ec', '#f6f9fc'];
+    const biomes = el('div', { class: 'ws-bars' }, ...s.biomes.map((c: number, b: number) => {
+      const bar = el('div', { class: 'ws-bar-fill' });
+      bar.style.width = `${(c / totalBiome) * 100}%`;
+      bar.style.background = biomeColours[b] ?? '#888';
+      return el('div', { class: 'ws-bar', title: `${n(c)} plots` }, el('span', { class: 'ws-k', text: biomeLabels[b] ?? `Biome ${b}` }), el('div', { class: 'ws-bar-track' }, bar), el('span', { class: 'ws-pct', text: `${Math.round((c / totalBiome) * 100)}%` }));
+    }));
+    this.wsBody.replaceChildren(
+      top,
+      el('h3', { text: 'Cities' }), cities,
+      el('h3', { text: 'Built' }), built,
+      el('h3', { text: 'Where cities are' }), biomes,
+      el('h3', { text: 'Disasters' }), disasters,
+    );
   }
 
   private buildMinimap(): void {
@@ -1418,7 +1508,7 @@ export class UI {
     if (this.queryTimer) { clearTimeout(this.queryTimer); this.queryTimer = null; }
   }
 
-  closePanels(): void { this.hide(this.about); this.hide(this.leaderboard); this.hideQuery(); }
+  closePanels(): void { this.hide(this.about); this.hide(this.leaderboard); this.hide(this.worldStats); this.hideQuery(); }
 
   // ---------- minimap ----------
   /** Redraw the corner map (its image changed). */

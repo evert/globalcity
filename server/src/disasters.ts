@@ -60,6 +60,10 @@ export class Disasters {
     private readonly hooks: DisasterHooks,
   ) {}
 
+  /** Disasters started since `since` (ms epoch), for the world stats; a day of them is kept. */
+  history(since: number): { kind: Disaster; at: number }[] { return this.past.filter((e) => e.at >= since); }
+  private past: { kind: Disaster; at: number }[] = [];
+
   /** Take the announcements made since the last call. */
   takeToasts(): DisasterToast[] { const t = this.toasts; this.toasts = []; return t; }
 
@@ -173,6 +177,8 @@ export class Disasters {
     }
     run.x ||= at % WORLD_W; run.y ||= Math.floor(at / WORLD_W);
     p.lastDisaster = now;
+    this.past = this.past.filter((e) => now - e.at < 86_400_000);
+    this.past.push({ kind, at: now });
     this.players.dirty = true;
     this.runs.push(run);
     this.version++;

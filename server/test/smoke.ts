@@ -51,11 +51,13 @@ const welcome = new Promise<Extract<ServerMsg, { t: 'welcome' }>>((resolve) => {
       case 'toast': toasts.push(`${msg.kind}: ${msg.msg}`); break;
       case 'freeSpot': freeSpot = msg; break;
       case 'claim': if (msg.claim.ownerId === ownerId) claimed = msg.claim; break;
+      case 'worldStats': worldStats = msg.stats; break;
       default: break;
     }
   });
 });
 let freeSpot: Extract<ServerMsg, { t: 'freeSpot' }> | null = null;
+let worldStats: Extract<ServerMsg, { t: 'worldStats' }>['stats'] | null = null;
 let claimed: { cx: number; cy: number } | null = null;
 
 function fail(msg: string): never {
@@ -133,6 +135,11 @@ async function main(): Promise<void> {
   if (s.powerSupply !== COAL_POWER) fail(`power supply ${s.powerSupply}, expected ${COAL_POWER}`);
   if (s.powerDemand !== 3) fail(`power demand ${s.powerDemand}, expected 3 (zones not connected to grid?)`);
   if (toasts.some((t) => t.startsWith('error'))) fail('an error toast was received');
+  // the world stats dialog's numbers: this city is in them
+  send({ t: 'worldStats' });
+  const wst = await waitFor(() => worldStats, 'worldStats');
+  console.log(`world stats: ${wst.cities} cities, ${wst.plots}/${wst.landPlots} plots, ${wst.roads} road tiles, ${wst.plants} plants supplying ${wst.powerSupply}`);
+  if (wst.cities < 1 || wst.plots < 1 || wst.landPlots < 1000 || wst.plants < 1 || wst.roads < 1) fail('world stats missing this city');
   console.log('PASS');
   ws.close();
   process.exit(0);

@@ -25,6 +25,42 @@ export interface ClaimInfo {
   monument?: boolean;
 }
 
+/** The whole planet at a glance (the world stats dialog). Counted over every claimed plot, refreshed every 30 s. */
+export interface WorldStats {
+  year: number;
+  /** people in every city combined (monuments not included) */
+  population: number;
+  /** cities with land (not monuments) */
+  cities: number;
+  monuments: number;
+  /** cities whose mayor has been away more than 30 days */
+  abandoned: number;
+  /** mayors playing right now */
+  online: number;
+  /** plots claimed, and plots with enough land to claim in the whole world */
+  plots: number;
+  landPlots: number;
+  biggest: { name: string; population: number; cx: number; cy: number } | null;
+  /** the city of the mayor who joined last */
+  newest: { name: string; at: number; cx: number; cy: number } | null;
+  /** tiles of road (incl. traffic), rail and power line, and zones built, across every city */
+  roads: number;
+  rail: number;
+  powerLines: number;
+  zones: { res: number; com: number; ind: number };
+  /** power plants and the power they supply */
+  plants: number;
+  powerSupply: number;
+  airports: number;
+  seaports: number;
+  seaRoutes: number;
+  /** disasters in the last 24 hours, by kind (Disaster), and those on the go */
+  disasters: number[];
+  activeDisasters: number;
+  /** claimed plots by their commonest biome (Biome) */
+  biomes: number[];
+}
+
 export interface GameTime {
   year: number;
   month: number; // 0..11
@@ -170,6 +206,7 @@ export type ClientMsg =
   | { t: 'renameCity'; name: string }
   | { t: 'view'; x: number; y: number; zoom: number; cx?: number; cy?: number } // throttled by the client (~4/s)
   | { t: 'leaderboard' } // ask for the current top list
+  | { t: 'worldStats' } // ask for the world stats (answered with a 'worldStats' message)
   | { t: 'lifeline' } // take the emergency lifeline loan
   | { t: 'monument' } // retire my city (over MONUMENT_MIN_POP) as a monument and start over
   | { t: 'abandon' } // give up my broke city (owes a lifeline, under ABANDON_MAX_FUNDS): plots released as they stand, start over
@@ -204,6 +241,7 @@ export type ServerMsg =
   | { t: 'shipping'; ports: PortInfo[]; routes: SeaRoute[]; now: number } // powered seaports + sea routes (on welcome and when they change)
   | { t: 'buildings'; list: CustomBuilding[] } // every custom-layer building (sent on welcome)
   | { t: 'building'; op: 'add' | 'remove'; b: CustomBuilding } // a custom-layer building appeared / went
+  | { t: 'worldStats'; stats: WorldStats }
   | { t: 'disasters'; list: ActiveDisaster[] } // natural disasters on the go (on welcome, and whenever they change)
   | { t: 'pong' };
 

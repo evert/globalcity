@@ -291,3 +291,23 @@ a.btn { display: inline-flex; align-items: center; gap: 6px; text-decoration: no
 @media (hover: none) {
   #ui [title] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 }
+
+/* world stats dialog */
+.stat.clickable { cursor: pointer; }
+.stat.clickable:hover { background: rgba(255,255,255,0.06); border-radius: 4px; }
+#worldStats { width: min(620px, calc(100vw - 32px)); max-height: calc(100vh - 80px); overflow-y: auto; scrollbar-width: thin; }
+#worldStats h3 { margin: 16px 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted, #9aa4b2); }
+.ws-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.ws-grid.small { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+.ws-tile { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 8px 10px; }
+.ws-val { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ws-grid.small .ws-val { font-size: 16px; }
+.ws-label { font-size: 12px; color: var(--muted, #9aa4b2); }
+.ws-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+.ws-row .ws-k { flex: 0 0 110px; color: var(--muted, #9aa4b2); font-size: 13px; }
+.ws-row .ws-v { flex: 1; }
+.ws-bar { display: grid; grid-template-columns: 90px 1fr 40px; align-items: center; gap: 8px; padding: 2px 0; font-size: 13px; }
+.ws-bar-track { height: 10px; background: rgba(255,255,255,0.06); border-radius: 5px; overflow: hidden; }
+.ws-bar-fill { height: 100%; border-radius: 5px; }
+.ws-pct { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted, #9aa4b2); }
+@media (max-width: 520px) { .ws-grid { grid-template-columns: repeat(2, 1fr); } }
