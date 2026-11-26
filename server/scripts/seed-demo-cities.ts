@@ -1,7 +1,12 @@
 // Dev helper: fills a save with fake, fully built cities at real places, to see how the map looks with a busy
 // world at every zoom. Never run it against a real save: it adds made-up players.
 //
-//   npx tsx scripts/seed-demo-cities.ts <save dir> [count]     (the server must NOT be running on that save)
+//   npx tsx scripts/seed-demo-cities.ts <save dir> [count] [--spacing <chunks>] [--fill <share>]
+//   (the server must NOT be running on that save)
+//
+// count: how many cities at real places (default 90); --spacing: least distance between them in chunks (default 12;
+// 3 puts one at nearly every place in the data); --fill: then keep founding cities on free land until this share
+// (0..1) of the chunks with real land is claimed, named after the nearest place ("New Lyon", "Lyon Heights").
 //
 // Bigger places get more plots. Cities are laid out SimCity-style: a road grid with 3x3 zones, commercial in the
 // centre, homes around it, industry, a coal plant and sometimes an airport or stadium at the edge, busy roads
@@ -19,9 +24,12 @@ import {
 import { bootWorld } from '../src/world.ts';
 
 const root = path.resolve(import.meta.dirname, '../..');
-const saveDir = path.resolve(root, process.argv[2] ?? '');
-const COUNT = Number(process.argv[3]) || 90;
-if (!process.argv[2] || !fs.existsSync(path.join(saveDir, 'state.json'))) {
+const args = process.argv.slice(2);
+const flag = (name: string): number | null => { const i = args.indexOf(name); if (i < 0) return null; const v = Number(args[i + 1]); args.splice(i, 2); return v; };
+const SPACING = flag('--spacing') ?? 12, FILL = flag('--fill') ?? 0;
+const saveDir = path.resolve(root, args[0] ?? '');
+const COUNT = Number(args[1]) || 90;
+if (!args[0] || !fs.existsSync(path.join(saveDir, 'state.json'))) {
   console.error('usage: npx tsx scripts/seed-demo-cities.ts <save dir with a state.json> [count]');
   process.exit(1);
 }
@@ -52,11 +60,11 @@ for (const name of SHOWCASE) {
 }
 for (const p of places) {
   if (picked.length >= COUNT * 0.75) break;
-  if (farEnough(p[1], p[2], 12)) picked.push({ name: p[0], x: p[1], y: p[2], pop: p[3] });
+  if (farEnough(p[1], p[2], SPACING)) picked.push({ name: p[0], x: p[1], y: p[2], pop: p[3] });
 }
 for (let tries = 0; picked.length < COUNT && tries < 5000; tries++) {
   const p = places[300 + Math.floor(rand() * Math.min(3000, places.length - 300))];
-  if (p && farEnough(p[1], p[2], 8)) picked.push({ name: p[0], x: p[1], y: p[2], pop: 50_000 });
+  if (p && farEnough(p[1], p[2], Math.min(8, SPACING))) picked.push({ name: p[0], x: p[1], y: p[2], pop: 50_000 });
 }
 
 const plotsFor = (pop: number): number => pop >= 15e6 ? 10 : pop >= 8e6 ? 8 : pop >= 4e6 ? 6 : pop >= 2e6 ? 4 : pop >= 800e3 ? 3 : pop >= 200e3 ? 2 : 1;
@@ -64,8 +72,9 @@ const template = state.players.find((p: { stats?: unknown }) => p.stats)?.stats;
 if (!template) { console.error('the save needs at least one player to copy stats from (open the game once)'); process.exit(1); }
 
 const now = Date.now();
-let made = 0;
-for (const city of picked) {
+let made = 0, plots = 0;
+const usedNames = new Set<string>(state.players.map((p: { cityName?: string }) => (p.cityName ?? '').toLowerCase()));
+function makeCity(city: { name: string; x: number; y: number; pop: number }): boolean {
   // plots: the place's chunk and its nearest neighbours with enough land
   const ccx = Math.floor(city.x / CHUNK), ccy = Math.floor(city.y / CHUNK);
   const want = plotsFor(city.pop);
@@ -84,7 +93,7 @@ for (const city of picked) {
     if (landIn(c.cx, c.cy) < 1600) continue;
     chunks.push(c);
   }
-  if (!chunks.length) continue;
+  if (!chunks.length) return false;
   const mine = new Set(chunks.map((c) => chunkKey(c.cx, c.cy)));
   const inCity = (x: number, y: number) => x >= 0 && y >= 0 && x < WORLD_W && y < WORLD_H && mine.has(chunkKey(Math.floor(x / CHUNK), Math.floor(y / CHUNK)));
   const dry = (x: number, y: number) => inCity(x, y) && !isWater(T[y * WORLD_W + x]);
@@ -164,8 +173,41 @@ for (const city of picked) {
     const buf = Buffer.from(Uint16Array.from(world.chunkView(c.cx, c.cy), (v) => v & 0xffff).buffer); // saves hold kind + flags
     fs.writeFileSync(path.join(saveDir, 'chunks', `${c.cx}_${c.cy}.bin`), buf);
   }
-  made++;
-  console.log(`${city.name}: ${chunks.length} plot(s), ${population.toLocaleString()} people`);
+  made++; plots += chunks.length;
+  usedNames.add(city.name.toLowerCase());
+  if (made <= 200 || made % 500 === 0) console.log(`${city.name}: ${chunks.length} plot(s), ${population.toLocaleString()} people`);
+  return true;
+}
+for (const city of picked) makeCity(city);
+
+// fill: found cities on free land until FILL of the land chunks are claimed
+if (FILL > 0) {
+  const landy: { cx: number; cy: number }[] = [];
+  for (let cy = 0; cy < CHUNKS_Y; cy++) for (let cx = 0; cx < CHUNKS_X; cx++) if (landIn(cx, cy) >= 1600) landy.push({ cx, cy });
+  for (let i = landy.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [landy[i], landy[j]] = [landy[j], landy[i]]; }
+  const target = Math.round(landy.length * FILL);
+  const PRE = ['New ', 'East ', 'West ', 'North ', 'South ', 'Port ', 'Upper ', 'Lower ', 'Fort ', 'Lake ', 'Mount ', 'Little '];
+  const POST = [' Heights', ' Park', ' Springs', ' Hills', ' Falls', ' Junction', ' Harbour', ' Crossing', ' Vale', ' Ridge', ' Bay', ' Fields'];
+  const nearest = (x: number, y: number): string => {
+    let best = places[0][0], bd = Infinity;
+    for (const p of places) { const d = (p[1] - x) ** 2 + (p[2] - y) ** 2; if (d < bd) { bd = d; best = p[0]; } }
+    return best;
+  };
+  const claimedLand = () => landy.filter((c) => claimed.has(chunkKey(c.cx, c.cy))).length;
+  let have = claimedLand();
+  for (const c of landy) {
+    if (have >= target) break;
+    if (claimed.has(chunkKey(c.cx, c.cy))) continue;
+    const x = c.cx * CHUNK + 16 + Math.floor(rand() * 32), y = c.cy * CHUNK + 16 + Math.floor(rand() * 32);
+    const base = nearest(x, y);
+    let name = '';
+    for (let k = 0; k < 30 && (!name || usedNames.has(name.toLowerCase())); k++) name = rand() < 0.5 ? PRE[Math.floor(rand() * PRE.length)] + base : base + POST[Math.floor(rand() * POST.length)];
+    if (usedNames.has(name.toLowerCase())) name = `${base} ${made}`;
+    const u = rand(), pop = u < 0.5 ? 100_000 : u < 0.8 ? 500_000 : u < 0.95 ? 1_500_000 : 5_000_000;
+    const before = plots;
+    if (makeCity({ name, x, y, pop })) have += plots - before;
+  }
+  console.log(`fill: ${have} of ${landy.length} land chunks claimed (${Math.round((have / landy.length) * 100)}%)`);
 }
 fs.writeFileSync(path.join(saveDir, 'state.json'), JSON.stringify(state));
-console.log(`${made} demo cities written to ${saveDir}`);
+console.log(`${made} demo cities, ${plots} plots written to ${saveDir}`);
