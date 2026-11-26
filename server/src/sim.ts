@@ -203,6 +203,8 @@ export class Sim {
   /** sea routes between seaports (ships sail them, see shared/ships.ts) */
   readonly shipping: ShippingPlanner;
   readonly disasters: Disasters;
+  /** metres above sea level per tile (the world generator's elevation.bin) */
+  readonly elevation: Elevation;
   private disastersVersion = 0;
   /** powered police station centres: last tick's list (read by landValue) and the one being collected */
   private police: number[] = [];
@@ -249,7 +251,8 @@ export class Sim {
 
   constructor(private readonly world: World, private readonly players: Players, opts: SimOptions = {}) {
     this.randomFires = opts.randomFires ?? true;
-    this.disasters = new Disasters(world, players, opts.hazards ?? new Uint8Array(CHUNKS_X * CHUNKS_Y), opts.elevation ?? new Elevation(null), {
+    this.elevation = opts.elevation ?? new Elevation(null);
+    this.disasters = new Disasters(world, players, opts.hazards ?? new Uint8Array(CHUNKS_X * CHUNKS_Y), this.elevation, {
       ignite: (x, y) => this.ignite(x, y),
       isFrozen: (id) => this.frozen.has(id),
     });

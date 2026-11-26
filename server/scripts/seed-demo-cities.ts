@@ -18,7 +18,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {
   WORLD_W, WORLD_H, CHUNK, CHUNKS_X, CHUNKS_Y, WORLD_TAG, LOMASK, ZONEBIT, BULLBIT, PWRBIT, ANIMBIT, BNCNBIT, BLBNBIT,
-  ROADBASE, ROAD_TABLE, COALBASE, AIRPORTBASE, STADIUMBASE, FIRESTBASE, POLICESTBASE, WOODS2, DIRT,
+  ROADBASE, ROAD_TABLE, HROADPOWER, VROADPOWER, LHPOWER, LVPOWER, CONDBIT, BLBNCNBIT, COALBASE, AIRPORTBASE, STADIUMBASE, FIRESTBASE, POLICESTBASE, WOODS2, DIRT,
   resBuildingCenter, comBuildingCenter, indBuildingCenter, resZonePop, comZonePop, indZonePop, displayPopulation,
   trafficTile, colorForId, isWater, baseIsWater, chunkKey,
 } from '@globalcity/shared';
@@ -120,13 +120,25 @@ function makeCity(city: { name: string; x: number; y: number; pop: number }): bo
     for (let dy = 0; dy < size; dy++) for (let dx = 0; dx < size; dx++) if (!dry(x + dx, y + dy) || road.has((y + dy) * WORLD_W + x + dx)) return false;
     return true;
   };
-  let plant = false, airport = chunks.length < 4, stadium = chunks.length < 6;
+  // a live city needs real power: a coal plant powers 400 zones and a built-up plot has about 300, so one per plot
+  // and one spare (one is enough for a frozen picture)
+  let plants = 0, airport = chunks.length < 4, stadium = chunks.length < 6;
+  const wantPlants = LIVE ? chunks.length + 1 : 1;
   const blocks: { bx: number; by: number; r: number }[] = [];
   for (let by = Math.ceil(y0 / 7) * 7 + 1; by + 6 <= y1; by += 7) for (let bx = Math.ceil(x0 / 7) * 7 + 1; bx + 6 <= x1; bx += 7) blocks.push({ bx, by, r: rOf(bx + 3, by + 3) });
   blocks.sort((a, b) => b.r - a.r); // the edge first, so the plant and airport get outer blocks
   for (const { bx, by, r } of blocks) {
     if (r > 1.15) continue;
-    if (!plant && r > 0.7 && fits(bx + 1, by + 1, 4)) { put(bx + 1, by + 1, 4, COALBASE); plant = true; continue; }
+    // a frozen picture puts its plant at the edge; a live city's plants go in the built-up ring, where unbroken
+    // zones carry their power everywhere (the thinned-out fringe has gaps that would cut them off)
+    // (blocks come edge first, so a small town without room in that ring still gets one in its centre)
+    if (plants < wantPlants && (LIVE ? (r > 0.3 && r < 0.7) || (plants === 0 && r <= 0.3) : r > 0.7) && fits(bx + 1, by + 1, 4)) {
+      put(bx + 1, by + 1, 4, COALBASE); plants++;
+      // the plant sits a tile in from the block's edge: wire it to the power crossings in the roads west and north
+      if (LIVE && dry(bx, by + 2)) T[(by + 2) * WORLD_W + bx] = LHPOWER | BLBNCNBIT;
+      if (LIVE && dry(bx + 2, by)) T[by * WORLD_W + bx + 2] = LVPOWER | BLBNCNBIT;
+      continue;
+    }
     if (!airport && r > 0.6 && fits(bx, by, 6)) { put(bx, by, 6, AIRPORTBASE); airport = true; continue; }
     if (!stadium && r > 0.35 && r < 0.6 && fits(bx + 1, by + 1, 4)) { put(bx + 1, by + 1, 4, STADIUMBASE); stadium = true; continue; }
     for (const [ox, oy] of [[0, 0], [3, 0], [0, 3], [3, 3]]) {
@@ -159,6 +171,10 @@ function makeCity(city: { name: string; x: number; y: number; pop: number }): bo
     const piece = ROAD_TABLE[mask] - ROADBASE, r = rOf(x, y), u = rand();
     const level = r < 0.35 && u < 0.45 ? 2 : r < 0.65 && u < 0.35 ? 1 : 0;
     T[i] = trafficTile(piece, level, Math.floor(rand() * 4)) | BLBNBIT | (level ? ANIMBIT : 0);
+    // live cities: roads don't carry power, so the middle of every road between two blocks gets a power line
+    // across it, and the plant's power reaches every block (zones pass it on to the zones they touch)
+    if (LIVE && mask === 5 && y % 7 === 3) T[i] = VROADPOWER | CONDBIT | BLBNBIT; // vertical road, wire east-west
+    else if (LIVE && mask === 10 && x % 7 === 3) T[i] = HROADPOWER | CONDBIT | BLBNBIT; // horizontal road, wire north-south
   }
 
   // the mayor

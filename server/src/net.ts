@@ -13,7 +13,7 @@ import { WebSocketServer, WebSocket, type RawData } from 'ws';
 import {
   WORLD_W, WORLD_H, CHUNK, CHUNKS_X, CHUNKS_Y, MAX_SUBSCRIBED_CHUNKS, TOOLS, LEADERBOARD_PUSH_TICKS,
   PRESENCE_INTERVAL_MS, PRESENCE_MAX,
-  encodeChunk, inWorld, clamp, Disaster, DISASTERS, DISASTER_COUNT,
+  encodeChunk, inWorld, clamp, Disaster, DISASTERS, DISASTER_COUNT, hazardBit,
   type ClientMsg, type ServerMsg, type ToolId, type Presence,
   LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, MONUMENT_MIN_POP, STARTING_FUNDS, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT,
 } from '@globalcity/shared';
@@ -172,13 +172,23 @@ export class Net {
     if (cx !== undefined && cy !== undefined) {
       target = this.players.ownerOf(cx, cy);
       if (!target || target.monument) { this.toast(client, 'No city here: move the map so a city is in the middle of the screen', 'error'); return; }
-    } else {
-      const cities = [...this.players.players.values()].filter((c) => c.chunks.length > 0 && !c.monument && c.stats.population > 0);
-      target = cities[Math.floor(Math.random() * cities.length)];
+    }
+    const name = DISASTERS[kind as Disaster].name;
+    let ok = false;
+    if (target) ok = this.sim.disasters.start(target, kind as Disaster, Date.now());
+    else {
+      // a random city, preferring those where this disaster happens on Earth (any city if none can get it); a
+      // flood or wildfire can find nothing to hit in some cities, so try a few
+      const cities = [...this.players.players.values()].filter((c) => c.chunks.length > 0 && !c.monument);
+      const prone = cities.filter((c) => this.sim.disasters.hazardsOf(c) & hazardBit(kind as Disaster));
+      const pool = prone.length ? prone : cities;
+      for (let tries = 0; tries < 20 && !ok && pool.length; tries++) {
+        target = pool[Math.floor(Math.random() * pool.length)];
+        ok = this.sim.disasters.start(target, kind as Disaster, Date.now());
+      }
       if (!target) { this.toast(client, 'There is no city to strike', 'error'); return; }
     }
-    const name = DISASTERS[kind as Disaster].name, city = target.cityName || `${target.name}'s city`;
-    const ok = this.sim.disasters.start(target, kind as Disaster, Date.now());
+    const city = target.cityName || `${target.name}'s city`;
     log(`test disaster by ${p.name}: ${name} in ${city}: ${ok ? 'started' : 'nothing to hit'}`);
     if (!ok) { this.toast(client, `${name}: nothing it can hit in ${city}`, 'error'); return; }
     this.broadcast({ t: 'disasters', list: this.sim.disasters.active() });
@@ -400,7 +410,7 @@ export class Net {
       case 'build': this.onBuild(client, p, msg.tool, msg.x, msg.y); break;
       case 'view': this.onView(client, msg); break;
       case 'query':
-        if (inWorld(msg.x, msg.y)) this.send(client, { t: 'query', info: queryTile(this.buildCtx, msg.x, msg.y) });
+        if (inWorld(msg.x, msg.y)) this.send(client, { t: 'query', info: { ...queryTile(this.buildCtx, msg.x, msg.y), elev: this.sim.elevation.at(msg.x, msg.y) } });
         break;
       case 'findFree': {
         const spot = this.players.findFree(msg.cx, msg.cy);

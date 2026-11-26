@@ -192,6 +192,8 @@ export interface QueryInfo {
   zonePop?: number;
   /** which kind of zone zonePop belongs to (absent from old servers) */
   zoneKind?: 'res' | 'com' | 'ind';
+  /** height above sea level in metres (below zero: under the sea; from the world's elevation map) */
+  elev?: number;
 }
 
 // ---------- client -> server (JSON) ----------

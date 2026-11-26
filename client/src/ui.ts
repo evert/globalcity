@@ -1551,6 +1551,7 @@ export class UI {
       el('div', { class: `qrow ${info.powered ? 'good' : 'bad'}`, text: info.powered ? '⚡ Powered' : '⚡ Unpowered' }),
       el('div', { class: 'qrow', text: info.owner ? `Owner: ${info.owner.cityName ? `${info.owner.cityName} — ` : ''}${info.owner.name}` : 'Unclaimed land' }),
       ...(info.zonePop !== undefined ? [el('div', { class: 'qrow', text: `${info.zoneKind === 'com' || info.zoneKind === 'ind' ? 'Jobs' : 'Residents'}: ${info.zonePop.toLocaleString('en-US')}` })] : []),
+      ...(info.elev !== undefined ? [el('div', { class: 'qrow', text: info.elev < 0 ? `🌊 ${(-info.elev).toLocaleString('en-US')} m below sea level` : `⛰ Elevation: ${info.elev.toLocaleString('en-US')} m` })] : []),
     );
     if (info.owner) (q.firstElementChild as HTMLElement).style.color = info.owner.color;
     if (id >= CITYHALLBASE && id <= LASTCITYHALL && info.owner && info.owner.id === this.state.me?.id) {
