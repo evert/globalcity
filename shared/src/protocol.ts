@@ -67,8 +67,10 @@ export interface WorldStats {
   climate?: {
     /** share of the world's power supply from wind, offshore wind and nuclear, 0..1 */
     cleanShare: number;
-    /** CO2 the world emits a year at its current rate (coal plants and industry standing now), megatonnes */
+    /** CO2 the world emits a year (the last survey of what stands, and the forests' last year), megatonnes */
     emissions: number;
+    /** ...by source, megatonnes: coal power, industry, car traffic, and forests (negative while they grow back) */
+    sources?: { power: number; industry: number; traffic: number; land: number };
     /** CO2 in the air, ppm */
     co2: number;
     /** warming since 1900, degC */

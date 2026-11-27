@@ -170,7 +170,8 @@ import { chance, randInt, log } from './util.ts';
 import { Disasters } from './disasters.ts';
 import { Elevation } from './elevation.ts';
 import { config } from './config.ts';
-import { countEmitters } from './climate.ts';
+import { ClimateSurvey } from './climate.ts';
+import { builtEmissions } from '@globalcity/shared';
 
 /** Tax multiplier: tuned so a town of ~20 full R, 8 C, 8 I zones earns ~$2600 per game year. */
 /** Growth odds per tick: one house step / one density step, scaled by demand (0..1). */
@@ -420,6 +421,16 @@ export class Sim {
     opts: SimOptions = {},
   ) {
     this.players.seedHistories();
+    // the climate's starting numbers: trees counted once (then kept up to date) and one full survey, at boot
+    const t0 = performance.now();
+    const trees = world.treeCount(),
+      t1 = performance.now();
+    const e = this.climateSurvey.sweep(world, players.claims.keys(), this.railServedAt),
+      t2 = performance.now();
+    this.players.measureClimate(builtEmissions(e.coal, e.industry, e.residents, e.railResidents), trees);
+    log(
+      `Climate: ${trees.toLocaleString('en-US')} tree tiles counted in ${Math.round(t1 - t0)} ms; ${players.claims.size} plots surveyed in ${Math.round(t2 - t1)} ms (each step surveys 1/${STEPS * 12} of that)`,
+    );
     this.randomFires = opts.randomFires ?? true;
     this.elevation = opts.elevation ?? new Elevation(null);
     this.disasters = new Disasters(world, players, opts.hazards ?? new Uint8Array(CHUNKS_X * CHUNKS_Y), this.elevation, {
@@ -539,10 +550,12 @@ export class Sim {
       t.year++;
     }
     const newYear = newMonth && t.month === 0;
+    // the climate survey takes a slice of the plots every step; each year uses its last full sweep
+    this.climateSurvey.step(this.world, () => this.players.claims.keys(), STEPS * 12, this.railServedAt);
     if (newYear) {
       this.players.recordPopulation();
-      const e = countEmitters(this.world, this.players.claims.keys());
-      this.players.recordClimate(e.coal, e.industry);
+      const e = this.climateSurvey.last!;
+      this.players.recordClimate(builtEmissions(e.coal, e.industry, e.residents, e.railResidents), this.world.treeCount());
     }
     this.players.dirty = true;
     this.toasts = [];
@@ -1648,9 +1661,14 @@ export class Sim {
     if (kind === 'res') p = id === FREEZ ? 0.1 : resZonePop(id) / 80;
     else if (kind === 'com') p = id === COMCLR ? 0 : comZonePop(id) / 10;
     else p = id === INDCLR ? 0 : indZonePop(id) / 8;
-    if (p > 0 && (this.railNear(x, y) || this.grandCentrals.some((g) => chebyshev(g, x, y) <= GRAND_CENTRAL_RANGE))) p *= 1 - TRAFFIC_RAIL_SHARE;
+    if (p > 0 && this.railServedAt(x, y)) p *= 1 - TRAFFIC_RAIL_SHARE;
     return p;
   }
+
+  /** A zone centred at (x, y) is rail-served: track within TRAFFIC_RAIL_REACH, or a powered Grand Central near. */
+  private readonly railServedAt = (x: number, y: number): boolean =>
+    this.railNear(x, y) || this.grandCentrals.some((g) => chebyshev(g, x, y) <= GRAND_CENTRAL_RANGE);
+  private readonly climateSurvey = new ClimateSurvey();
 
   private railNear(x: number, y: number): boolean {
     const w = this.world;

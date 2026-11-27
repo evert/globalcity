@@ -25,7 +25,7 @@ import {
   WIND_POWER,
   OFFSHORE_POWER,
   warming,
-  yearEmissions,
+  totalEmissions,
 } from '@globalcity/shared';
 import type { World } from './world.ts';
 import type { Players } from './players.ts';
@@ -108,7 +108,6 @@ export class WorldStatsCounter {
       abandoned = 0,
       powerSupply = 0,
       cleanSupply = 0,
-      coalPlants = 0,
       plants = 0;
     let biggest: WorldStats['biggest'] = null,
       newest: WorldStats['newest'] = null;
@@ -171,7 +170,6 @@ export class WorldStatsCounter {
               const supply = PLANT_POWER.get(v & LOMASK) ?? 0;
               powerSupply += supply;
               if ((v & LOMASK) !== POWERPLANT) cleanSupply += supply; // nuclear and wind: no CO2
-              else coalPlants++;
             }
           }
         }
@@ -179,13 +177,15 @@ export class WorldStatsCounter {
     }
     const disasters = new Array(DISASTER_COUNT).fill(0);
     for (const e of this.sim.disasters.history(now - 86_400_000)) disasters[e.kind]++;
+    const src = this.players.climate.sources ?? { power: 0, industry: 0, traffic: 0, land: 0 };
     return {
       year: this.players.time.year,
       population,
       history: withNow(bucketed(this.players.popHistory, HISTORY_POINTS), this.now(), population),
       climate: {
         cleanShare: powerSupply ? cleanSupply / powerSupply : 0,
-        emissions: Math.round(yearEmissions(coalPlants, ind)),
+        emissions: Math.round(totalEmissions(src)),
+        sources: { power: Math.round(src.power), industry: Math.round(src.industry), traffic: Math.round(src.traffic), land: Math.round(src.land) },
         co2: Math.round(this.players.climate.co2 * 10) / 10,
         warming: Math.round(warming(this.players.climate) * 100) / 100,
         history: withNow(bucketed(this.players.climateHistory, HISTORY_POINTS, 3), this.now(), Math.round(warming(this.players.climate) * 1000) / 1000),

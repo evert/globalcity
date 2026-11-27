@@ -1,5 +1,8 @@
+import { TRAFFIC_RAIL_SHARE } from './constants.ts';
+
 // The world's climate, a deliberately small model stepped once a game year:
-//   emissions  coal plants and industry emit CO2; wind, offshore wind and nuclear don't
+//   emissions  coal plants, industry and car traffic emit CO2; wind, offshore wind and nuclear don't. Forests hold
+//              carbon: clearing trees releases it at once, new trees take it back up slowly as they grow
 //   CO2        a stock in the air: about half of each year's emissions is taken up at once by oceans and plants,
 //              and the excess over pre-industrial levels drains away slowly (centuries)
 //   warming    the temperature drifts toward the equilibrium for the CO2 in the air (CLIMATE_SENSITIVITY per
@@ -32,6 +35,40 @@ export const AIR_SCALE = 8;
  *  and an industrial zone. */
 export const COAL_PLANT_MT = 2;
 export const INDUSTRY_ZONE_MT = 0.02;
+/** Tonnes of CO2 a resident's car trips emit a year (car-heavy cities; road transport averages ~1 t a person in the
+ *  real world, over 2 t in the US). Homes with rail nearby make TRAFFIC_RAIL_SHARE of their trips by train. */
+export const TRAFFIC_T_PER_PERSON = 2;
+/** Megatonnes of CO2 a tree tile holds (~4 hectares of forest at ~600 t of CO2 a hectare). */
+export const FOREST_MT_PER_TILE = 0.0024;
+/** Share of the gap a growing forest closes each year (about two thirds of its carbon back in 50 years, ~90% in 100). */
+export const FOREST_GROWTH = 0.02;
+
+/** A year's emissions by source, megatonnes of CO2 (land: forests, negative while they grow back). */
+export interface Emissions {
+  power: number;
+  industry: number;
+  traffic: number;
+  land: number;
+}
+export const totalEmissions = (e: Emissions): number => e.power + e.industry + e.traffic + e.land;
+
+/** Power, industry and traffic from what stands in the world (land comes from forestYear). */
+export function builtEmissions(coalPlants: number, industryZones: number, residents: number, railResidents: number): Omit<Emissions, 'land'> {
+  return {
+    power: coalPlants * COAL_PLANT_MT,
+    industry: industryZones * INDUSTRY_ZONE_MT,
+    traffic: ((residents - railResidents * TRAFFIC_RAIL_SHARE) * TRAFFIC_T_PER_PERSON) / 1e6,
+  };
+}
+
+/** A year of forest carbon: trees lost release their carbon at once; new trees take it up as they grow.
+ *  Returns the new stock and the year's net emissions (negative when the forests take CO2 up). */
+export function forestYear(stock: number, treeTiles: number): { stock: number; land: number } {
+  const target = treeTiles * FOREST_MT_PER_TILE;
+  if (target <= stock) return { stock: target, land: stock - target };
+  const uptake = (target - stock) * FOREST_GROWTH;
+  return { stock: stock + uptake, land: -uptake };
+}
 
 export interface ClimateState {
   /** CO2 in the air, ppm */
@@ -40,6 +77,10 @@ export interface ClimateState {
   temp: number;
   /** CO2 emitted in the last year, megatonnes */
   emissions: number;
+  /** carbon held by the world's forests, megatonnes of CO2 (absent until first measured) */
+  forest?: number;
+  /** the last measured emissions by source (absent until first measured) */
+  sources?: Emissions;
 }
 
 /** Equilibrium temperature (relative to pre-industrial) for a CO2 level. */

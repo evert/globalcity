@@ -5,7 +5,10 @@ import {
   STARTING_FUNDS,
   startClimate,
   climateYear,
-  yearEmissions,
+  forestYear,
+  totalEmissions,
+  FOREST_MT_PER_TILE,
+  type Emissions,
   warming,
   type ClimateState,
   ABANDON_RECLAIM_DAYS,
@@ -653,9 +656,18 @@ export class Players {
     if (!this.climateHistory.length) this.climateHistory.push([this.time.year, Math.round(warming(this.climate) * 1000) / 1000]);
   }
 
-  /** A year of climate: this year's emissions from what stands in the world, then the yearly warming point. */
-  recordClimate(coalPlants: number, industryZones: number): void {
-    this.climate = climateYear(this.climate, yearEmissions(coalPlants, industryZones));
+  /** Measured emissions without stepping the climate (boot: so the stats have numbers before the first year ends). */
+  measureClimate(built: Omit<Emissions, 'land'>, treeTiles: number): void {
+    this.climate.forest ??= treeTiles * FOREST_MT_PER_TILE; // older saves start their forest as it stands
+    this.climate.sources ??= { ...built, land: 0 };
+  }
+
+  /** A year of climate: this year's emissions from what stands in the world and the forests, then the warming point. */
+  recordClimate(built: Omit<Emissions, 'land'>, treeTiles: number): void {
+    this.measureClimate(built, treeTiles);
+    const f = forestYear(this.climate.forest!, treeTiles);
+    const sources: Emissions = { ...built, land: f.land };
+    this.climate = { ...climateYear(this.climate, totalEmissions(sources)), forest: f.stock, sources };
     this.climateHistory.push([this.time.year, Math.round(warming(this.climate) * 1000) / 1000]);
   }
 
@@ -675,7 +687,13 @@ export class Players {
   load(state: StateFile): void {
     this.time = { step: 0, ...state.time };
     if (state.climate && Number.isFinite(state.climate.co2) && Number.isFinite(state.climate.temp))
-      this.climate = { co2: state.climate.co2, temp: state.climate.temp, emissions: Number(state.climate.emissions) || 0 };
+      this.climate = {
+        co2: state.climate.co2,
+        temp: state.climate.temp,
+        emissions: Number(state.climate.emissions) || 0,
+        ...(Number.isFinite(state.climate.forest) ? { forest: state.climate.forest } : {}),
+        ...(state.climate.sources ? { sources: state.climate.sources } : {}),
+      };
     this.climateHistory = Array.isArray(state.climateHistory)
       ? state.climateHistory.filter((p) => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]))
       : [];

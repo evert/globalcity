@@ -1,7 +1,18 @@
 // The climate model's shape: emissions raise CO2 and warm the world; when they stop, CO2 falls slowly and the
 // temperature levels off instead of coming back down.
 import { describe, it, expect } from 'vitest';
-import { startClimate, climateYear, warming, yearEmissions, equilibriumTemp, START_PPM, type ClimateState } from '../src/climate.ts';
+import {
+  startClimate,
+  climateYear,
+  warming,
+  yearEmissions,
+  equilibriumTemp,
+  builtEmissions,
+  forestYear,
+  FOREST_MT_PER_TILE,
+  START_PPM,
+  type ClimateState,
+} from '../src/climate.ts';
 
 const run = (s: ClimateState, years: number, mt: number): ClimateState => {
   for (let i = 0; i < years; i++) s = climateYear(s, mt);
@@ -45,5 +56,24 @@ describe('climate model', () => {
     expect(later.co2).toBeLessThan(peak.co2);
     expect(later.co2).toBeGreaterThan(START_PPM); // slowly: not back to where it started
     expect(Math.abs(warming(later) - warming(peak))).toBeLessThan(0.25); // roughly flat, not undone
+  });
+
+  it('cars: residents drive, homes near rail mostly take the train', () => {
+    expect(builtEmissions(0, 0, 1_000_000, 0).traffic).toBe(2); // 2 t a person
+    expect(builtEmissions(0, 0, 1_000_000, 1_000_000).traffic).toBeCloseTo(0.6); // 70% of trips by rail
+    expect(builtEmissions(3, 100, 0, 0)).toEqual({ power: 6, industry: 2, traffic: 0 });
+  });
+
+  it('forests: clearing releases their carbon at once, new trees take it back slowly', () => {
+    const stock = 1000 * FOREST_MT_PER_TILE;
+    expect(forestYear(stock, 1000).land).toBe(0); // a forest left alone neither adds nor removes
+    const cut = forestYear(stock, 600);
+    expect(cut.land).toBeCloseTo(400 * FOREST_MT_PER_TILE); // 400 tiles cleared: all their carbon
+    let f = { stock: cut.stock, land: 0 };
+    f = forestYear(f.stock, 1000); // replanted
+    expect(f.land).toBeLessThan(0);
+    expect(-f.land).toBeCloseTo(400 * FOREST_MT_PER_TILE * 0.02); // 2% of the gap in the first year
+    for (let y = 0; y < 100; y++) f = forestYear(f.stock, 1000);
+    expect(f.stock).toBeGreaterThan(stock * 0.9); // ~87% of the lost carbon back within a century
   });
 });

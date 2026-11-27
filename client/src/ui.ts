@@ -58,6 +58,9 @@ import { isFireTile, withAlpha } from './renderer.ts';
 import { populationChart, warmingChart } from './chart.ts';
 import type { AppState } from './state.ts';
 
+/** Megatonnes of CO2 as a short label: "-3 Mt", "286 Mt", "1.2 Gt". */
+const mtLabel = (mt: number): string => (Math.abs(mt) >= 1000 ? `${(mt / 1000).toFixed(1)} Gt` : `${Math.round(mt)} Mt`).replace(/^-/, '−');
+
 /** Tabs of the World panel. */
 type WorldTab = 'stats' | 'top' | 'monuments';
 
@@ -923,18 +926,22 @@ export class UI {
         'div',
         { class: 'ws-grid' },
         tile(`${Math.round(c.cleanShare * 100)}%`, 'clean power', "Share of the world's power from wind, offshore wind and nuclear: no CO2"),
-        tile(
-          c.emissions >= 1000 ? `${(c.emissions / 1000).toFixed(1)} Gt` : `${Math.round(c.emissions)} Mt`,
-          'CO₂ a year',
-          'CO2 the world emits a year at its current rate: coal plants and industry standing now',
-        ),
+        tile(mtLabel(c.emissions), 'CO₂ a year', 'CO2 the world emits a year at its current rate: coal plants and industry standing now'),
         tile(`${c.co2.toFixed(0)} ppm`, 'CO₂ in the air', 'CO2 in the atmosphere, parts per million (296 in 1900)'),
         tile(`${sign}${c.warming.toFixed(2)} °C`, 'warming since 1900', 'Global temperature compared with 1900'),
       ),
+      ...(c.sources
+        ? [
+            el('p', {
+              class: 'muted ws-note',
+              text: `CO₂ a year: coal power ${mtLabel(c.sources.power)} · industry ${mtLabel(c.sources.industry)} · cars ${mtLabel(c.sources.traffic)} · forests ${mtLabel(c.sources.land)}`,
+            }),
+          ]
+        : []),
       warmingChart(c.history),
       el('p', {
         class: 'muted ws-note',
-        text: 'Coal and industry add CO₂; wind, offshore wind and nuclear add none. Oceans and plants take some back, slowly, and the oceans take decades to warm, so the warming keeps climbing for a while after emissions fall.',
+        text: 'Coal, industry and cars add CO₂; wind, offshore wind and nuclear add none, and homes near rail drive far less. Forests hold carbon: clearing them releases it, new trees take it back as they grow. The oceans take decades to warm, so the warming keeps climbing for a while after emissions fall.',
       }),
     );
   }

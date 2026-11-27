@@ -23,6 +23,7 @@ import {
   RIVER_EDGE_TABLE,
   TREE_EDGE_TABLE,
   isRail,
+  isTree,
   isZoneTile,
   isHouse,
   BASE_WATER,
@@ -96,6 +97,7 @@ export class World {
       cy = Math.floor(y / CHUNK);
     if (!this.pristine.has(chunkIndex(cx, cy))) this.pristine.set(chunkIndex(cx, cy), this.chunkView(cx, cy));
     this.tiles[i] = v;
+    if (this.trees >= 0 && isTree(old) !== isTree(v)) this.trees += isTree(v) ? 1 : -1;
     // Rail networks only care about rail tiles and the zones that touch them: a zone/house change only
     // dirties them when there is track next to it (zone growth elsewhere happens every tick).
     if (isRail(old) !== isRail(v) || (zoneLike(old) !== zoneLike(v) && this.railAround(x, y))) this.railDirty = true;
@@ -131,8 +133,22 @@ export class World {
     this.loaded.clear();
     this.railDirty = true;
     this.buildings.clear();
+    this.trees = -1;
     return n;
   }
+
+  /** Tree tiles in the whole world (the climate's forest carbon): counted once, then kept up to date by set(). */
+  treeCount(): number {
+    if (this.trees < 0) {
+      let n = 0;
+      const t = this.tiles;
+      for (let i = 0; i < t.length; i++) if (isTree(t[i])) n++;
+      this.trees = n;
+    }
+    return this.trees;
+  }
+  /** -1: not counted yet (or a bulk load since) */
+  private trees = -1;
 
   /** Copy of a chunk's tiles, row-major CHUNK*CHUNK, for sending/saving. */
   chunkView(cx: number, cy: number): Uint32Array {
@@ -159,6 +175,7 @@ export class World {
     this.stampLooks(cx * CHUNK, cy * CHUNK, CHUNK, CHUNK); // saves made before a look change still draw right
     this.landCache[chunkIndex(cx, cy)] = -1;
     this.loaded.add(chunkIndex(cx, cy));
+    this.trees = -1;
   }
 
   /** Stamp the right look on every tile of a rectangle (boot: after building the landscape, and on loaded chunks). */
