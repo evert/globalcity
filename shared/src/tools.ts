@@ -1,5 +1,5 @@
 import * as T from './tiles.ts';
-import { UPKEEP_WIND, UPKEEP_OFFSHORE, CHRISTMAS_TREE_RANGE, gameYearAmount } from './constants.ts';
+import { UPKEEP_WIND, UPKEEP_OFFSHORE, CHRISTMAS_TREE_RANGE, gameYearAmount, fmtPower } from './constants.ts';
 
 export type ToolId =
   | 'query'
@@ -133,7 +133,7 @@ export function footprintOrigin(tool: ToolDef, x: number, y: number): { x0: numb
   return { x0: x - 1, y0: y - 1 };
 }
 
-/** Power produced per plant, in zone-units (Micropolis values). */
+/** Power produced per plant, in units of one zone's need (1 unit = 1 MW, see fmtPower). */
 // Power per plant, in zones served. (Micropolis used 700 / 2000; GlobalCity cities grow much larger, so
 // plants are smaller and there are clean alternatives.)
 export const COAL_POWER = 400;
@@ -143,10 +143,10 @@ export const OFFSHORE_POWER = 60; // bigger turbines than on land, dearer to bui
 /** Zones each power plant tool supplies, for labels. */
 export const PLANT_OUTPUT: Partial<Record<ToolId, number>> = { coal: COAL_POWER, nuclear: NUCLEAR_POWER, windfarm: WIND_POWER, offshore: OFFSHORE_POWER };
 // The trade-off of each plant, one sentence each (toolbar tooltips).
-TOOLS.coal.tradeoff = `Cheap power for ${COAL_POWER} zones, but its smog drags down land value for a dozen tiles around.`;
-TOOLS.nuclear.tradeoff = `Clean power for ${NUCLEAR_POWER.toLocaleString('en-US')} zones, if you can find the $${TOOLS.nuclear.cost.toLocaleString('en-US')} up front.`;
-TOOLS.windfarm.tradeoff = `Clean and cheap to run, but a few turbines power only ${WIND_POWER} zones, so a wind-powered city needs to dedicate lots of land.`;
-TOOLS.offshore.tradeoff = `${OFFSHORE_POWER} zones of clean power: more expensive than turbines on land, but doesn't take up usable land!`;
+TOOLS.coal.tradeoff = `Cheap power, ${fmtPower(COAL_POWER)}, but its smog drags down land value for a dozen tiles around.`;
+TOOLS.nuclear.tradeoff = `${fmtPower(NUCLEAR_POWER)} of clean power, if you can find the $${TOOLS.nuclear.cost.toLocaleString('en-US')} up front.`;
+TOOLS.windfarm.tradeoff = `Clean and cheap to run, but a few turbines make only ${fmtPower(WIND_POWER)}, so a wind-powered city needs to dedicate lots of land.`;
+TOOLS.offshore.tradeoff = `${fmtPower(OFFSHORE_POWER)} of clean power: more expensive than turbines on land, but doesn't take up usable land!`;
 
 // ---- Milestones ----
 // Special buildings unlock when the city's peak population reaches their threshold; unlocks are permanent.
@@ -220,7 +220,7 @@ export const MILESTONE_BUILDINGS: Record<MilestoneBuilding, MilestoneDef> = {
     pop: 150_000,
     centres: [T.WINDFARM],
     benefits: [
-      `${WIND_POWER} zones of clean power: a few turbines, so a city runs on many of them`,
+      `${fmtPower(WIND_POWER)} of clean power: a few turbines, so a city runs on many of them`,
       "No pollution, quiet: neighbours don't mind",
       `$${gameYearAmount(UPKEEP_WIND).toLocaleString('en-US')} a year to run`,
     ],
@@ -261,7 +261,7 @@ export const MILESTONE_BUILDINGS: Record<MilestoneBuilding, MilestoneDef> = {
     pop: 300_000,
     centres: [T.OFFSHORE],
     benefits: [
-      `${OFFSHORE_POWER} zones of clean power: more than a wind farm on land, on water you can't build on anyway`,
+      `${fmtPower(OFFSHORE_POWER)} of clean power: more than a wind farm on land, on water you can't build on anyway`,
       'Must be placed entirely on water',
       'Connect it to shore with an underwater power line',
       `$${gameYearAmount(UPKEEP_OFFSHORE).toLocaleString('en-US')} a year to run`,
