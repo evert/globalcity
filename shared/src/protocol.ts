@@ -60,8 +60,8 @@ export interface WorldStats {
   activeDisasters: number;
   /** claimed plots by their commonest biome (Biome) */
   biomes: number[];
-  /** world population once a game month: [game time in years (month / 12 as the fraction), people], oldest first.
-   *  A world runs about a century (~1,200 points). Absent from old servers. */
+  /** world population over the world's life: [game year, people], oldest first, at most ~500 points (each the
+   *  average of its stretch of years; the last is exact). Absent from old servers. */
   history?: [number, number][];
 }
 

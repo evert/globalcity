@@ -1,6 +1,5 @@
-// The world population graph in the World panel's stats tab: one series over game time, drawn as inline SVG
+// The world population graph in the World panel's stats tab: one series over game years, drawn as inline SVG
 // (a 2px line over a faint area, recessive grid, a crosshair and tooltip on hover or touch).
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const W = 560,
   H = 170,
   PAD = { l: 44, r: 12, t: 10, b: 22 };
@@ -10,13 +9,6 @@ function svg<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string,
   const e = document.createElementNS(NS, tag);
   for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v));
   return e;
-}
-
-/** "Mar 1987" for a game time in years (month / 12 as the fraction). */
-export function gameDate(t: number): string {
-  const y = Math.floor(t + 1e-6),
-    m = Math.min(11, Math.round((t - y) * 12));
-  return `${MONTHS[m]} ${y}`;
 }
 
 /** Short axis label for a round number: 600M, 1.5B, 20k. */
@@ -51,7 +43,7 @@ export function populationChart(points: readonly [number, number][], fmtCompact:
   const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, class: 'ws-chart-svg', role: 'img' });
   root.setAttribute(
     'aria-label',
-    `World population from ${gameDate(t0)} to ${gameDate(t1)}: ${fmtCompact(points[0][1])} to ${fmtCompact(points[points.length - 1][1])} people`,
+    `World population from ${Math.round(t0)} to ${Math.round(t1)}: ${fmtCompact(points[0][1])} to ${fmtCompact(points[points.length - 1][1])} people`,
   );
   // grid and axes: hairlines in a recessive ink, labels in the muted text colour
   for (let v = 0; v <= yMax + 1e-9; v += yStep) {
@@ -95,7 +87,7 @@ export function populationChart(points: readonly [number, number][], fmtCompact:
     dot.setAttribute('cx', String(px));
     dot.setAttribute('cy', String(py));
     hover.style.display = '';
-    tip.textContent = `${gameDate(best[0])} · ${best[1].toLocaleString('en-US')} people`;
+    tip.textContent = `${Math.round(best[0])} · ${best[1].toLocaleString('en-US')} people`;
     tip.classList.remove('hidden');
     const left = (px / W) * r.width;
     tip.style.left = `${Math.min(Math.max(left, 70), r.width - 70)}px`;

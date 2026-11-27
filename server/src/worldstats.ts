@@ -30,6 +30,28 @@ import type { Players } from './players.ts';
 import type { Sim } from './sim.ts';
 
 const WORLD_STATS_MS = 30_000;
+/** Points of the population history sent to clients: plenty for a chart, small however long the server runs. */
+const HISTORY_POINTS = 500;
+
+/** At most `n` points: consecutive stretches averaged (time and value), the last point kept exact. */
+export function bucketed(points: readonly [number, number][], n: number): [number, number][] {
+  if (points.length <= n) return points.slice();
+  const out: [number, number][] = [];
+  const size = (points.length - 1) / (n - 1);
+  for (let b = 0; b < n - 1; b++) {
+    const i0 = Math.floor(b * size),
+      i1 = Math.max(i0 + 1, Math.floor((b + 1) * size));
+    let t = 0,
+      v = 0;
+    for (let i = i0; i < i1; i++) {
+      t += points[i][0];
+      v += points[i][1];
+    }
+    out.push([t / (i1 - i0), Math.round(v / (i1 - i0))]);
+  }
+  out.push(points[points.length - 1]);
+  return out;
+}
 /** what each kind of plant supplies (counted from the plants standing, so frozen cities count too) */
 const PLANT_POWER = new Map([
   [POWERPLANT, COAL_POWER],
@@ -141,7 +163,7 @@ export class WorldStatsCounter {
     return {
       year: this.players.time.year,
       population,
-      history: this.players.popHistory.slice(),
+      history: bucketed(this.players.popHistory, HISTORY_POINTS),
       cities,
       monuments,
       abandoned,

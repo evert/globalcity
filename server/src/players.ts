@@ -268,7 +268,7 @@ export class Players {
   readonly players = new Map<string, PlayerRecord>();
   readonly claims = new Map<string, string>();
   time: GameTime = { year: START_YEAR, month: 0, step: 0 };
-  /** world population once a game month: [game time in years, people] (see recordPopulation) */
+  /** world population once a game year: [year, people] (see recordPopulation) */
   popHistory: [number, number][] = [];
   /** state changed since last save */
   dirty = false;
@@ -624,11 +624,11 @@ export class Players {
   }
 
   /** World population now (every city with land, monuments not counted): one point of the history, once a game
-   *  month. Every point is kept: a world runs about a century, ~1,200 points. */
+   *  year. Every point is kept: the server runs for months, 48 game years a day, so ~1,440 points a month (~35 KB). */
   recordPopulation(): void {
     let pop = 0;
     for (const p of this.players.values()) if (p.chunks.length && !p.monument) pop += p.stats.population;
-    this.popHistory.push([this.time.year + this.time.month / 12, pop]);
+    this.popHistory.push([this.time.year, pop]);
   }
 
   serialize(): StateFile {
