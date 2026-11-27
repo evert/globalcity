@@ -1,12 +1,33 @@
-// World geometry. The whole Earth is one tile grid in equirectangular projection.
-export const WORLD_W = 16384; // tiles (longitude -180..180); 8192 before the world reset
-export const WORLD_H = 8192; // tiles (latitude 90..-90)
+// World geometry. The whole world is one tile grid, drawn as a planet in equirectangular projection (tile x ->
+// longitude -180..180, y -> latitude 90..-90). Its size comes from the world itself (base.json, see
+// docs/world-format.md): the server calls configureWorld() at boot, before it builds anything, and the client does
+// the same with the size in the server's welcome. Until then these hold the generated Earth's size. They are live
+// bindings: read them when needed, never copy them into a module-level constant.
 export const CHUNK = 64; // tiles per chunk side; a chunk is also the unit players claim
-export const CHUNKS_X = WORLD_W / CHUNK; // 256
-export const CHUNKS_Y = WORLD_H / CHUNK; // 128
+/** The generated Earth's size: the default for worlds that don't say (and what the world generator makes). */
+export const EARTH_W = 16384, // 8192 before the world reset
+  EARTH_H = 8192;
+/** World sizes must be a multiple of this (a zoomed-out map region, shared/src/maptiles.ts). */
+export const WORLD_SIZE_STEP = 256;
+export let WORLD_W = EARTH_W; // tiles across
+export let WORLD_H = EARTH_H; // tiles down
+export let CHUNKS_X = WORLD_W / CHUNK; // 256 on the Earth
+export let CHUNKS_Y = WORLD_H / CHUNK; // 128
 /** Names the world's generated files (data/world-<tag>/) and is stamped into every save, so a save is never
  *  loaded into a world of another size. */
-export const WORLD_TAG = `${WORLD_W}x${WORLD_H}`;
+export let WORLD_TAG = `${WORLD_W}x${WORLD_H}`;
+
+/** Set the world's size (once at boot, before anything size-dependent is built). Throws on a size the game can't
+ *  use: both must be positive multiples of WORLD_SIZE_STEP. */
+export function configureWorld(w: number, h: number): void {
+  if (!Number.isInteger(w) || !Number.isInteger(h) || w <= 0 || h <= 0 || w % WORLD_SIZE_STEP || h % WORLD_SIZE_STEP)
+    throw new Error(`world size ${w}x${h}: both sides must be positive multiples of ${WORLD_SIZE_STEP} tiles`);
+  WORLD_W = w;
+  WORLD_H = h;
+  CHUNKS_X = w / CHUNK;
+  CHUNKS_Y = h / CHUNK;
+  WORLD_TAG = `${w}x${h}`;
+}
 export const TILE_PX = 16; // sprite size in tiles.png
 
 // Economy

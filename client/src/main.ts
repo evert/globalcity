@@ -1,6 +1,6 @@
 // Bootstrap: load assets, wire net <-> state <-> map <-> renderer <-> ui <-> input.
-import type { ServerMsg } from '@globalcity/shared';
-import { chunkKey } from '@globalcity/shared';
+import type { ChunkFrame, ServerMsg } from '@globalcity/shared';
+import { chunkKey, configureWorld } from '@globalcity/shared';
 import { Actions } from './actions.ts';
 import { handleServerMsg } from './dispatch.ts';
 import { loadSpriteSheet, loadSkinSheet, proceduralMinimap } from './assets.ts';
@@ -37,6 +37,16 @@ function writeHashCamera(cam: { x: number; y: number; zoom: number }): void {
   if (h !== location.hash) history.replaceState(null, '', h);
 }
 
+/** A line of text in the middle of the page while the game waits for the server (before any UI exists). */
+function bootNotice(): HTMLElement {
+  const d = document.createElement('div');
+  d.id = 'bootnotice';
+  d.style.cssText = 'position:fixed;inset:0;display:grid;place-items:center;color:#9fb3c8;font-family:system-ui,sans-serif;pointer-events:none';
+  d.textContent = 'Connecting…';
+  document.body.append(d);
+  return d;
+}
+
 async function boot(): Promise<void> {
   if (location.hash === '#selftest') {
     const { runSelfTest } = await import('./selftest.ts');
@@ -47,13 +57,35 @@ async function boot(): Promise<void> {
   const canvas = document.getElementById('map') as HTMLCanvasElement | null;
   if (!canvas) throw new Error('#map canvas missing');
 
-  const [sheet, skins, spriteAssets] = await Promise.all([loadSpriteSheet(), loadSkinSheet(), loadSprites()]);
+  // Connect first, while the assets load: the world's size comes with the welcome, and nothing that depends on it
+  // (the map, the camera, the zoomed-out map) can be built before it is known. What the server sends meanwhile is
+  // kept and handled once everything is built. (The demos play offline on the default size.)
+  const net = new Net();
+  const early: ({ msg: ServerMsg } | { chunk: ChunkFrame })[] = [];
+  const offEarly = [net.on('msg', (msg) => early.push({ msg })), net.on('chunk', (chunk) => early.push({ chunk }))];
+  let sized: Promise<void> = Promise.resolve();
+  if (!demo) {
+    const waiting = bootNotice();
+    const offStatus = net.on('status', (s) => (waiting.textContent = s));
+    sized = new Promise((resolve) => {
+      const off = net.on('msg', (msg) => {
+        if (msg.t !== 'welcome') return;
+        configureWorld(msg.world.w, msg.world.h);
+        off();
+        offStatus();
+        waiting.remove();
+        resolve();
+      });
+    });
+    net.connect();
+  }
+
+  const [[sheet, skins, spriteAssets]] = await Promise.all([Promise.all([loadSpriteSheet(), loadSkinSheet(), loadSprites()]), sized]);
   // the corner minimap starts plain and becomes the server's whole-world map image once that loads
   const minimap = proceduralMinimap();
 
   const state = new AppState();
   const map = new TileMap();
-  const net = new Net();
   const renderer = new Renderer(canvas, sheet, minimap, map, state);
   renderer.skins = skins;
   renderer.sprites = new SpriteEngine(map, spriteAssets);
@@ -136,14 +168,23 @@ async function boot(): Promise<void> {
   const updater = new Updater(__BUILD_VERSION__, (reload) => ui.showUpdateBanner(reload));
   const targets = { state, map, renderer, ui, updater, predictor: actions.predictor };
   net.on('msg', (msg: ServerMsg) => handleServerMsg(msg, targets));
+  // what came before everything was built (the welcome and what followed it), in order
+  for (const off of offEarly) off();
+  if (net.connected) {
+    actions.predictor.clear();
+    state.setConnected(true);
+    updateSubscription();
+  }
+  for (const e of early.splice(0)) {
+    if ('msg' in e) handleServerMsg(e.msg, targets);
+    else map.setChunk(e.chunk.cx, e.chunk.cy, e.chunk.tiles);
+  }
   if (demo) {
     // offline demo with synthetic data (for screenshots / eyeballing the leaderboard / social UI)
     const { demoLeaderboard, demoSocial, demoAmbient } = await import('./selftest.ts');
     if (location.hash === '#demo-ambient') demoAmbient(targets);
     else if (location.hash.startsWith('#demo-social')) demoSocial(targets, location.hash.endsWith('-overview'));
     else demoLeaderboard(targets);
-  } else {
-    net.connect();
   }
 
   // expose for debugging in the console

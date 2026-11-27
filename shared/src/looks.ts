@@ -83,14 +83,14 @@ const GROUND_OF = kindTable(GROUND_TRANSITION_KINDS),
   FROZEN_OF = kindTable(FROZEN_KINDS);
 /** The terrain bits that decide a look: two tiles alike in these draw alike. */
 const ALIKE = BASE_BIOME_MASK | BASE_WATER | BASE_FROZEN;
-const WW = WORLD_W,
-  WH = WORLD_H;
 /**
  * Look for a tile of `kind` at (x, y), from the generated landscape (`base`, see terrain.ts). Borders are
  * Wang-style: each corner of a tile takes the lowest-precedence biome of the four tiles that meet there, so
  * the higher biome's border tiles fray into the lower one. Ice works the same way against open water.
  */
 export function lookAt(base: Uint8Array, x: number, y: number, kind: number): number {
+  const WW = WORLD_W,
+    WH = WORLD_H;
   const i = y * WW + x,
     own = base[i],
     biome = own & BASE_BIOME_MASK;
