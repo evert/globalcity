@@ -87,8 +87,8 @@ interface Client {
   lastRefill: number;
   /** last time a "building too fast" toast was sent (ms) */
   droppedAt: number;
-  /** seqs of applied builds, acknowledged ('built') after the next tile flush */
-  acks: number[];
+  /** build acks waiting for the next tile flush: applied builds, and any refused after them (acks stay in order) */
+  acks: { seq: number; ok: boolean }[];
   viewTokens: number;
   viewRefill: number;
   lastStatsJson: string;
@@ -841,7 +841,7 @@ export class Net {
         client.droppedAt = now;
         this.toast(client, 'Building too fast; some tiles were skipped', 'info');
       }
-      if (seq !== undefined) this.send(client, { t: 'built', seq, ok: false });
+      if (seq !== undefined) this.refuseBuild(client, seq);
       return;
     }
     client.buildTokens -= 1;
@@ -849,14 +849,20 @@ export class Net {
     const r = applyBuild(this.buildCtx, p, tool, x, y);
     if (!r.ok) {
       this.toast(client, r.msg, r.kind);
-      if (seq !== undefined) this.send(client, { t: 'built', seq, ok: false });
+      if (seq !== undefined) this.refuseBuild(client, seq);
       return;
     }
     if (r.msg) this.toast(client, r.msg, 'info', { x, y });
     this.sendStatsIfChanged(client);
     // acknowledged after the tiles flush that carries the change, so the client has the real tiles by then
-    if (seq !== undefined) client.acks.push(seq);
+    if (seq !== undefined) client.acks.push({ seq, ok: true });
     this.scheduleFlush();
+  }
+
+  /** Not-ok ack: at once, unless an earlier build's ack is still waiting for the tile flush (then after it). */
+  private refuseBuild(client: Client, seq: number): void {
+    if (client.acks.length) client.acks.push({ seq, ok: false });
+    else this.send(client, { t: 'built', seq, ok: false });
   }
 
   // ---------------------------------------------------------------------------
@@ -890,7 +896,7 @@ export class Net {
         if (u.length > 0) c.ws.send(JSON.stringify({ t: 'tiles', u } satisfies ServerMsg));
       }
       if (c.acks.length) {
-        for (const seq of c.acks) this.send(c, { t: 'built', seq, ok: true });
+        for (const a of c.acks) this.send(c, { t: 'built', seq: a.seq, ok: a.ok });
         c.acks.length = 0;
       }
     }

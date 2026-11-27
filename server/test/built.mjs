@@ -1,5 +1,5 @@
 // The 'built' ack for builds with a seq: ok after the tiles that carry the change, not ok straight away for a
-// refused or rate-limited build, nothing for a build without a seq (old clients).
+// refused or rate-limited build (after any ok one still waiting, to keep them in order), nothing without a seq.
 import WebSocket from 'ws';
 import { decodeChunk } from '@globalcity/shared';
 const URL = `ws://127.0.0.1:${process.env.PORT}/ws`;
@@ -98,15 +98,21 @@ if (log.some((m) => m.t === 'built')) fail('ack sent for a build without seq');
 if (!log.some((m) => m.t === 'tiles')) fail('the build without seq did nothing');
 console.log('no ack without seq');
 
-// 4. a burst past the rate limit: every seq is acked once, in order, the dropped ones not ok
+// 4. a burst past the rate limit: every seq is acked once, in order, the dropped ones not ok. The first one
+// bulldozes the road from step 1 (its ack waits for the tiles), the rest find dirt: refused, yet acked after it.
 log.length = 0;
 const N = 150;
-for (let i = 0; i < N; i++) send({ t: 'build', tool: 'bulldozer', x: X + 2, y: Y + 2, seq: 100 + i });
+// (corked: one write, so the server handles the whole burst before its tile flush runs)
+ws._socket.cork();
+for (let i = 0; i < N; i++) send({ t: 'build', tool: 'bulldozer', x: X, y: Y, seq: 100 + i });
+ws._socket.uncork();
 await waitFor((m) => m.t === 'built' && m.seq === 100 + N - 1);
 await sleep(200);
 const seqs = log.filter((m) => m.t === 'built').map((m) => m.seq);
 if (seqs.length !== N || seqs.some((s, i) => s !== 100 + i)) fail(`burst acks out of order or missing: ${seqs.length}`);
 if (!toasts.some((t) => t.includes('too fast'))) fail('the burst did not hit the rate limit');
+const burst = log.filter((m) => m.t === 'built');
+if (!burst[0].ok || burst.slice(1).some((m) => m.ok)) fail(`burst: expected only the first ok, got ${burst.filter((m) => m.ok).map((m) => m.seq)}`);
 console.log(`burst of ${N}: ${seqs.length} acks in order`);
 console.log('PASS');
 process.exit(0);
