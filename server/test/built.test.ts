@@ -5,6 +5,7 @@ import type { Socket } from 'node:net';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { CHUNK, LOMASK, type ServerMsg } from '@globalcity/shared';
 import { TestClient, resetServer, sleep, waitFor } from './support/client.ts';
+import { at } from './support/fixture.ts';
 
 type Built = Extract<ServerMsg, { t: 'built' }>;
 type Tiles = Extract<ServerMsg, { t: 'tiles' }>;
@@ -30,7 +31,7 @@ describe("'built' acks", () => {
   beforeAll(async () => {
     await resetServer();
     c = await TestClient.connect('Acker');
-    const spot = await c.findFree(132, 28);
+    const spot = await c.findFree(...at('inland'));
     expect(spot).not.toBeNull();
     await c.subscribe([[spot!.cx, spot!.cy]]);
     await c.claim(spot!.cx, spot!.cy);

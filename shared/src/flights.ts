@@ -1,7 +1,7 @@
 // Air traffic between cities. The server publishes the list of powered airports (and its clock);
 // every client derives the same flights from that list and the time, so all players see the same
 // planes without any per-flight network traffic.
-import { WORLD_W } from './constants.ts';
+import { WORLD_W, WORLD_H } from './constants.ts';
 
 export interface AirportInfo {
   x: number; // airport centre tile
@@ -82,7 +82,7 @@ export function activeFlights(airports: readonly AirportInfo[], now: number): Fl
   const sorted = [...airports].sort((p, q) => (keyOf(p) < keyOf(q) ? -1 : 1));
   if (new Set(sorted.map((a) => a.ownerId)).size < 2) return [];
   const period = flightPeriodS(sorted.length) * 1000;
-  const longest = (Math.max(FLIGHT_MIN_S, Math.hypot(WORLD_W / 2, WORLD_W / 4) / FLIGHT_SPEED) + 1) * 1000;
+  const longest = (Math.max(FLIGHT_MIN_S, Math.hypot(WORLD_W / 2, WORLD_H) / FLIGHT_SPEED) + 1) * 1000;
   const out: Flight[] = [];
   for (const a of sorted) {
     const phase = hash(keyOf(a), 0x7f) % period;

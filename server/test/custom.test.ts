@@ -4,6 +4,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { LOMASK, ZONEBIT, CUSTOMFILL, CUSTOMCENTRE } from '@globalcity/shared';
 import { TestClient, resetServer, settle, sleep, waitFor, TICK } from './support/client.ts';
+import { at } from './support/fixture.ts';
 
 const toastsText = (r: { toasts: { kind: string; msg: string }[] }): string => r.toasts.map((t) => `${t.kind}: ${t.msg}`).join(' | ');
 
@@ -17,18 +18,7 @@ describe('custom buildings (the university)', () => {
   });
 
   it('is locked until 200,000 people', async () => {
-    const site = await settle(
-      A,
-      [
-        [144, 30],
-        [160, 36],
-        [120, 44],
-        [200, 40],
-      ],
-      18,
-      12,
-      { x0: 2, x1: 43, y0: 2, y1: 49 },
-    );
+    const site = await settle(A, [at('inland'), at('east')], 18, 12, { x0: 2, x1: 43, y0: 2, y1: 49 });
     X = site.x;
     Y = site.y;
     A.sendRaw({ t: 'devFunds', amount: 100000 });

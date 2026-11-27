@@ -2,7 +2,7 @@
 // negative below), read from disk a chunk at a time when asked for, so it costs no memory: it is 256 MB for the
 // whole world and only floods use it for now.
 import fs from 'node:fs';
-import { WORLD_W, CHUNK } from '@globalcity/shared';
+import { WORLD_W, WORLD_H, CHUNK } from '@globalcity/shared';
 import { warn } from './util.ts';
 
 export class Elevation {
@@ -10,8 +10,11 @@ export class Elevation {
   private readonly cache = new Map<number, Int16Array>();
 
   constructor(file: string | null) {
-    if (file && fs.existsSync(file)) this.fd = fs.openSync(file, 'r');
-    else if (file) warn(`${file} not found: elevation is 0 everywhere (regenerate the world for real elevation)`);
+    if (file && fs.existsSync(file)) {
+      const size = fs.statSync(file).size;
+      if (size !== WORLD_W * WORLD_H * 2) throw new Error(`${file} has ${size} bytes, expected ${WORLD_W * WORLD_H * 2} (an Int16 per tile)`);
+      this.fd = fs.openSync(file, 'r');
+    } else if (file) warn(`${file} not found: elevation is 0 everywhere (regenerate the world for real elevation)`);
   }
 
   get available(): boolean {

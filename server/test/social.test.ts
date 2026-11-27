@@ -10,8 +10,6 @@ import {
   CHUNKS_X,
   CHUNKS_Y,
   WORLD_H,
-  lonLatToTile,
-  chunkOf,
   chunkKey,
   isWater,
   isRubble,
@@ -21,41 +19,12 @@ import {
   type ClaimInfo,
 } from '@globalcity/shared';
 import { TestClient, resetServer, sleep, waitFor, ticks } from './support/client.ts';
+import { site as siteNamed, type SiteName } from './support/fixture.ts';
 
 const DAY_MS = 1000;
 
-// Seed locations to look for free chunks with enough flat land.
-const SEEDS: [number, number][] = [
-  [-0.1, 51.5],
-  [2.35, 48.85],
-  [13.4, 52.5],
-  [-3.7, 40.4],
-  [21.0, 52.2],
-  [30.5, 50.45],
-  [37.6, 55.75],
-  [-94.6, 39.1],
-  [-87.6, 41.9],
-  [-104.9, 39.7],
-  [-46.6, -23.5],
-  [151.2, -33.9],
-  [116.4, 39.9],
-  [77.2, 28.6],
-  [3.4, 6.5],
-  [28.0, -26.2],
-  [-99.1, 19.4],
-  [-58.4, -34.6],
-  [105.8, 21.0],
-  [44.4, 33.3],
-];
-/** Interior seeds with lots of land around, for the 10-plot city and the abandoned town. */
-const INTERIOR: [number, number][] = [
-  [65.0, 48.0],
-  [-100.0, 45.0],
-  [25.0, 55.0],
-  [-60.0, -30.0],
-  [135.0, -25.0],
-  [90.0, 55.0],
-];
+/** Sites with lots of land around, for the 15-plot city and the abandoned town. */
+const INTERIOR: SiteName[] = ['inland', 'east'];
 
 // Layout for A (chunk cx,cy; its last 6 columns) and B (chunk cx+1,cy; its first 8 columns), rows Y..:
 //   A: coal plant cols AX..AX+3 rows Y..Y+3; wires AX+4, AX+5 row Y+1; res zone AX..AX+2 rows Y+4..Y+6;
@@ -118,9 +87,8 @@ describe('social', () => {
   it('D founds a town, builds and leaves', async () => {
     const D = await TestClient.connect('Dora');
     let site: typeof dSite | null = null;
-    for (const [lon, lat] of INTERIOR) {
-      const t = lonLatToTile(lon, lat);
-      const c = chunkOf(t.x, t.y);
+    for (const name of INTERIOR) {
+      const c = siteNamed(name);
       const f = await D.findFree(c.cx, c.cy);
       if (!f) continue;
       await D.subscribe([[f.cx, f.cy]]);
@@ -147,9 +115,7 @@ describe('social', () => {
 
   it('names cities after places, uniquely, and lets mayors rename them', async () => {
     let site: { cx: number; cy: number; Y: number } | null = null;
-    for (const [lon, lat] of SEEDS) {
-      const t = lonLatToTile(lon, lat);
-      const c = chunkOf(t.x, t.y);
+    for (const c of [siteNamed('inland'), siteNamed('east')]) {
       const a = await A.findFree(c.cx, c.cy);
       if (!a || a.cx + 1 >= CHUNKS_X) continue;
       const b = await B.findFree(a.cx + 1, a.cy);
@@ -269,9 +235,8 @@ describe('social', () => {
     C.sendRaw({ t: 'devFunds', amount: 90_000_000 }); // 15 plots cost ~$84M with the escalating price
     await waitFor(() => (C.stats?.funds ?? 0) >= 90_000_000, 'devFunds applied');
     let start: { cx: number; cy: number } | null = null;
-    for (const [lon, lat] of [...INTERIOR].reverse()) {
-      const t = lonLatToTile(lon, lat);
-      const c = chunkOf(t.x, t.y);
+    for (const name of [...INTERIOR].reverse()) {
+      const c = siteNamed(name);
       start = await C.findFree(c.cx, c.cy);
       if (start && chunkKey(start.cx, start.cy) !== dKey) break;
       start = null;

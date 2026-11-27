@@ -3,6 +3,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { CHUNK, activeFlights, chunkKey, isWater, type ServerMsg } from '@globalcity/shared';
 import { TestClient, resetServer, sleep, waitFor, TICK } from './support/client.ts';
+import { at } from './support/fixture.ts';
 
 /** The last 'airports' message a client got (the list and the server clock). */
 const airportsMsg = (c: TestClient): Extract<ServerMsg, { t: 'airports' }> | undefined =>
@@ -48,7 +49,7 @@ describe('flights', () => {
   });
 
   it('a lone airport gets no boost', async () => {
-    await airportCity(A, 128, 26);
+    await airportCity(A, ...at('coast'));
     await sleep(TICK * 4);
     const others = (A.airports ?? []).filter((p) => p.ownerId !== A.id).length;
     // (a fresh server has no other mayors' airports, so this always applies)
@@ -57,7 +58,7 @@ describe('flights', () => {
   });
 
   it('two connected airports both count and are published', async () => {
-    await airportCity(B, 220, 40);
+    await airportCity(B, ...at('farCoast'));
     const t0 = Date.now();
     while (Date.now() - t0 < 15000 && !(A.airports?.some((p) => p.ownerId === B.id) && A.stats!.specials.airport === 1 && B.stats!.specials.airport === 1))
       await sleep(100);

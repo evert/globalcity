@@ -5,6 +5,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { LOMASK, ZONEBIT, ROADBASE, chunkKey, isRubble } from '@globalcity/shared';
 import { TestClient, resetServer, settle, sleep, TICK } from './support/client.ts';
+import { at } from './support/fixture.ts';
 
 /** The latest toast as "kind: msg". */
 const last = (c: TestClient): string => {
@@ -25,7 +26,7 @@ describe('abandoning a city', () => {
   });
 
   it('builds a small working town', { timeout: 60 * TICK + 30_000 }, async () => {
-    const site = await settle(A, [[150, 30]], 22, 12, { x0: 3, x1: 39, y0: 3, y1: 47 });
+    const site = await settle(A, [at('inland')], 22, 12, { x0: 3, x1: 39, y0: 3, y1: 47 });
     spot = { cx: site.cx, cy: site.cy };
     key = chunkKey(spot.cx, spot.cy);
     X = site.x;
@@ -116,7 +117,7 @@ describe('abandoning a city', () => {
 
   it('lets a city with money be abandoned too, and its mayor found a new one elsewhere', async () => {
     const R = await TestClient.connect('Restless Mayor', { v: 'test' });
-    const first = await R.findFree(20, 15);
+    const first = await R.findFree(...at('inland'));
     expect(first).not.toBeNull();
     R.send({ t: 'claim', cx: first!.cx, cy: first!.cy });
     await sleep(400);
@@ -125,7 +126,7 @@ describe('abandoning a city', () => {
     await sleep(400);
     expect(last(R)).toMatch(/Anyone can claim its plots/);
     expect(R.stats!.chunks).toBe(0);
-    const next = await R.findFree(30, 15);
+    const next = await R.findFree(...at('east'));
     expect(next).not.toBeNull();
     expect(chunkKey(next!.cx, next!.cy), 'findFree does not offer the plot just left').not.toBe(chunkKey(first!.cx, first!.cy));
     R.send({ t: 'claim', cx: next!.cx, cy: next!.cy });

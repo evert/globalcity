@@ -3,61 +3,24 @@
 //  - a new mayor's claim on a mostly-water plot is refused, and the message says how much land is needed
 //  - findFree from there answers a plot that meets the founding rule, and claiming it works
 //  - once they own a plot, the same mostly-water plot (adjacent) can be bought
-// Candidates come from data/world-<W>x<H>/base.bin (a terrain byte per tile; BASE_WATER marks water); the land
-// counts are re-checked on the live tiles the server sends.
-import fs from 'node:fs';
-import path from 'node:path';
+// The plots are the fixture's island (support/fixture.ts) and the coast east of it; the land counts are re-checked on
+// the live tiles the server sends.
 import { describe, it, expect, beforeAll } from 'vitest';
-import {
-  chunkKey,
-  chunkLandCount,
-  MIN_LAND_TILES_FIRST_CLAIM,
-  MIN_LAND_TILES_TO_CLAIM,
-  WORLD_W,
-  WORLD_H,
-  CHUNK,
-  CHUNKS_X,
-  CHUNKS_Y,
-  WORLD_TAG,
-  BASE_WATER,
-} from '@globalcity/shared';
+import { chunkKey, chunkLandCount, CHUNKS_X, MIN_LAND_TILES_FIRST_CLAIM, MIN_LAND_TILES_TO_CLAIM } from '@globalcity/shared';
 import { TestClient, resetServer, sleep } from './support/client.ts';
+import { buildFixture, landPerChunk, site } from './support/fixture.ts';
 
 type Chunk = { cx: number; cy: number };
 
-/** A mostly-water plot (enough land for an extra plot, not for a first) next to a plot with plenty, from base.bin. */
+/** A mostly-water plot (enough land for an extra plot, not for a first) next to a plot with plenty: the island. */
 function candidates(): { small: Chunk; big: Chunk }[] {
-  const baseFile = path.resolve(import.meta.dirname, `../../data/world-${WORLD_TAG}/base.bin`);
-  const base = fs.readFileSync(baseFile);
-  if (base.length !== WORLD_W * WORLD_H) throw new Error(`needs the generated world in ${baseFile}`);
-  const land = new Int32Array(CHUNKS_X * CHUNKS_Y);
-  for (let cy = 0; cy < CHUNKS_Y; cy++)
-    for (let cx = 0; cx < CHUNKS_X; cx++) {
-      let n = 0;
-      for (let y = 0; y < CHUNK; y++) {
-        const o = (cy * CHUNK + y) * WORLD_W + cx * CHUNK;
-        for (let x = 0; x < CHUNK; x++) if (!(base[o + x] & BASE_WATER)) n++;
-      }
-      land[cy * CHUNKS_X + cx] = n;
-    }
-  const pairs: { small: Chunk; big: Chunk }[] = [];
-  for (let cy = 1; cy < CHUNKS_Y - 1 && pairs.length < 5; cy++)
-    for (let cx = 1; cx < CHUNKS_X - 1 && pairs.length < 5; cx++) {
-      const n = land[cy * CHUNKS_X + cx];
-      if (n < MIN_LAND_TILES_TO_CLAIM * 4 || n >= MIN_LAND_TILES_FIRST_CLAIM / 2) continue; // clearly in between
-      for (const [dx, dy] of [
-        [1, 0],
-        [-1, 0],
-        [0, 1],
-        [0, -1],
-      ]) {
-        if (land[(cy + dy) * CHUNKS_X + cx + dx] >= MIN_LAND_TILES_FIRST_CLAIM * 2) {
-          pairs.push({ small: { cx, cy }, big: { cx: cx + dx, cy: cy + dy } });
-          break;
-        }
-      }
-    }
-  return pairs;
+  const small = site('island'),
+    big = { cx: small.cx + 1, cy: small.cy };
+  const land = landPerChunk(buildFixture()),
+    at = (c: Chunk): number => land[c.cy * CHUNKS_X + c.cx];
+  // as the old search on the generated world picked them: clearly in between, next to one with twice a first plot
+  const n = at(small);
+  return n >= MIN_LAND_TILES_TO_CLAIM * 4 && n < MIN_LAND_TILES_FIRST_CLAIM / 2 && at(big) >= MIN_LAND_TILES_FIRST_CLAIM * 2 ? [{ small, big }] : [];
 }
 
 describe('first plot', () => {
@@ -85,7 +48,7 @@ describe('first plot', () => {
 
   it('finds a mostly-water plot next to one with plenty of land', async () => {
     const pairs = candidates();
-    expect(pairs.length, 'a mostly-water plot next to a plot with plenty of land in base.bin').toBeGreaterThan(0);
+    expect(pairs.length, 'a mostly-water plot next to a plot with plenty of land in the fixture').toBeGreaterThan(0);
     ({ small, big } = pairs[0]);
     const smallLand = await liveLand(small.cx, small.cy);
     bigLand = await liveLand(big.cx, big.cy);

@@ -22,37 +22,13 @@ import {
   NUCLEAR_POWER,
   IND_SMOKE,
   ANI_TILE,
-  lonLatToTile,
-  chunkOf,
   isWater,
   isRoad,
   isRubble,
   roadPiece,
 } from '@globalcity/shared';
 import { TestClient, resetServer, waitFor, ticks, sleep, TICK } from './support/client.ts';
-
-const SEEDS: [number, number][] = [
-  [-0.1, 51.5],
-  [2.35, 48.85],
-  [13.4, 52.5],
-  [-3.7, 40.4],
-  [21.0, 52.2],
-  [30.5, 50.45],
-  [37.6, 55.75],
-  [-94.6, 39.1],
-  [-87.6, 41.9],
-  [-104.9, 39.7],
-  [-46.6, -23.5],
-  [151.2, -33.9],
-  [116.4, 39.9],
-  [77.2, 28.6],
-  [3.4, 6.5],
-  [28.0, -26.2],
-  [-99.1, 19.4],
-  [-58.4, -34.6],
-  [105.8, 21.0],
-  [44.4, 33.3],
-];
+import { site as siteNamed } from './support/fixture.ts';
 
 // Layout, origin (X,Y) = top-left of a 25 x 13 land rectangle. Everything is powered from the coal plant through
 // wires and conductive footprints.
@@ -120,9 +96,7 @@ describe('ambient', () => {
 
   it('builds a powered town with specials', async () => {
     let site: { cx: number; cy: number } | null = null;
-    for (const [lon, lat] of SEEDS) {
-      const t = lonLatToTile(lon, lat);
-      const c = chunkOf(t.x, t.y);
+    for (const c of [siteNamed('inland'), siteNamed('east')]) {
       const a = await A.findFree(c.cx, c.cy);
       if (!a) continue;
       await A.subscribe([[a.cx, a.cy]]);

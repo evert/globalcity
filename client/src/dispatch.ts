@@ -28,8 +28,12 @@ export function handleServerMsg(msg: ServerMsg, { state, map, renderer, ui, upda
       state.setStats(msg.stats);
       state.setTime(msg.time, msg.online);
       if (msg.testDisasters) ui.enableTestDisasters();
-      if (msg.world.chunk !== CHUNK || msg.world.w !== WORLD_W || msg.world.h !== WORLD_H) {
-        console.warn('[main] server world size differs from shared constants', msg.world);
+      if (msg.world.chunk !== CHUNK) console.warn('[main] the server uses another chunk size', msg.world);
+      else if (msg.world.w !== WORLD_W || msg.world.h !== WORLD_H) {
+        // the server now plays on another world than the one this page was built for (main.ts configures the size
+        // from the first welcome): start over on it
+        console.warn('[main] the server world changed size, reloading', msg.world);
+        location.reload();
       }
       break;
     }

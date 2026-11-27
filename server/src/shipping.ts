@@ -1,5 +1,5 @@
 // Sea routes between powered seaports. A coarse grid of open water (CELL x CELL tiles per cell, 1024 x 512 for
-// the whole planet, wrapping east-west at the date line; frozen sea counts as land, ships go around the ice) is built once; for each port one breadth-first search
+// the Earth, wrapping east-west at the date line; frozen sea counts as land, ships go around the ice) is built once; for each port one breadth-first search
 // (8-neighbour) finds paths to every other port, which are then straightened (line-of-sight string pulling)
 // into a few waypoints. Searches run one per call to step(), so the tick never stalls. Ports whose water
 // doesn't connect (lakes) simply get no routes.
@@ -7,9 +7,9 @@ import { WORLD_W, WORLD_H, isWater, type PortInfo, type SeaRoute } from '@global
 import type { World } from './world.ts';
 import { log } from './util.ts';
 
-const CELL = WORLD_W / 1024; // 16 tiles: the same real distance as 8 tiles in the old 8192-wide world
-const GW = WORLD_W / CELL,
-  GH = WORLD_H / CELL;
+/** 16 tiles (on the Earth the same real distance as 8 tiles in the old 8192-wide world). A world's size is a multiple
+ *  of WORLD_SIZE_STEP (256), so of this too. */
+const CELL = 16;
 const PORT_SEARCH_CELLS = 4; // a port uses the nearest water cell within this many cells
 
 export class ShippingPlanner {
@@ -22,6 +22,9 @@ export class ShippingPlanner {
   private portsKey = '';
   private readonly cache = new Map<string, number[] | null>(); // "ax,ay>bx,by" (sorted) -> waypoints
   private queue: PortInfo[] = [];
+  /** grid cells across and down */
+  private readonly gw = WORLD_W / CELL;
+  private readonly gh = WORLD_H / CELL;
 
   /** `water`: the grid of an earlier planner on the same world, to skip building it again (devReset). */
   constructor(world: World, water?: Uint8Array) {
@@ -29,16 +32,16 @@ export class ShippingPlanner {
       this.water = water;
       return;
     }
-    this.water = new Uint8Array(GW * GH);
+    this.water = new Uint8Array(this.gw * this.gh);
     const t0 = performance.now();
-    for (let gy = 0; gy < GH; gy++)
-      for (let gx = 0; gx < GW; gx++) {
+    for (let gy = 0; gy < this.gh; gy++)
+      for (let gx = 0; gx < this.gw; gx++) {
         let n = 0;
         for (let y = gy * CELL; y < gy * CELL + CELL; y++)
           for (let x = gx * CELL; x < gx * CELL + CELL; x++) if (isWater(world.tiles[y * WORLD_W + x]) && !world.frozen(x, y)) n++;
-        this.water[gy * GW + gx] = n >= (CELL * CELL) / 2 ? 1 : 0;
+        this.water[gy * this.gw + gx] = n >= (CELL * CELL) / 2 ? 1 : 0;
       }
-    log(`shipping: water grid ${GW}x${GH} built in ${(performance.now() - t0).toFixed(0)} ms`);
+    log(`shipping: water grid ${this.gw}x${this.gh} built in ${(performance.now() - t0).toFixed(0)} ms`);
   }
 
   private static pairKey(a: PortInfo, b: PortInfo): string {
@@ -107,13 +110,13 @@ export class ShippingPlanner {
       bd = Infinity;
     for (let dy = -PORT_SEARCH_CELLS; dy <= PORT_SEARCH_CELLS; dy++)
       for (let dx = -PORT_SEARCH_CELLS; dx <= PORT_SEARCH_CELLS; dx++) {
-        const gx = (cx + dx + GW) % GW,
+        const gx = (cx + dx + this.gw) % this.gw,
           gy = cy + dy;
-        if (gy < 0 || gy >= GH || !this.water[gy * GW + gx]) continue;
+        if (gy < 0 || gy >= this.gh || !this.water[gy * this.gw + gx]) continue;
         const d = dx * dx + dy * dy;
         if (d < bd) {
           bd = d;
-          best = gy * GW + gx;
+          best = gy * this.gw + gx;
         }
       }
     return best;
@@ -127,23 +130,23 @@ export class ShippingPlanner {
       for (const t of targets) this.cache.set(ShippingPlanner.pairKey(src, t), null);
       return 0;
     }
-    const parent = new Int32Array(GW * GH).fill(-1);
-    const queue = new Int32Array(GW * GH);
+    const parent = new Int32Array(this.gw * this.gh).fill(-1);
+    const queue = new Int32Array(this.gw * this.gh);
     let head = 0,
       tail = 0;
     queue[tail++] = start;
     parent[start] = start;
     while (head < tail) {
       const c = queue[head++],
-        cx = c % GW,
-        cy = (c - cx) / GW;
+        cx = c % this.gw,
+        cy = (c - cx) / this.gw;
       for (let dy = -1; dy <= 1; dy++)
         for (let dx = -1; dx <= 1; dx++) {
           if (!dx && !dy) continue;
           const ny = cy + dy;
-          if (ny < 0 || ny >= GH) continue;
-          const nx = (cx + dx + GW) % GW,
-            n = ny * GW + nx;
+          if (ny < 0 || ny >= this.gh) continue;
+          const nx = (cx + dx + this.gw) % this.gw,
+            n = ny * this.gw + nx;
           if (!this.water[n] || parent[n] >= 0) continue;
           parent[n] = c;
           queue[tail++] = n;
@@ -176,16 +179,16 @@ export class ShippingPlanner {
     // unwrapped cell centres
     const xs: number[] = [],
       ys: number[] = [];
-    let prevX = cells[0] % GW,
+    let prevX = cells[0] % this.gw,
       off = 0;
     for (const c of cells) {
-      let cx = c % GW;
-      if (cx - prevX > GW / 2) off -= GW;
-      else if (prevX - cx > GW / 2) off += GW;
+      let cx = c % this.gw;
+      if (cx - prevX > this.gw / 2) off -= this.gw;
+      else if (prevX - cx > this.gw / 2) off += this.gw;
       prevX = cx;
       cx += off;
       xs.push(cx);
-      ys.push((c - (c % GW)) / GW);
+      ys.push((c - (c % this.gw)) / this.gw);
     }
     const keep = [0];
     let i = 0;
@@ -211,7 +214,7 @@ export class ShippingPlanner {
     for (let s = 0; s <= n; s++) {
       const x = Math.round(x0 + ((x1 - x0) * s) / n),
         y = Math.round(y0 + ((y1 - y0) * s) / n);
-      if (y < 0 || y >= GH || !this.water[y * GW + (((x % GW) + GW) % GW)]) return false;
+      if (y < 0 || y >= this.gh || !this.water[y * this.gw + (((x % this.gw) + this.gw) % this.gw)]) return false;
     }
     return true;
   }

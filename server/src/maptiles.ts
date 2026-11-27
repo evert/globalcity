@@ -13,9 +13,9 @@ import {
   CHUNKS_X,
   LOMASK,
   MAP_REGION,
-  MAP_LEVELS,
-  MAP_L0_COLS,
-  MAP_L0_ROWS,
+  mapLevels,
+  mapL0Cols,
+  mapL0Rows,
   MAP_PALETTE,
   MAP_LIGHTS_PALETTE,
   MAP_GLOW_BASE,
@@ -40,15 +40,15 @@ import { log } from './util.ts';
 const CACHE_MAX_BYTES = 96 * 1024 * 1024;
 const regionOfChunk = (ci: ChunkIndex): number => {
   const { cx, cy } = chunkCoords(ci);
-  return Math.floor((cy * CHUNK) / MAP_REGION) * MAP_L0_COLS + Math.floor((cx * CHUNK) / MAP_REGION);
+  return Math.floor((cy * CHUNK) / MAP_REGION) * mapL0Cols() + Math.floor((cx * CHUNK) / MAP_REGION);
 };
 
 export class MapTiles {
   /** levels[L] for L >= 1: (WORLD_W >> L) x (WORLD_H >> L) palette indices without speck */
   private readonly levels: Uint8Array[] = [];
   /** version per level-0 region: 0 while it is untouched landscape */
-  private readonly versions = new Uint32Array(MAP_L0_COLS * MAP_L0_ROWS);
-  private readonly changes = new Uint32Array(MAP_L0_COLS * MAP_L0_ROWS);
+  private readonly versions = new Uint32Array(mapL0Cols() * mapL0Rows());
+  private readonly changes = new Uint32Array(mapL0Cols() * mapL0Rows());
   /** chunks ever built on, per level-0 region (the only places with lights, or anything but landscape) */
   private readonly edited = new Map<number, Set<ChunkIndex>>();
   /** versions are made unique per server run, so images cached by clients from an earlier run are never reused */
@@ -62,11 +62,11 @@ export class MapTiles {
     private readonly worldId: string,
   ) {
     const t0 = performance.now();
-    for (let L = 1; L < MAP_LEVELS; L++) this.levels[L] = new Uint8Array((WORLD_W >> L) * (WORLD_H >> L));
+    for (let L = 1; L < mapLevels(); L++) this.levels[L] = new Uint8Array((WORLD_W >> L) * (WORLD_H >> L));
     this.updateRect(0, 0, WORLD_W, WORLD_H);
     for (const ci of world.pristine.keys()) this.markEdited(ci);
     world.mapDirty.clear();
-    log(`map tiles: ${MAP_LEVELS} levels built in ${(performance.now() - t0).toFixed(0)} ms`);
+    log(`map tiles: ${mapLevels()} levels built in ${(performance.now() - t0).toFixed(0)} ms`);
   }
 
   private markEdited(ci: ChunkIndex): void {
@@ -95,7 +95,7 @@ export class MapTiles {
     this.manifestCache = null;
   }
 
-  /** Recompute levels 1.. for the world rectangle (tile units, multiples of 2^(MAP_LEVELS-1) or whole chunks). */
+  /** Recompute levels 1.. for the world rectangle (tile units, multiples of 2^(mapLevels()-1) or whole chunks). */
   private updateRect(x0: number, y0: number, w: number, h: number): void {
     const t = this.world.tiles,
       b = this.world.base;
@@ -114,7 +114,7 @@ export class MapTiles {
       }
     }
     // each level from the one below (a rect smaller than a pixel still updates the pixel it lies in)
-    for (let L = 2; L < MAP_LEVELS; L++) {
+    for (let L = 2; L < mapLevels(); L++) {
       const src = this.levels[L - 1],
         dst = this.levels[L],
         sw = WORLD_W >> (L - 1),
@@ -146,7 +146,7 @@ export class MapTiles {
   }
 
   valid(level: number, rx: number, ry: number): boolean {
-    if (!Number.isInteger(level) || level < 0 || level >= MAP_LEVELS) return false;
+    if (!Number.isInteger(level) || level < 0 || level >= mapLevels()) return false;
     const g = mapRegionGrid(level);
     return Number.isInteger(rx) && Number.isInteger(ry) && rx >= 0 && ry >= 0 && rx < g.cols && ry < g.rows;
   }
@@ -214,9 +214,9 @@ export class MapTiles {
     const r0x = Math.floor(tx0 / MAP_REGION),
       r0y = Math.floor(ty0 / MAP_REGION),
       rn = 1 << level;
-    for (let ry0 = r0y; ry0 < Math.min(MAP_L0_ROWS, r0y + rn); ry0++)
-      for (let rx0 = r0x; rx0 < Math.min(MAP_L0_COLS, r0x + rn); rx0++) {
-        const chunks = this.edited.get(ry0 * MAP_L0_COLS + rx0);
+    for (let ry0 = r0y; ry0 < Math.min(mapL0Rows(), r0y + rn); ry0++)
+      for (let rx0 = r0x; rx0 < Math.min(mapL0Cols(), r0x + rn); rx0++) {
+        const chunks = this.edited.get(ry0 * mapL0Cols() + rx0);
         if (!chunks) continue;
         for (const ci of chunks) {
           const cx = ci % CHUNKS_X,

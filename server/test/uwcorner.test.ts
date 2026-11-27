@@ -3,16 +3,10 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { CHUNK, LOMASK, RIVER } from '@globalcity/shared';
 import { TestClient, resetServer } from './support/client.ts';
+import { at as siteAt } from './support/fixture.ts';
 
 // coastal chunks: find a 4x4 block of open water (id RIVER) away from the chunk edges
-const CANDIDATES: [number, number][] = [
-  [128, 26],
-  [126, 24],
-  [140, 24],
-  [72, 34],
-  [66, 32],
-  [228, 50],
-];
+const CANDIDATES: [number, number][] = [siteAt('coast'), siteAt('farCoast')];
 const NS = 208,
   EW = 209,
   NE = 1019,

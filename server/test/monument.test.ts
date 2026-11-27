@@ -4,6 +4,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { STARTING_FUNDS, type ClaimInfo } from '@globalcity/shared';
 import { TestClient, resetServer, settle, sleep, waitFor, TICK } from './support/client.ts';
+import { at } from './support/fixture.ts';
 
 describe('monument', () => {
   let A: TestClient, B: TestClient;
@@ -18,7 +19,7 @@ describe('monument', () => {
   });
 
   it('founds a small working town and people move in', { timeout: 60 * TICK + 30_000 }, async () => {
-    s = await settle(A, [[150, 30]], 22, 12, { x0: 3, x1: 39, y0: 3, y1: 47 });
+    s = await settle(A, [at('inland')], 22, 12, { x0: 3, x1: 39, y0: 3, y1: 47 });
     key = `${s.cx},${s.cy}`;
     const { x: X, y: Y } = s;
     // (fixed 40 ms sleeps between builds before; the build acks now)

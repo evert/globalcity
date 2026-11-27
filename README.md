@@ -59,18 +59,23 @@ endpoint from the same port (`PORT`, default 8787). The server is a single long-
 process with in-memory state, so run it on a VM or container, not on a serverless platform.
 
 Server environment variables: `PORT`, `HOST`, `DATA_DIR` (save directory relative to the repo
-root, default `data/save`), `TICK_MS` (game-month length, default 5000) and `DEV_HOOKS=1`, which
-is for tests only: it accepts non-protocol socket messages (start a fire, grant money, reset the
-server, change test settings, ...) and turns random fire outbreaks off.
+root, default `data/save`), `WORLD_DIR` (the world to play on, default the generated Earth in
+`data/world-16384x8192`; see [docs/world-format.md](docs/world-format.md)), `TICK_MS` (game-month length,
+default 5000) and `DEV_HOOKS=1`, which is for tests only: it accepts non-protocol socket messages (start a
+fire, grant money, reset the server, change test settings, ...) and turns random fire outbreaks off.
 
 Tests use [Vitest](https://vitest.dev/): `npm test` runs them all, `npm test -w server -- water social`
 a few. Pure logic tests live in `shared/test/` and `client/test/`. The server tests (`server/test/`) are
 end to end: Vitest boots one real server per worker (4 by default, `TEST_WORKERS`; ports from 8791,
-`TEST_PORT`), each loads the generated world once, and every test file starts with `resetServer()`,
-which puts its server back to a fresh boot on an empty save (`devReset`) with the settings that file
-needs (`devConfig`). They play on the generated world, so run `npm run gen:world` first; server logs
-end up in `$TMPDIR/globalcity-tests.*`. CI (`.github/workflows/ci.yml`) checks formatting, lints,
-typechecks and builds the client while it generates the world (cached), then runs the tests.
+`TEST_PORT`), and every test file starts with `resetServer()`, which puts its server back to a fresh boot
+on an empty save (`devReset`) with the settings that file needs (`devConfig`). They play on a small
+fixture world (1024 x 512 tiles) built in code in `server/test/support/fixture.ts`, and ask for its named
+sites (`site('coast')`, `at('inland')`), so they need no generated world. Server logs end up in
+`$TMPDIR/globalcity-tests.*`. The world generator tests (`tools/test/`) check the generated Earth itself
+(real geography, file sizes, hazards, places); they are skipped when there is none. CI
+(`.github/workflows/ci.yml`) checks formatting, lints, typechecks, builds the client and runs the tests;
+a separate job generates the world and runs the world generator tests only when the generator, its inputs
+or those tests change.
 
 Ready-made recipes: a Raspberry Pi behind a Cloudflare Tunnel in [deploy/pi/README.md](deploy/pi/README.md),
 or an Oracle Cloud Always Free VM with Caddy TLS in [deploy/oracle/README.md](deploy/oracle/README.md).
@@ -81,7 +86,8 @@ or an Oracle Cloud Always Free VM with Caddy TLS in [deploy/oracle/README.md](de
 shared/   constants, Micropolis tile ids/tables, tool defs, wire protocol (shared by all)
 server/   world state, simulation, WebSocket server, persistence
 client/   canvas renderer, input, UI, networking
-tools/    gen-world: Natural Earth + climate/tree cover/sea ice rasters -> data/world-<W>x<H>/base.bin (run tools/fetch-terrain-data.sh first)
+tools/    gen-world: Natural Earth + climate/tree cover/sea ice rasters -> data/world-<W>x<H>/ (run tools/fetch-terrain-data.sh first)
+docs/     the world format (docs/world-format.md)
 data/     generated world + save data (git-ignored)
 LICENSES/ GPL-3.0 and the Micropolis additional terms
 ```

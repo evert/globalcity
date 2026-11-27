@@ -3,6 +3,8 @@
 // Environment:
 //   PORT       listen port (default 8787)          HOST      bind address (default 0.0.0.0)
 //   DATA_DIR   save directory, relative to the repo root (default data/save)
+//   WORLD_DIR  the world to play on (docs/world-format.md), relative to the repo root (default the generated
+//              Earth, data/world-16384x8192); its base.json gives the size
 //   TICK_MS    simulation step length in ms (default TICK_MS from shared; shorten for tests)
 //   STEPS_PER_MONTH  simulation steps per game month (default STEPS_PER_MONTH from shared; tests use 1)
 //   DEV_HOOKS  "1" enables dev-only hooks: the {t:'devIgnite',x,y} socket message starts a fire,
@@ -20,7 +22,7 @@
 
 import os from 'node:os';
 import path from 'node:path';
-import { TICK_MS, DEFAULT_PORT, WORLD_W, WORLD_H, CHUNKS_X, CHUNKS_Y, WORLD_TAG, STEPS_PER_MONTH } from '@globalcity/shared';
+import { TICK_MS, DEFAULT_PORT, WORLD_W, WORLD_H, CHUNKS_X, CHUNKS_Y, STEPS_PER_MONTH, EARTH_W, EARTH_H, configureWorld } from '@globalcity/shared';
 import { bootWorld } from './world.ts';
 import { Players } from './players.ts';
 import { Places } from './places.ts';
@@ -39,7 +41,17 @@ const TILE_FLUSH_MS = 100;
 const MAP_REFRESH_MS = 10_000;
 
 const root = path.resolve(import.meta.dirname, '../..');
-const worldDir = path.join(root, `data/world-${WORLD_TAG}`);
+const worldDir = path.resolve(root, process.env.WORLD_DIR || `data/world-${EARTH_W}x${EARTH_H}`);
+/** The world's description (base.json): its size, and generatedAt, which identifies it. */
+const worldInfo = ((): { w?: unknown; h?: unknown; generatedAt?: unknown } => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(worldDir, 'base.json'), 'utf8'));
+  } catch {
+    return {};
+  }
+})();
+// before anything that depends on the world's size is built
+configureWorld(typeof worldInfo.w === 'number' ? worldInfo.w : EARTH_W, typeof worldInfo.h === 'number' ? worldInfo.h : EARTH_H);
 const baseFile = path.join(worldDir, 'base.bin');
 const placesFile = path.join(worldDir, 'places.json');
 const saveDir = path.resolve(root, process.env.DATA_DIR || 'data/save');
@@ -61,13 +73,7 @@ log(
   `State: ${hadState ? `${players.players.size} players, ${players.claims.size} claims` : 'fresh'}; ${chunksLoaded} saved chunk(s); clock ${players.time.year}-${String(players.time.month + 1).padStart(2, '0')}`,
 );
 
-const worldId = (() => {
-  try {
-    return String(JSON.parse(fs.readFileSync(path.join(worldDir, 'base.json'), 'utf8')).generatedAt);
-  } catch {
-    return 'fallback';
-  }
-})();
+const worldId = worldInfo.generatedAt !== undefined ? String(worldInfo.generatedAt) : 'fallback';
 const mapTiles = timed('Map tiles', () => new MapTiles(world, worldId));
 // which disasters can strike where (a byte per chunk) and the elevation of every tile, from the world generator
 const hazards = (() => {
@@ -76,7 +82,9 @@ const hazards = (() => {
     warn(`${f} not found: no natural disasters (regenerate the world)`);
     return undefined;
   }
-  return new Uint8Array(fs.readFileSync(f));
+  const h = new Uint8Array(fs.readFileSync(f));
+  if (h.length !== CHUNKS_X * CHUNKS_Y) throw new Error(`${f} has ${h.length} bytes, expected ${CHUNKS_X * CHUNKS_Y} (a byte per chunk)`);
+  return h;
 })();
 const elevation = new Elevation(path.join(worldDir, 'elevation.bin'));
 const simOptions: SimOptions = { randomFires: !devHooks, hazards, elevation };
@@ -150,7 +158,7 @@ log(`Boot complete in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
 console.log(`
   GlobalCity server
   -----------------
-  World      ${WORLD_W} x ${WORLD_H} tiles, ${CHUNKS_X} x ${CHUNKS_Y} chunks
+  World      ${WORLD_W} x ${WORLD_H} tiles, ${CHUNKS_X} x ${CHUNKS_Y} chunks (${worldDir.startsWith(root + path.sep) ? path.relative(root, worldDir) : worldDir})
   Listening  ${host}:${port}
   WebSocket  ws://localhost:${port}/ws
   HTTP       http://localhost:${port}/  (health: /health, /ATTRIBUTION.md)

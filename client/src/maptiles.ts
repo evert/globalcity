@@ -2,7 +2,7 @@
 // screen are fetched, at the level whose pixels are about one screen pixel, so the work per frame and the data
 // per visit stay the same however many cities there are. Images are decoded off the main thread
 // (createImageBitmap) and kept in a small LRU; a region that isn't loaded yet is drawn from a coarser level.
-import { WORLD_W, WORLD_H, MAP_REGION, MAP_LEVELS, MAP_L0_COLS, mapRegionGrid, mapRegionSize, mapRegionVersion, type MapManifest } from '@globalcity/shared';
+import { WORLD_W, WORLD_H, MAP_REGION, mapLevels, mapL0Cols, mapRegionGrid, mapRegionSize, mapRegionVersion, type MapManifest } from '@globalcity/shared';
 
 export type MapKind = 'day' | 'lights';
 const MANIFEST_MS = 30_000;
@@ -57,7 +57,7 @@ export class MapTileLayer {
           this.version++;
           this.onUpdate();
         }
-        this.want('day', MAP_LEVELS - 1, 0, 0); // the whole world, for the minimap and as the fallback under everything
+        this.want('day', mapLevels() - 1, 0, 0); // the whole world, for the minimap and as the fallback under everything
       })
       .catch((e) => console.warn('[map] manifest failed:', (e as Error).message))
       .finally(() => {
@@ -68,12 +68,12 @@ export class MapTileLayer {
   /** Level whose pixels are at least one device pixel, for `devicePxPerTile`. */
   static levelFor(devicePxPerTile: number): number {
     if (devicePxPerTile >= 1) return 0;
-    return Math.min(MAP_LEVELS - 1, Math.max(0, Math.ceil(Math.log2(1 / devicePxPerTile) - 1e-9)));
+    return Math.min(mapLevels() - 1, Math.max(0, Math.ceil(Math.log2(1 / devicePxPerTile) - 1e-9)));
   }
 
   private hasLights(level: number, rx: number, ry: number): boolean {
     const n = 1 << level;
-    for (let y = ry * n; y < (ry + 1) * n; y++) for (let x = rx * n; x < (rx + 1) * n; x++) if (this.lit.has(y * MAP_L0_COLS + x)) return true;
+    for (let y = ry * n; y < (ry + 1) * n; y++) for (let x = rx * n; x < (rx + 1) * n; x++) if (this.lit.has(y * mapL0Cols() + x)) return true;
     return false;
   }
 
@@ -105,7 +105,7 @@ export class MapTileLayer {
         .then((img) => {
           this.bitmaps.get(key)?.img.close();
           this.bitmaps.set(key, { img, ver, lastUse: this.frame });
-          if (key === `day/${MAP_LEVELS - 1}/0/0`) this.onWorldImage(img);
+          if (key === `day/${mapLevels() - 1}/0/0`) this.onWorldImage(img);
           this.evict();
           this.version++;
           this.onUpdate();
@@ -120,7 +120,7 @@ export class MapTileLayer {
 
   private evict(): void {
     if (this.bitmaps.size <= MAX_BITMAPS) return;
-    const top = `day/${MAP_LEVELS - 1}/0/0`;
+    const top = `day/${mapLevels() - 1}/0/0`;
     const old = [...this.bitmaps.entries()].filter(([k]) => k !== top).sort((a, b) => a[1].lastUse - b[1].lastUse);
     for (let i = 0; i < old.length && this.bitmaps.size > MAX_BITMAPS; i++) {
       if (old[i][1].lastUse === this.frame) break; // on screen now
@@ -173,7 +173,7 @@ export class MapTileLayer {
         }
         missing++;
         // fall back to a coarser level that is loaded (never fetch for it: the top level is always on its way)
-        for (let L = level + 1; L < MAP_LEVELS; L++) {
+        for (let L = level + 1; L < mapLevels(); L++) {
           const aspan = MAP_REGION << L,
             ax = Math.floor(wx0 / aspan),
             ay = Math.floor(wy0 / aspan);

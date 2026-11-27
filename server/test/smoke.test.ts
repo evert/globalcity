@@ -1,7 +1,8 @@
-// Smoke test: connect, found a city near London, build a small powered neighbourhood, verify stats flow.
+// Smoke test: connect, found a city inland, build a small powered neighbourhood, verify stats flow.
 import { describe, it, expect, beforeAll } from 'vitest';
-import { CHUNK, STARTING_FUNDS, COAL_POWER, lonLatToTile, chunkOf, isWater, isTree } from '@globalcity/shared';
+import { CHUNK, STARTING_FUNDS, COAL_POWER, MIN_LAND_TILES_TO_CLAIM, isWater, isTree } from '@globalcity/shared';
 import { TestClient, resetServer, sleep, waitFor } from './support/client.ts';
+import { buildFixture, landPerChunk, site as siteNamed } from './support/fixture.ts';
 
 const WAIT_MS = 15_000;
 // a 15x5 rectangle of land for: coal plant (4x4) | 2 wires | 3 res zones; road along row 4 below them
@@ -23,11 +24,10 @@ describe('smoke', () => {
     expect(w.world.chunk).toBe(CHUNK);
   });
 
-  it('founds a city on the nearest free chunk to London', async () => {
-    const london = lonLatToTile(-0.1, 51.5);
-    const lc = chunkOf(london.x, london.y);
+  it('founds a city on the nearest free chunk inland', async () => {
+    const lc = siteNamed('inland');
     const spot = await c.findFree(lc.cx, lc.cy);
-    expect(spot, 'a free chunk near London').not.toBeNull();
+    expect(spot, 'a free chunk inland').not.toBeNull();
     const { cx, cy } = spot!;
     c.send({ t: 'claim', cx, cy });
     await waitFor(() => c.myClaims().length > 0, 'claim broadcast');
@@ -87,7 +87,9 @@ describe('smoke', () => {
     const wst = await waitFor(() => c.worldStats, 'worldStats');
     expect(wst.cities).toBeGreaterThanOrEqual(1);
     expect(wst.plots).toBeGreaterThanOrEqual(1);
-    expect(wst.landPlots).toBeGreaterThanOrEqual(1000);
+    // every plot of the fixture with enough land to claim (on the generated Earth: tools/test/world.test.ts)
+    const landPlots = landPerChunk(buildFixture()).filter((n) => n >= MIN_LAND_TILES_TO_CLAIM).length;
+    expect(wst.landPlots).toBe(landPlots);
     expect(wst.plants).toBeGreaterThanOrEqual(1);
     expect(wst.roads).toBeGreaterThanOrEqual(1);
   });

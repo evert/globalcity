@@ -1,6 +1,6 @@
 // The zoomed-out map as a pyramid of small images ("map tiles"), rendered by the server and fetched by the
 // client only for what is on screen. Level L draws one pixel per 2^L x 2^L world tiles; every level is cut into
-// MAP_REGION x MAP_REGION pixel images, so the whole world at the top level is a single 256 x 128 image.
+// MAP_REGION x MAP_REGION pixel images, so the whole world at the top level is a single image (256 x 128 for the Earth).
 // Images are 8-bit indexed PNGs: one palette (below) shared by server and client, so a mostly-terrain region
 // is a few kilobytes. Every region has a version; the URL carries it, so an unchanged region is served once and
 // then comes from the browser's (or the CDN's) cache. The server publishes the versions of the level-0 regions
@@ -16,10 +16,12 @@ import { biomeMapColours, ICE_RGB, ICE_SPECK_RGB } from './biomeart.ts';
 import { LOMASK } from './tiles.ts';
 
 export const MAP_REGION = 256;
-/** Levels 0..MAP_LEVELS-1; the top one shows the whole world in one image. */
-export const MAP_LEVELS = Math.log2(WORLD_W / MAP_REGION) + 1;
-export const MAP_L0_COLS = WORLD_W / MAP_REGION;
-export const MAP_L0_ROWS = WORLD_H / MAP_REGION;
+/** Levels 0..mapLevels()-1; the top one shows the whole world in one image. (Functions, not constants: they follow
+ *  the world's size, configureWorld.) */
+export const mapLevels = (): number => Math.max(0, Math.ceil(Math.log2(Math.max(WORLD_W, WORLD_H) / MAP_REGION))) + 1;
+/** Level-0 regions across and down. */
+export const mapL0Cols = (): number => Math.ceil(WORLD_W / MAP_REGION);
+export const mapL0Rows = (): number => Math.ceil(WORLD_H / MAP_REGION);
 
 /** Regions across and down at a level. */
 export function mapRegionGrid(level: number): { cols: number; rows: number } {
@@ -36,7 +38,7 @@ export function mapRegionSize(level: number, rx: number, ry: number): { w: numbe
 export interface MapManifest {
   /** identifies the generated world (base.bin): images of untouched regions are valid as long as it is the same */
   w: string;
-  /** version per level-0 region, row-major MAP_L0_COLS x MAP_L0_ROWS; 0 = untouched landscape */
+  /** version per level-0 region, row-major mapL0Cols() x mapL0Rows(); 0 = untouched landscape */
   v: number[];
   /** level-0 regions (indices) that have anything built: the only ones with night lights */
   lit: number[];
@@ -46,8 +48,9 @@ export interface MapManifest {
 export function mapRegionVersion(v: ArrayLike<number>, level: number, rx: number, ry: number): number {
   const n = 1 << level;
   let s = 0;
-  for (let y = ry * n; y < Math.min(MAP_L0_ROWS, (ry + 1) * n); y++)
-    for (let x = rx * n; x < Math.min(MAP_L0_COLS, (rx + 1) * n); x++) s = (s + v[y * MAP_L0_COLS + x]) >>> 0;
+  const cols = mapL0Cols(),
+    rows = mapL0Rows();
+  for (let y = ry * n; y < Math.min(rows, (ry + 1) * n); y++) for (let x = rx * n; x < Math.min(cols, (rx + 1) * n); x++) s = (s + v[y * cols + x]) >>> 0;
   return s;
 }
 

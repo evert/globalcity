@@ -3,6 +3,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { CHUNK, isWater, isRubble } from '@globalcity/shared';
 import { TestClient, resetServer, sleep } from './support/client.ts';
+import { at } from './support/fixture.ts';
 
 const FREEZE_MS = 3000;
 
@@ -29,7 +30,7 @@ describe('regrow', () => {
   });
 
   it('bulldozed zones leave rubble', async () => {
-    const spot = await A.findFree(139, 29); // near Vienna: inland, dry
+    const spot = await A.findFree(...at('inland')); // inland, dry
     expect(spot).not.toBeNull();
     ({ cx, cy } = spot!);
     await A.subscribe([[cx, cy]]);
