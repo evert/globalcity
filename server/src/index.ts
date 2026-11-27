@@ -158,7 +158,7 @@ log(`Boot complete in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
 console.log(`
   GlobalCity server
   -----------------
-  World      ${WORLD_W} x ${WORLD_H} tiles, ${CHUNKS_X} x ${CHUNKS_Y} chunks (${path.relative(root, worldDir) || worldDir})
+  World      ${WORLD_W} x ${WORLD_H} tiles, ${CHUNKS_X} x ${CHUNKS_Y} chunks (${worldDir.startsWith(root + path.sep) ? path.relative(root, worldDir) : worldDir})
   Listening  ${host}:${port}
   WebSocket  ws://localhost:${port}/ws
   HTTP       http://localhost:${port}/  (health: /health, /ATTRIBUTION.md)
