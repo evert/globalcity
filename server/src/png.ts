@@ -1,4 +1,4 @@
-// Minimal PNG writer for 8-bit palette images (the map tiles): IHDR, PLTE, optional tRNS, IDAT, IEND.
+// Minimal PNG writers: 8-bit palette images (the map tiles) and 8-bit RGB (the weather grid).
 import zlib from 'node:zlib';
 
 const CRC = new Uint32Array(256);
@@ -44,4 +44,21 @@ export function encodeIndexedPng(w: number, h: number, px: Uint8Array, palette: 
   }
   parts.push(chunk('IDAT', zlib.deflateSync(raw, { level: 6 })), chunk('IEND', new Uint8Array(0)));
   return Buffer.concat(parts);
+}
+
+/** `rgb`: w*h*3 bytes, 8-bit truecolour (the weather grid). */
+export function encodeRgbPng(w: number, h: number, rgb: Uint8Array): Buffer {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 2; // 8-bit, RGB
+  const raw = Buffer.alloc((w * 3 + 1) * h);
+  for (let y = 0; y < h; y++) raw.set(rgb.subarray(y * w * 3, (y + 1) * w * 3), y * (w * 3 + 1) + 1);
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', zlib.deflateSync(raw, { level: 6 })),
+    chunk('IEND', new Uint8Array(0)),
+  ]);
 }

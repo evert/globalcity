@@ -63,6 +63,7 @@ import { Leaderboard } from './leaderboard.ts';
 import { log } from './util.ts';
 import { Admin, type Announcement, type GrantResult } from './admin.ts';
 import type { Notify } from './notify.ts';
+import type { Weather } from './weather.ts';
 import { config, updateConfig } from './config.ts';
 
 // Clients paint at most one build per 25 ms (40/s); allow headroom above that so painting is never throttled.
@@ -132,6 +133,8 @@ export interface NetOptions {
   mapTiles?: MapTiles;
   /** world reset time and notification sign-ups (/api/world-reset, /api/notify) */
   notify?: Notify;
+  /** real weather (/api/weather) */
+  weather?: Weather;
   /** devReset (dev hooks only): reset everything but the network layer and return the new players and sim, or
    *  an error message when this server can't be reset */
   devReset?: () => { players: Players; sim: Sim } | string;
@@ -146,6 +149,7 @@ export class Net {
   private presenceTimer: NodeJS.Timeout | null = null;
   readonly admin: Admin;
   private readonly notify: Notify | null;
+  private readonly weather: Weather | null;
   private leaderboard: Leaderboard;
   private worldStats: WorldStatsCounter;
   private readonly devHooks: boolean;
@@ -176,6 +180,7 @@ export class Net {
       opts.notify ?? null,
     );
     this.notify = opts.notify ?? null;
+    this.weather = opts.weather ?? null;
     this.leaderboard = new Leaderboard(players);
     this.worldStats = new WorldStatsCounter(world, players, sim);
     if (this.devHooks) log('DEV_HOOKS enabled: devIgnite/devFunds/devTraffic/devPeak/devIdle/devRailLink/devPlace/devDisaster accepted');
@@ -329,6 +334,7 @@ export class Net {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (this.admin.handle(req, res, url.pathname)) return;
     if (this.notify?.handle(req, res, url.pathname)) return;
+    if (this.weather?.handle(req, res, url.pathname)) return;
     if (url.pathname.startsWith('/map/')) {
       this.serveMap(req, res, url);
       return;

@@ -19,6 +19,7 @@
 //              Disasters never strike with DEV_HOOKS.
 //   NOTIFY_DB  world reset notification sign-ups (SQLite; default notify.db beside the save directory, so it
 //              survives the world reset)
+//   WEATHER    "off": no real weather (clouds, rain and snow from NOAA GFS, fetched hourly; see weather.ts)
 
 import os from 'node:os';
 import path from 'node:path';
@@ -33,6 +34,7 @@ import { MapTiles } from './maptiles.ts';
 import { Elevation } from './elevation.ts';
 import fs from 'node:fs';
 import { Notify } from './notify.ts';
+import { Weather } from './weather.ts';
 import { log, warn, timed } from './util.ts';
 import { config, resetConfig } from './config.ts';
 
@@ -91,7 +93,16 @@ const simOptions: SimOptions = { randomFires: !devHooks, hazards, elevation };
 let sim = new Sim(world, players, simOptions);
 simOptions.shippingWater = sim.shipping.water;
 const notify = new Notify(path.resolve(root, process.env.NOTIFY_DB || path.join(path.dirname(saveDir), 'notify.db')), devHooks);
-const net = new Net(world, players, sim, clientDist, root, { devHooks, dataDir: saveDir, mapTiles, notify, devReset: devHooks ? devReset : undefined });
+const weather = process.env.WEATHER === 'off' ? null : new Weather();
+weather?.start();
+const net = new Net(world, players, sim, clientDist, root, {
+  devHooks,
+  dataDir: saveDir,
+  mapTiles,
+  notify,
+  weather: weather ?? undefined,
+  devReset: devHooks ? devReset : undefined,
+});
 
 /**
  * devReset (DEV_HOOKS only, for the tests): everything back to how this server booted on an empty save, keeping

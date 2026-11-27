@@ -57,6 +57,10 @@ The world's biomes (desert, steppe, tundra, boreal forest, ice sheets), its fore
 - Elevation: NOAA National Centers for Environmental Information. 2022: ETOPO 2022 15 Arc-Second Global Relief Model (60 arc-second surface elevation). NOAA National Centers for Environmental Information. https://doi.org/10.25921/fd45-gt74 (public domain: CC0 1.0). Stored per tile in data/world-*/elevation.bin; floods only cover low land.
 - Earthquake zones: Bird, P. (2003), An updated digital model of plate boundaries, Geochemistry, Geophysics, Geosystems 4(3), 1027, doi:10.1029/2001GC000252, as converted by the fraxen/tectonicplates project (GeoJSON by csterling; https://github.com/fraxen/tectonicplates), licensed under the Open Data Commons Attribution License 1.0.
 
+## Weather
+
+- Clouds, rain and snow come from the NOAA Global Forecast System (GFS, 0.25 degree), National Centers for Environmental Prediction, fetched each hour from the NOAA Open Data Dissemination program on AWS (https://registry.opendata.aws/noaa-gfs-bdp-pds/). US government work, public domain.
+
 ## Trademarks and non-affiliation
 
 "SimCity" is a trademark of Electronic Arts Inc. GlobalCity is not affiliated with, sponsored by, or endorsed by Electronic Arts, Maxis, Will Wright or Don Hopkins. In line with the Micropolis additional terms, this project does not use the SimCity name, and modified versions must not be presented as the original program.

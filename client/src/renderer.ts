@@ -50,6 +50,7 @@ import { FlightLayer, ShipLayer, SantaLayer } from './flights.ts';
 import { OverlayLayer } from './overlays.ts';
 import { CustomLayer } from './custom.ts';
 import { NightLayer, NIGHT_REFRESH_MS } from './night.ts';
+import { WeatherLayer } from './weather.ts';
 import { NightLights, type NightImage } from './nightlights.ts';
 
 /** How much of the night shade the zoomed-in city gets: dim, never dark, so building stays easy at night. */
@@ -242,6 +243,8 @@ export class Renderer extends Emitter<RendererEvents> {
   private lightsLayer: HTMLCanvasElement | null = null;
   /** real-time day and night (the actual sun over the actual Earth) */
   readonly night = new NightLayer();
+  /** real weather: clouds over the map, overcast and rain or snow zoomed in (weather.ts) */
+  readonly weather = new WeatherLayer();
   /** lit windows for the zoomed-in view at night (derived from the tile art once the sheet loads) */
   private nightLights: NightLights | null = null;
   /** the zoomed-out map drawn ahead of time (see renderOverview); x, y: its offset from the world's top-left */
@@ -306,6 +309,10 @@ export class Renderer extends Emitter<RendererEvents> {
       setInterval(() => {
         if (this.night.update()) this.invalidate();
       }, NIGHT_REFRESH_MS);
+    if (this.animated) {
+      this.weather.onChange = () => this.invalidate();
+      this.weather.start();
+    }
     this.customs.load();
     this.overlay.isOwn = (cx, cy) => this.state.ownsChunk(cx, cy);
     map.on('tiles', () => this.invalidate());
@@ -1053,6 +1060,12 @@ export class Renderer extends Emitter<RendererEvents> {
         this.invalidate();
       }, customAnimMs);
     }
+    // 1a. weather: the sky dims under cloud and rain (what falls is drawn over everything, see Precipitation)
+    if (this.weather.ready) {
+      g.imageSmoothingEnabled = true;
+      this.drawWorldImage(g, this.weather.shade, this.weather.shade.width, this.weather.shade.height, 0, 0, W, H);
+      g.imageSmoothingEnabled = false;
+    }
     // 1b. night: the real-time shade over the city (dimmed, never dark), then the lit windows of plots in the dark
     this.night.update();
     {
@@ -1271,7 +1284,7 @@ export class Renderer extends Emitter<RendererEvents> {
     const zoom = this.cam.zoom,
       zooming = zoom !== this.ovLastZoom;
     this.ovLastZoom = zoom;
-    const key = `${zoom}|${this.dpr}|${W}x${H}|${this.claimsVersion}|${this.mapTiles.version}|${this.night.version}|${this.state.me?.id ?? ''}`;
+    const key = `${zoom}|${this.dpr}|${W}x${H}|${this.claimsVersion}|${this.mapTiles.version}|${this.night.version}|${this.weather.version}|${this.state.me?.id ?? ''}`;
     let c = this.ovCache;
     // the cache's position is kept relative to the world's top-left corner, so it moves with the map
     const fits = !!c && c.key === key && vx0 - left >= c.x && vy0 - top >= c.y && vx1 - left <= c.x + c.canvas.width && vy1 - top <= c.y + c.canvas.height;
@@ -1356,8 +1369,10 @@ export class Renderer extends Emitter<RendererEvents> {
     g.imageSmoothingEnabled = false;
     if (this.mapTiles.ready) this.mapTiles.draw(g, 'day', level, view, rx0, ry0, rx1, ry1);
     else this.drawWorldImage(g, this.minimap.image, this.minimap.width, this.minimap.height, rx0, ry0, rx1, ry1);
-    // night: the real-time shade over the whole map, then the lights of the cities on the dark side
+    // clouds (real weather), then night: the real-time shade over the whole map, then the lights of the cities on
+    // the dark side
     g.imageSmoothingEnabled = true;
+    if (this.weather.ready) this.drawWorldImage(g, this.weather.clouds, this.weather.clouds.width, this.weather.clouds.height, rx0, ry0, rx1, ry1);
     this.drawWorldImage(g, this.night.canvas, this.night.canvas.width, this.night.canvas.height, rx0, ry0, rx1, ry1);
     if (this.mapTiles.ready && rx1 > rx0 && ry1 > ry0) {
       const lc = (this.lightsLayer ??= document.createElement('canvas'));

@@ -55,6 +55,7 @@ export default async function setup(project: TestProject): Promise<() => Promise
     STEPS_PER_MONTH: '1',
     HOST: '127.0.0.1',
     WORLD_DIR: worldDir,
+    WEATHER: 'off',
   };
   for (const k of CONFIG_ENV) if (k !== 'HOST') delete env[k];
   const procs: ChildProcess[] = [];
