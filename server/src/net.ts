@@ -87,6 +87,8 @@ interface Client {
   lastRefill: number;
   /** last time a "building too fast" toast was sent (ms) */
   droppedAt: number;
+  /** seqs of applied builds, acknowledged ('built') after the next tile flush */
+  acks: number[];
   viewTokens: number;
   viewRefill: number;
   lastStatsJson: string;
@@ -410,6 +412,7 @@ export class Net {
       buildTokens: BUILD_BURST,
       lastRefill: Date.now(),
       droppedAt: 0,
+      acks: [],
       clientVersion: '',
       viewTokens: VIEW_RATE_PER_SEC,
       viewRefill: Date.now(),
@@ -576,7 +579,7 @@ export class Net {
         this.onClaim(client, p, msg.cx, msg.cy);
         break;
       case 'build':
-        this.onBuild(client, p, msg.tool, msg.x, msg.y);
+        this.onBuild(client, p, msg.tool, msg.x, msg.y, msg.seq);
         break;
       case 'view':
         this.onView(client, msg);
@@ -827,7 +830,7 @@ export class Net {
     log(`${p.name} claimed ${cx},${cy} (cost ${r.cost}${r.inherited ? `, ${r.inherited} zones/buildings inherited` : ''})`);
   }
 
-  private onBuild(client: Client, p: PlayerRecord, tool: ToolId, x: number, y: number): void {
+  private onBuild(client: Client, p: PlayerRecord, tool: ToolId, x: number, y: number, seq?: number): void {
     // Token-bucket rate limit per socket.
     const now = Date.now();
     client.buildTokens = Math.min(BUILD_BURST, client.buildTokens + ((now - client.lastRefill) / 1000) * BUILD_RATE_PER_SEC);
@@ -838,6 +841,7 @@ export class Net {
         client.droppedAt = now;
         this.toast(client, 'Building too fast; some tiles were skipped', 'info');
       }
+      if (seq !== undefined) this.send(client, { t: 'built', seq, ok: false });
       return;
     }
     client.buildTokens -= 1;
@@ -845,10 +849,13 @@ export class Net {
     const r = applyBuild(this.buildCtx, p, tool, x, y);
     if (!r.ok) {
       this.toast(client, r.msg, r.kind);
+      if (seq !== undefined) this.send(client, { t: 'built', seq, ok: false });
       return;
     }
     if (r.msg) this.toast(client, r.msg, 'info', { x, y });
     this.sendStatsIfChanged(client);
+    // acknowledged after the tiles flush that carries the change, so the client has the real tiles by then
+    if (seq !== undefined) client.acks.push(seq);
     this.scheduleFlush();
   }
 
@@ -870,18 +877,22 @@ export class Net {
     });
   }
 
-  /** Send pending tile updates to each socket, filtered to its subscribed chunks. */
+  /** Send pending tile updates to each socket, filtered to its subscribed chunks, then its pending build acks. */
   flushTiles(): void {
     const pending = this.world.pending;
-    if (pending.size === 0) return;
     for (const c of this.clients) {
-      if (!c.player || c.subs.size === 0 || c.ws.readyState !== WebSocket.OPEN) continue;
-      const u: number[] = [];
-      for (const [ci, arr] of pending) {
-        if (!c.subs.has(ci)) continue;
-        for (let i = 0; i < arr.length; i++) u.push(arr[i]);
+      if (pending.size > 0 && c.player && c.subs.size > 0 && c.ws.readyState === WebSocket.OPEN) {
+        const u: number[] = [];
+        for (const [ci, arr] of pending) {
+          if (!c.subs.has(ci)) continue;
+          for (let i = 0; i < arr.length; i++) u.push(arr[i]);
+        }
+        if (u.length > 0) c.ws.send(JSON.stringify({ t: 'tiles', u } satisfies ServerMsg));
       }
-      if (u.length > 0) c.ws.send(JSON.stringify({ t: 'tiles', u } satisfies ServerMsg));
+      if (c.acks.length) {
+        for (const seq of c.acks) this.send(c, { t: 'built', seq, ok: true });
+        c.acks.length = 0;
+      }
     }
     pending.clear();
   }
@@ -989,7 +1000,9 @@ function parseClientMsg(raw: unknown): ClientMsg | null {
     case 'query':
       return isInt(m.x) && isInt(m.y) ? { t: 'query', x: m.x, y: m.y } : null;
     case 'build':
-      return typeof m.tool === 'string' && m.tool in TOOLS && isInt(m.x) && isInt(m.y) ? { t: 'build', tool: m.tool as ToolId, x: m.x, y: m.y } : null;
+      return typeof m.tool === 'string' && m.tool in TOOLS && isInt(m.x) && isInt(m.y)
+        ? { t: 'build', tool: m.tool as ToolId, x: m.x, y: m.y, ...(isInt(m.seq) ? { seq: m.seq } : {}) }
+        : null;
     case 'rename':
       return typeof m.name === 'string' ? { t: 'rename', name: m.name } : null;
     case 'renameCity':

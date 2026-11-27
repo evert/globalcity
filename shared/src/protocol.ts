@@ -209,7 +209,8 @@ export type ClientMsg =
   | { t: 'claim'; cx: number; cy: number }
   /** test servers (DISASTER_TRIGGER=1): start a disaster now in the city owning chunk cx,cy, or in a random city */
   | { t: 'testDisaster'; kind: number; cx?: number; cy?: number }
-  | { t: 'build'; tool: ToolId; x: number; y: number }
+  /** seq: the client's counter for this build; when present the server answers with 'built' (absent on old clients) */
+  | { t: 'build'; tool: ToolId; x: number; y: number; seq?: number }
   | { t: 'query'; x: number; y: number }
   | { t: 'findFree'; cx: number; cy: number } // nearest chunk to (cx,cy) a new city can be founded on
   | { t: 'rename'; name: string }
@@ -236,6 +237,8 @@ export type ServerMsg =
       testDisasters?: boolean;
     }
   | { t: 'tiles'; u: number[] } // flat triples: x, y, value
+  /** answer to a 'build' with a seq: ok = applied, sent after the 'tiles' that carry its changes; not ok = refused or dropped */
+  | { t: 'built'; seq: number; ok: boolean }
   | { t: 'claim'; claim: ClaimInfo } // a chunk changed owner
   | { t: 'claims'; claims: ClaimInfo[] } // periodic: pops changed
   | { t: 'stats'; stats: PlayerStats } // the receiving player's own stats
