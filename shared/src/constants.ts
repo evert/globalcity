@@ -85,11 +85,28 @@ export const CITY_FREEZE_MS = 15 * 60_000;
  * real electricity use per person (a zone houses a few hundred people).
  */
 export const MW_PER_POWER_UNIT = 1;
+/** The unit for a power amount in MW, and its size in MW. */
+function powerUnit(mw: number): [string, number] {
+  return Math.abs(mw) >= 1e6 ? ['TW', 1e6] : Math.abs(mw) >= 1e3 ? ['GW', 1e3] : ['MW', 1];
+}
+/** A number of MW in a given unit, without the unit: 400, 1.2, 19.2. */
+function powerIn(mw: number, size: number): string {
+  if (size === 1) return Math.round(mw).toLocaleString('en-US');
+  const v = mw / size;
+  return String(+v.toFixed(Math.abs(v) < 10 ? 2 : 1));
+}
 /** A power amount in units, as watts: "400 MW", "1.2 GW", "19.2 GW". */
 export function fmtPower(units: number): string {
-  const mw = units * MW_PER_POWER_UNIT;
-  const f = (v: number, u: string): string => `${+v.toFixed(v < 10 ? 2 : 1)} ${u}`;
-  return Math.abs(mw) >= 1e6 ? f(mw / 1e6, 'TW') : Math.abs(mw) >= 1e3 ? f(mw / 1e3, 'GW') : `${Math.round(mw).toLocaleString('en-US')} MW`;
+  const mw = units * MW_PER_POWER_UNIT,
+    [unit, size] = powerUnit(mw);
+  return `${powerIn(mw, size)} ${unit}`;
+}
+/** Two power amounts with the unit once, the larger one's: "120 / 400 MW", "0.8 / 1.2 GW". */
+export function fmtPowerPair(a: number, b: number): string {
+  const ma = a * MW_PER_POWER_UNIT,
+    mb = b * MW_PER_POWER_UNIT,
+    [unit, size] = powerUnit(Math.max(Math.abs(ma), Math.abs(mb)));
+  return `${powerIn(ma, size)} / ${powerIn(mb, size)} ${unit}`;
 }
 export const POWER_PRICE_PER_UNIT = 1; // $ per unit (MW) per simulation step, paid by importer to exporter
 export const LEADERBOARD_SIZE = 20;

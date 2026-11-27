@@ -36,6 +36,7 @@ import {
   MAX_CHUNKS_PER_PLAYER,
   POWER_PRICE_PER_UNIT,
   fmtPower,
+  fmtPowerPair,
   TOOLS,
   TOOL_ORDER,
   PLANT_OUTPUT,
@@ -578,7 +579,7 @@ export class UI {
       i = mk('i', 'I');
     this.rciBars = { r: r.fill, c: c.fill, i: i.fill };
     this.rciBoost = { r: r.boost, c: c.boost, i: i.boost };
-    this.powerText = el('span', { class: 'power', text: '⚡ 0 MW / 0 MW' });
+    this.powerText = el('span', { class: 'power', text: '⚡ 0 / 0 MW' });
     this.crimeText = el('span', { class: 'crime bad hidden', id: 'crime', title: `Crime is high and no police station is powered. ${POLICE_HELP}` }, '⚠ crime');
     this.trafficWord = el('span', { class: 'word' });
     this.trafficFill = el('span', { class: 'fill' });
@@ -1062,7 +1063,7 @@ export class UI {
     this.neighbourText.classList.toggle('hidden', neighbours <= 0 && railLinks <= 0);
     const sup = s?.powerSupply ?? 0,
       dem = s?.powerDemand ?? 0;
-    this.powerText.textContent = `⚡ ${fmtPower(dem)} / ${fmtPower(sup)}`;
+    this.powerText.textContent = `⚡ ${fmtPowerPair(dem, sup)}`;
     this.powerText.title = `Power: ${fmtPower(dem)} in use of ${fmtPower(sup)} capacity. ${POWER_TRADE_HELP}`;
     this.powerText.classList.toggle('bad', dem > sup);
     this.refreshPowerTrade(s?.powerImported ?? 0, s?.powerExported ?? 0, s?.powerTradeNet ?? 0);

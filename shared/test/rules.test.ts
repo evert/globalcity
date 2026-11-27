@@ -173,4 +173,13 @@ describe('power units', () => {
     expect(fmtPower(19_200)).toBe('19.2 GW');
     expect(fmtPower(1_150_000)).toBe('1.15 TW');
   });
+
+  it("shows two amounts with the unit once, the larger one's", async () => {
+    const { fmtPowerPair } = await import('../src/constants.ts');
+    expect(fmtPowerPair(0, 0)).toBe('0 / 0 MW');
+    expect(fmtPowerPair(120, 400)).toBe('120 / 400 MW');
+    expect(fmtPowerPair(800, 1200)).toBe('0.8 / 1.2 GW');
+    expect(fmtPowerPair(1000, 5000)).toBe('1 / 5 GW');
+    expect(fmtPowerPair(19_200, 400)).toBe('19.2 / 0.4 GW');
+  });
 });
