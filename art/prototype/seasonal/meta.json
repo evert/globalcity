@@ -5,5 +5,37 @@
     "h": 4,
     "zone": "none",
     "idea": "Seasonal decoration: a tall decorated fir on a little town square; its baubles, tinsel, star and lamps light up at night."
+  },
+  "christmas_tree_2x2": {
+    "name": "Christmas tree (2x2)",
+    "w": 2,
+    "h": 2,
+    "zone": "none",
+    "sprite_ai": "8227bd51-66c2-46ba-9b7c-0b96a5369f19",
+    "night": "christmas_tree_2x2-night.png"
+  },
+  "christmas_tree_2x3": {
+    "name": "Christmas tree (2x3)",
+    "w": 2,
+    "h": 3,
+    "zone": "none",
+    "sprite_ai": "ac282819-0a1b-4d07-8e1f-10167c70a1e1",
+    "night": "christmas_tree_2x3-night.png"
+  },
+  "christmas_tree_3x3": {
+    "name": "Christmas tree (3x3)",
+    "w": 3,
+    "h": 3,
+    "zone": "none",
+    "sprite_ai": "4f5011ac-bd81-4567-b773-a3245918acd3",
+    "night": "christmas_tree_3x3-night.png"
+  },
+  "christmas_tree_3x5": {
+    "name": "Christmas tree (3x5)",
+    "w": 3,
+    "h": 5,
+    "zone": "none",
+    "sprite_ai": "3254d42e-7dcd-4d88-bfd3-9c76aa36a2f7",
+    "night": "christmas_tree_3x5-night.png"
   }
 }
