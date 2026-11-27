@@ -1,12 +1,13 @@
 // Real weather for the map: clouds, rain and snow from NOAA's GFS forecast model, the hour closest to now.
 // GFS runs four times a day and publishes each run as public files on AWS (the NOAA Open Data Dissemination bucket,
-// made for bulk downloads, no key, public domain). Each file has an index, so only the three fields used are fetched,
-// by byte range: about 2 MB an hour, whoever is playing. They are decoded here (grib.ts) into a 0.25-degree grid and
+// made for bulk downloads, no key, public domain). Each file has an index, so only the four fields used are fetched,
+// by byte range: about 3 MB an hour, whoever is playing. They are decoded here (grib.ts) into a 0.25-degree grid and
 // served as one small PNG (0.5 degrees) (GET /api/weather) that every client draws over the map; GET /api/weather.json says which
 // hour it is, so clients only download a new image when the hour changes.
 //   red    cloud cover, 0-100% as 0-255
-//   green  precipitation, sqrt of the rate (0 to 10+ mm/h as 0-255), so light rain still shows; any rain at all is at least 8
-//   blue   255 where it falls as snow
+//   green  precipitation, sqrt of the rate (0 to 10+ mm/h as 0-248 in steps of 8, so light rain still shows; any rain
+//          at all is at least 8); the lowest bit is set where it falls as snow
+//   blue   air temperature 2 m above the ground, (degC + 60) * 2: -60 to +67.5 degC in half degrees
 import type http from 'node:http';
 import { decodeGrib2, type GribField } from './grib.ts';
 import { encodeRgbPng } from './png.ts';
@@ -24,6 +25,8 @@ const HOUR = 3_600_000,
   CYCLE = 6 * HOUR;
 /** Rain rate (mm/h) that fills the green channel. */
 const HEAVY_MM_H = 10;
+/** Kelvin to the blue channel: (degC + 60) * 2 */
+const tempByte = (k: number): number => Math.min(255, Math.max(0, Math.round((k - 273.15 + 60) * 2)));
 
 interface Target {
   cycle: number; // run time, epoch ms
@@ -136,16 +139,16 @@ export class Weather {
     const t0 = Date.now();
     const url = fileUrl(t);
     const h = `${t.fhour} hour fcst`;
-    const keys = { cloud: `TCDC:entire atmosphere:${h}`, rate: `PRATE:surface:${h}`, snow: `CSNOW:surface:${h}` };
+    const keys = { cloud: `TCDC:entire atmosphere:${h}`, rate: `PRATE:surface:${h}`, snow: `CSNOW:surface:${h}`, temp: `TMP:2 m above ground:${h}` };
     const ranges = rangesOf(await (await get(`${url}.idx`)).text(), Object.values(keys));
     const field = async (key: string): Promise<GribField> => {
       const r = ranges.get(key);
       if (!r) throw new Error(`${key} missing from ${url}.idx`);
       return decodeGrib2(new Uint8Array(await (await get(url, r)).arrayBuffer()));
     };
-    const [cloud, rate, snow] = await Promise.all([field(keys.cloud), field(keys.rate), field(keys.snow)]);
+    const [cloud, rate, snow, temp] = await Promise.all([field(keys.cloud), field(keys.rate), field(keys.snow), field(keys.temp)]);
     const fetched = Date.now() - t0;
-    this.png = encodeRgbPng(WEATHER_W, WEATHER_H, toGrid(cloud, rate, snow));
+    this.png = encodeRgbPng(WEATHER_W, WEATHER_H, toGrid(cloud, rate, snow, temp));
     this.current = t;
     log(
       `weather: ${this.info().run} (${fetched} ms to fetch and decode, ${Date.now() - t0 - fetched} ms to encode, ${(this.png.length / 1024).toFixed(0)} KB)`,
@@ -171,32 +174,34 @@ export class Weather {
   }
 }
 
-/** The three GFS fields as the client's grid: 2x2 points averaged (snow where most of them have it), rotated so it
+/** The GFS fields as the client's grid: 2x2 points averaged (snow where most of them have it), rotated so it
  *  starts at 180 W; GFS's last row (90 S) is left out. */
-export function toGrid(cloud: GribField, rate: GribField, snow: GribField): Uint8Array {
+export function toGrid(cloud: GribField, rate: GribField, snow: GribField, temp: GribField): Uint8Array {
   const NI = WEATHER_W * 2;
-  for (const f of [cloud, rate, snow])
+  for (const f of [cloud, rate, snow, temp])
     if (f.ni !== NI || f.nj < WEATHER_H * 2 || f.lat0 !== 90 || f.dj >= 0 || Math.abs(f.lon0) > 1e-6)
       throw new Error(`unexpected GFS grid ${f.ni}x${f.nj} from ${f.lat0},${f.lon0}`);
   const ok = (v: number): number => (Number.isFinite(v) ? v : 0);
-  const q = (v: number): number => Math.min(255, Math.round(v / STEP) * STEP);
+  const q = (v: number, max = 255): number => Math.min(max, Math.round(v / STEP) * STEP);
   const rgb = new Uint8Array(WEATHER_W * WEATHER_H * 3);
   for (let y = 0; y < WEATHER_H; y++)
     for (let x = 0; x < WEATHER_W; x++) {
       let c = 0,
         mmh = 0,
-        s = 0;
+        s = 0,
+        k = 0;
       for (let dy = 0; dy < 2; dy++)
         for (let dx = 0; dx < 2; dx++) {
           const i = (y * 2 + dy) * NI + ((x * 2 + dx + NI / 2) % NI);
           c += ok(cloud.values[i]);
           mmh += Math.max(0, ok(rate.values[i])) * 3600;
           s += snow.values[i] > 0.5 ? 1 : 0;
+          k += ok(temp.values[i]);
         }
       const o = (y * WEATHER_W + x) * 3;
       rgb[o] = q((Math.min(100, Math.max(0, c / 4)) * 255) / 100);
-      rgb[o + 1] = mmh > 0 ? Math.max(STEP, q(Math.sqrt(Math.min(1, mmh / 4 / HEAVY_MM_H)) * 255)) : 0;
-      rgb[o + 2] = s >= 2 ? 255 : 0;
+      rgb[o + 1] = (mmh > 0 ? Math.max(STEP, q(Math.sqrt(Math.min(1, mmh / 4 / HEAVY_MM_H)) * 248, 248)) : 0) | (s >= 2 ? 1 : 0);
+      rgb[o + 2] = tempByte(k / 4);
     }
   return rgb;
 }

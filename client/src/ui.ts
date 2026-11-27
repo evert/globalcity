@@ -50,6 +50,7 @@ import { DISASTERS, DISASTER_COUNT, Disaster, type WorldStats } from '@globalcit
 import type { Actions } from './actions.ts';
 import type { Minimap, SpriteSheet } from './assets.ts';
 import { iconDpr, ToolIcons } from './icons.ts';
+import { precipMmH } from './weather.ts';
 import type { Net } from './net.ts';
 import type { Renderer } from './renderer.ts';
 import { ZONE_TOOLS, type TouchPlan } from './input.ts';
@@ -2272,6 +2273,7 @@ export class UI {
             }),
           ]
         : []),
+      ...this.weatherRow(info.x, info.y),
     );
     if (info.owner) (q.firstElementChild as HTMLElement).style.color = info.owner.color;
     if (id >= CITYHALLBASE && id <= LASTCITYHALL && info.owner && info.owner.id === this.state.me?.id) {
@@ -2283,6 +2285,34 @@ export class UI {
       q.append(el('div', { class: 'qrow qactions' }, rename));
     }
     this.placeQuery();
+  }
+
+  /** The weather at a tile right now, in words: sky, rain or snow, temperature. */
+  private weatherRow(x: number, y: number): HTMLElement[] {
+    const wx = this.renderer.weather;
+    const w = wx.at(x, y);
+    if (w.temp === null) return [];
+    const mmh = precipMmH(w.precip);
+    const strength = mmh < 2.5 ? 'Light' : mmh < 7.6 ? 'Moderate' : 'Heavy';
+    const sky =
+      mmh >= 0.1
+        ? w.snow
+          ? `❄ ${strength} snow`
+          : `🌧 ${strength} rain`
+        : w.cloud < 0.1
+          ? '☀ Clear'
+          : w.cloud < 0.35
+            ? '🌤 Mostly clear'
+            : w.cloud < 0.65
+              ? '⛅ Partly cloudy'
+              : w.cloud < 0.9
+                ? '🌥 Mostly cloudy'
+                : '☁ Overcast';
+    const c = Math.round(w.temp),
+      f = Math.round((w.temp * 9) / 5 + 32);
+    const at = wx.validAt;
+    const when = at ? new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'now';
+    return [el('div', { class: 'qrow', text: `${sky}, ${c} °C (${f} °F)`, title: `Real weather here at ${when}: NOAA GFS forecast` })];
   }
 
   /** Where a plane or ship is going, where from, and what it carries (cargo is cosmetic, the same for everyone). */

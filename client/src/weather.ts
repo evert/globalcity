@@ -1,5 +1,6 @@
 // Real weather over the map (server/src/weather.ts: NOAA's GFS forecast for the current hour, as a 0.5-degree image
-// whose red channel is cloud cover, green the rain or snow rate, blue where it is snow).
+// whose red channel is cloud cover, green the rain or snow rate with its lowest bit set where it is snow, blue the
+// air temperature).
 //   zoomed out  clouds drift over the world map, darker where it rains, over the city lights (shaded by the night)
 //   zoomed in   the sky dims under cloud, and rain or snow falls across the screen where the camera is
 // Zoomed in it is always on. The zoomed-out clouds are off until the player turns them on (the Weather button);
@@ -18,19 +19,24 @@ export interface WeatherHere {
   /** how hard it rains or snows, 0..1 (square-root scaled: 0.3 is light rain, 1 is 10 mm/h or more) */
   precip: number;
   snow: boolean;
+  /** air temperature 2 m above the ground, degC (null without weather) */
+  temp: number | null;
 }
+
+/** The rain rate in mm/h for a `precip` value. */
+export const precipMmH = (precip: number): number => precip * precip * 10;
 
 const OVERRIDE: WeatherHere | null = (() => {
   try {
     switch (new URLSearchParams(location.search).get('weather')) {
       case 'rain':
-        return { cloud: 1, precip: 0.5, snow: false };
+        return { cloud: 1, precip: 0.5, snow: false, temp: 12 };
       case 'storm':
-        return { cloud: 1, precip: 1, snow: false };
+        return { cloud: 1, precip: 1, snow: false, temp: 18 };
       case 'snow':
-        return { cloud: 1, precip: 0.6, snow: true };
+        return { cloud: 1, precip: 0.6, snow: true, temp: -3 };
       case 'clear':
-        return { cloud: 0, precip: 0, snow: false };
+        return { cloud: 0, precip: 0, snow: false, temp: 20 };
     }
   } catch {
     /* no location (tests) */
@@ -132,7 +138,7 @@ export class WeatherLayer {
       si = sg.createImageData(W, H);
     for (let i = 0; i < W * H * 4; i += 4) {
       const cover = d[i] / 255,
-        p = d[i + 1] / 255;
+        p = (d[i + 1] & 0xfe) / 248;
       const a = Math.pow(Math.max(0, (cover - 0.15) / 0.85), 1.3) * 0.8;
       const grey = 250 - p * 120;
       ci.data[i] = grey;
@@ -162,11 +168,16 @@ export class WeatherLayer {
     return this.shaded;
   }
 
+  /** When the weather is for (epoch ms), null until it arrives. */
+  get validAt(): number | null {
+    return this.ready ? this.valid : null;
+  }
+
   /** The weather at a tile (bilinear between the grid's points). */
   at(tx: number, ty: number): WeatherHere {
     if (OVERRIDE) return OVERRIDE;
     const d = this.data;
-    if (!d) return { cloud: 0, precip: 0, snow: false };
+    if (!d) return { cloud: 0, precip: 0, snow: false, temp: null };
     const fx = (tx / WORLD_W) * W - 0.5,
       fy = Math.min(H - 1, Math.max(0, (ty / WORLD_H) * H - 0.5));
     const x0 = Math.floor(fx),
@@ -174,9 +185,11 @@ export class WeatherLayer {
       ax = fx - x0,
       ay = fy - y0;
     const px = (x: number, y: number, ch: number): number => d[(Math.min(H - 1, y) * W + ((x + W) % W)) * 4 + ch];
+    const at = (x: number, y: number, ch: number): number => (ch === 1 ? px(x, y, 1) & 0xfe : px(x, y, ch));
     const lerp = (ch: number): number =>
-      (px(x0, y0, ch) * (1 - ax) + px(x0 + 1, y0, ch) * ax) * (1 - ay) + (px(x0, y0 + 1, ch) * (1 - ax) + px(x0 + 1, y0 + 1, ch) * ax) * ay;
-    return { cloud: lerp(0) / 255, precip: lerp(1) / 255, snow: lerp(2) > 127 };
+      (at(x0, y0, ch) * (1 - ax) + at(x0 + 1, y0, ch) * ax) * (1 - ay) + (at(x0, y0 + 1, ch) * (1 - ax) + at(x0 + 1, y0 + 1, ch) * ax) * ay;
+    const snow = px(Math.round(fx), Math.round(fy), 1) & 1; // the nearest point: a yes or no doesn't blend
+    return { cloud: lerp(0) / 255, precip: lerp(1) / 248, snow: snow === 1, temp: lerp(2) / 2 - 60 };
   }
 }
 
