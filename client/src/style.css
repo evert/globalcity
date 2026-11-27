@@ -491,24 +491,25 @@ a {
 }
 
 /* leaderboard */
-#leaderboard {
-  width: min(600px, calc(100vw - 32px));
-  max-height: calc(100vh - 80px);
+#world {
+  width: min(620px, calc(100vw - 32px));
+  height: min(680px, calc(100vh - 80px));
   display: flex;
   flex-direction: column;
-}
-#leaderboard .lb-rows {
+} /* fixed height: switching tabs doesn't move it */
+#world .lb-rows {
   overflow-y: auto;
   scrollbar-width: thin;
   margin: 0 -8px;
   padding: 0 8px;
 }
-#leaderboard .lb-view {
+#world .lb-view {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  flex: 1;
 }
-#leaderboard .lb-view.hidden {
+#world .lb-view.hidden {
   display: none;
 }
 .lb-title {
@@ -521,11 +522,25 @@ a {
 .lb-title h2 {
   margin: 0;
 }
-.lb-title .lb-page {
-  margin-left: auto;
-  font-size: 12px;
-  padding: 3px 10px;
-  white-space: nowrap;
+.world-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.world-tab {
+  font-size: 13px;
+  padding: 4px 12px;
+  border-radius: 6px 6px 0 0;
+  border-bottom: none;
+  opacity: 0.7;
+}
+.world-tab.selected {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+}
+.world-tab.hidden {
+  display: none;
 }
 .mon-intro {
   margin: 0 0 8px;
@@ -1367,13 +1382,18 @@ a.btn {
   background: rgba(255, 255, 255, 0.06);
   border-radius: 4px;
 }
-#worldStats {
-  width: min(620px, calc(100vw - 32px));
-  max-height: calc(100vh - 80px);
+#world .ws-view {
   overflow-y: auto;
   scrollbar-width: thin;
+  min-height: 0;
+  flex: 1;
+  margin: 0 -8px;
+  padding: 0 8px;
 }
-#worldStats h3 {
+#world .ws-view.hidden {
+  display: none;
+}
+#world h3 {
   margin: 16px 0 6px;
   font-size: 13px;
   text-transform: uppercase;

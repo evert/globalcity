@@ -518,9 +518,9 @@ export async function runSelfTest(): Promise<void> {
   // leaderboard
   ui.openLeaderboard();
   assert(ui.isLeaderboardOpen(), 'leaderboard panel open');
-  assert(q('#leaderboard .lb-empty'), 'empty state before data');
+  assert(q('#world .lb-empty'), 'empty state before data');
   net.emit('msg', { t: 'leaderboard', entries: DEMO_LEADERBOARD, me: { rank: 3, population: 64_210 } });
-  const rows = qa('#leaderboard .lb-row');
+  const rows = qa('#world .lb-row');
   assert(rows.length === DEMO_LEADERBOARD.length, `leaderboard renders ${DEMO_LEADERBOARD.length} rows, got ${rows.length}`);
   assert(
     rows.every((row) => row.querySelector('button.visit')),
@@ -529,12 +529,12 @@ export async function runSelfTest(): Promise<void> {
   assert(rows[2].classList.contains('me') && rows[2].textContent!.includes('Tester (you)'), 'own row highlighted');
   assert(rows[1].textContent!.includes('🔥 3') && !rows[0].textContent!.includes('🔥'), 'fire count shown only when > 0');
   assert(rows[0].textContent!.includes('184,320'), 'population formatted');
-  assert(q('#leaderboard .lb-me')!.textContent!.startsWith('Your rank: #3'), 'own rank shown');
+  assert(q('#world .lb-me')!.textContent!.startsWith('Your rank: #3'), 'own rank shown');
   net.emit('msg', { t: 'leaderboard', entries: DEMO_LEADERBOARD.slice(0, 2) });
-  assert(qa('#leaderboard .lb-row').length === 2, 'panel updates on new leaderboard message');
-  assert(q('#leaderboard .lb-me')!.textContent!.startsWith('Not ranked yet'), 'unranked text without me');
+  assert(qa('#world .lb-row').length === 2, 'panel updates on new leaderboard message');
+  assert(q('#world .lb-me')!.textContent!.startsWith('Not ranked yet'), 'unranked text without me');
   // visit flies to the entry's chunk centre at zoom 1
-  (qa('#leaderboard .lb-row button.visit')[0] as HTMLButtonElement).click();
+  (qa('#world .lb-row button.visit')[0] as HTMLButtonElement).click();
   assert(!ui.isLeaderboardOpen(), 'visit closes the panel');
   r.render(performance.now() + 10_000); // finish the fly
   const e0 = DEMO_LEADERBOARD[0];
@@ -631,7 +631,7 @@ export async function runSelfTest(): Promise<void> {
   // leaderboard rows: city bold, mayor beneath
   ui.openLeaderboard();
   net.emit('msg', { t: 'leaderboard', entries: DEMO_LEADERBOARD });
-  const lbRows = qa('#leaderboard .lb-row');
+  const lbRows = qa('#world .lb-row');
   assert(
     lbRows[0].querySelector('.name .city')!.textContent === 'Kyoto' && lbRows[0].querySelector('.name .mayor')!.textContent === 'Hanzo',
     'leaderboard row shows city then mayor',

@@ -55,6 +55,9 @@ import { NIGHT_REFRESH_MS } from './night.ts';
 import { isFireTile, withAlpha } from './renderer.ts';
 import type { AppState } from './state.ts';
 
+/** Tabs of the World panel. */
+type WorldTab = 'stats' | 'top' | 'monuments';
+
 /** Toolbar groups: members share one button with a flyout once two or more of them are unlocked. */
 const TOOL_GROUPS: { id: string; name: string; members: ToolId[] }[] = [
   { id: 'power', name: 'Power plants', members: ['coal', 'nuclear', 'windfarm', 'offshore'] },
@@ -227,16 +230,19 @@ export class UI {
   private milestones!: HTMLElement;
   private msRows!: HTMLElement;
   private msBtn!: HTMLButtonElement;
+  /** the World panel: tabs for the world stats, the top cities and the monuments */
   private leaderboard!: HTMLElement;
   private lbRows!: HTMLElement;
   private lbMe!: HTMLElement;
-  private lbBtn!: HTMLButtonElement;
-  /** the Top cities panel has two pages: the ranking and the monuments */
+  /** the World panel views: world stats, top cities, monuments */
   private lbTitle!: HTMLElement;
-  private lbPageBtn!: HTMLButtonElement;
   private lbView!: HTMLElement;
   private monView!: HTMLElement;
   private monRows!: HTMLElement;
+  private worldTab: WorldTab = 'stats';
+  private worldTabBtns = new Map<WorldTab, HTMLButtonElement>();
+  private wsView!: HTMLElement;
+  private wsYear: number | null = null;
   private fireBtn!: HTMLButtonElement;
   private fireCycle = 0;
   private query!: HTMLElement;
@@ -275,7 +281,6 @@ export class UI {
     this.buildWelcome();
     this.buildAbout();
     this.buildLeaderboard();
-    this.buildWorldStats();
     this.buildMilestones();
     this.buildOverlayBar();
     this.buildLifeline();
@@ -316,14 +321,12 @@ export class UI {
     this.findBtn.onclick = () => this.findFree();
     this.cityBtn = el('button', { class: 'btn hidden', id: 'cityBtn', title: 'Fly to your city (G)' }, 'Go to my city');
     this.cityBtn.onclick = () => this.actions.goToMyCity();
-    this.worldBtn = el('button', { class: 'btn', id: 'worldBtn', title: 'Show the whole world (H)' }, 'World');
-    this.worldBtn.onclick = () => this.renderer.showWorld();
+    this.worldBtn = el('button', { class: 'btn', id: 'worldBtn', title: 'World: stats, top cities and monuments' }, '🌍 World');
+    this.worldBtn.onclick = () => this.toggleWorld();
     this.msBtn = el('button', { class: 'btn', id: 'msBtn', title: 'Milestones: special buildings your city unlocks as it grows' }, '🏛 Milestones');
     this.msBtn.onclick = () => this.toggleMilestones();
     this.budgetBtn = el('button', { class: 'btn hidden', id: 'budgetBtn', title: 'Budget: what your city earns and pays' }, '💰 Budget');
     this.budgetBtn.onclick = () => this.toggleBudget();
-    this.lbBtn = el('button', { class: 'btn', id: 'lbBtn', title: 'Leaderboard: the most populous cities on the planet' }, '🏆 Top cities');
-    this.lbBtn.onclick = () => this.toggleLeaderboard();
     this.lifelineBtn = el(
       'button',
       { class: 'btn lifeline hidden', id: 'lifelineBtn', title: 'Your city is nearly broke: an emergency loan is available' },
@@ -387,7 +390,6 @@ export class UI {
       this.worldBtn,
       this.msBtn,
       this.budgetBtn,
-      this.lbBtn,
       this.lifelineBtn,
       this.abandonBtn,
       this.monumentBtn,
@@ -676,16 +678,27 @@ export class UI {
 
   private buildLeaderboard(): void {
     const close = el('button', { class: 'btn ghost round close', title: 'Close' }, '×');
-    close.onclick = () => this.hide(this.leaderboard);
+    close.onclick = () => this.closeWorld();
     this.lbRows = el('div', { class: 'lb-rows' });
     this.lbMe = el('div', { class: 'lb-me muted' });
     this.lbWorld = el('div', { class: 'lb-world muted' });
-    this.lbTitle = el('h2', { text: '🏆 Top cities' });
-    this.lbPageBtn = el('button', { class: 'btn lb-page', type: 'button' });
-    this.lbPageBtn.onclick = () => this.setLeaderboardPage(this.monView.classList.contains('hidden') ? 'monuments' : 'top');
+    this.lbTitle = el('h2', { text: '🌍 World' });
+    const tabs = el('div', { class: 'world-tabs', role: 'tablist' });
+    for (const [tab, label] of [
+      ['stats', '📊 Stats'],
+      ['top', '🏆 Top cities'],
+      ['monuments', '🏛 Monuments'],
+    ] as const) {
+      const b = el('button', { class: 'btn world-tab', type: 'button', role: 'tab', 'data-tab': tab }, label);
+      b.onclick = () => this.setWorldTab(tab);
+      this.worldTabBtns.set(tab, b);
+      tabs.append(b);
+    }
+    this.wsBody = el('div', { class: 'ws-body' }, el('p', { class: 'muted', text: 'Counting…' }));
+    this.wsView = el('div', { class: 'ws-view' }, this.wsBody);
     this.lbView = el(
       'div',
-      { class: 'lb-view' },
+      { class: 'lb-view hidden' },
       el(
         'div',
         { class: 'lb-head' },
@@ -725,30 +738,16 @@ export class UI {
     );
     this.leaderboard = el(
       'div',
-      { id: 'leaderboard', class: 'panel card hidden' },
+      { id: 'world', class: 'panel card hidden' },
       close,
-      el('div', { class: 'lb-title' }, this.lbTitle, this.lbPageBtn),
+      el('div', { class: 'lb-title' }, this.lbTitle),
+      tabs,
+      this.wsView,
       this.lbView,
       this.monView,
     );
     this.root.append(this.leaderboard);
-  }
-
-  // ---------- world stats ----------
-  private worldPopStat!: HTMLElement;
-  private worldStats!: HTMLElement;
-  private wsBody!: HTMLElement;
-  private wsTitle!: HTMLElement;
-  private wsTimer: ReturnType<typeof setInterval> | null = null;
-
-  private buildWorldStats(): void {
-    const close = el('button', { class: 'btn ghost round close', title: 'Close' }, '×');
-    close.onclick = () => this.closeWorldStats();
-    this.wsTitle = el('h2', { text: '🌍 The world' });
-    this.wsBody = el('div', { class: 'ws-body' }, el('p', { class: 'muted', text: 'Counting…' }));
-    this.worldStats = el('div', { id: 'worldStats', class: 'panel card hidden' }, close, this.wsTitle, this.wsBody);
-    this.root.append(this.worldStats);
-    const open = () => this.openWorldStats();
+    const open = () => this.openWorld('stats');
     this.worldPopStat.onclick = open;
     this.worldPopStat.onkeydown = (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
@@ -758,30 +757,72 @@ export class UI {
     };
   }
 
-  openWorldStats(): void {
-    this.closePanels();
-    this.show(this.worldStats);
-    this.net.send({ t: 'worldStats' });
-    // fresh numbers while it's open (the server counts them at most every 30 s)
-    if (!this.wsTimer)
-      this.wsTimer = setInterval(() => {
-        if (!this.worldStats.classList.contains('hidden')) this.net.send({ t: 'worldStats' });
-        else this.closeWorldStats();
-      }, 30_000);
+  // ---------- the World panel: stats, top cities, monuments ----------
+  private worldPopStat!: HTMLElement;
+  private wsBody!: HTMLElement;
+  private wsTimer: ReturnType<typeof setInterval> | null = null;
+
+  isWorldOpen(): boolean {
+    return !this.leaderboard.classList.contains('hidden');
   }
 
-  private closeWorldStats(): void {
-    this.hide(this.worldStats);
+  /** Open the World panel on a tab (default: the one used last). */
+  openWorld(tab: WorldTab = this.worldTab): void {
+    this.closePanels();
+    this.show(this.leaderboard);
+    this.setWorldTab(tab);
+  }
+
+  toggleWorld(): void {
+    if (this.isWorldOpen()) this.closeWorld();
+    else this.openWorld();
+  }
+
+  private closeWorld(): void {
+    this.hide(this.leaderboard);
     if (this.wsTimer) {
       clearInterval(this.wsTimer);
       this.wsTimer = null;
     }
   }
 
+  private setWorldTab(tab: WorldTab): void {
+    this.worldTab = tab;
+    for (const [t, b] of this.worldTabBtns) {
+      b.classList.toggle('selected', t === tab);
+      b.setAttribute('aria-selected', String(t === tab));
+    }
+    this.wsView.classList.toggle('hidden', tab !== 'stats');
+    this.lbView.classList.toggle('hidden', tab !== 'top');
+    this.monView.classList.toggle('hidden', tab !== 'monuments');
+    this.refreshWorldTitle();
+    if (tab === 'stats') {
+      this.net.send({ t: 'worldStats' });
+      // fresh numbers while it's open (the server counts them at most every 30 s)
+      if (!this.wsTimer)
+        this.wsTimer = setInterval(() => {
+          if (!this.isWorldOpen()) {
+            this.closeWorld();
+            return;
+          }
+          if (this.worldTab === 'stats') this.net.send({ t: 'worldStats' });
+        }, 30_000);
+    } else {
+      this.refreshLeaderboard();
+      if (tab === 'top') this.net.send({ t: 'leaderboard' }); // the server also pushes it periodically; this just freshens it
+    }
+  }
+
+  private refreshWorldTitle(): void {
+    this.lbTitle.textContent =
+      this.worldTab === 'stats' ? `🌍 The world${this.wsYear ? ` in ${this.wsYear}` : ''}` : this.worldTab === 'top' ? '🏆 Top cities' : '🏛 Monuments';
+  }
+
   /** Fill the world stats dialog (a 'worldStats' message). */
   showWorldStats(s: WorldStats): void {
     const n = (v: number) => v.toLocaleString('en-US');
-    this.wsTitle.textContent = `🌍 The world in ${s.year}`;
+    this.wsYear = s.year;
+    this.refreshWorldTitle();
     const tile = (value: string, label: string, title?: string) =>
       el('div', { class: 'ws-tile', title: title ?? '' }, el('div', { class: 'ws-val', text: value }), el('div', { class: 'ws-label', text: label }));
     const share = s.landPlots ? Math.round((s.plots / s.landPlots) * 1000) / 10 : 0;
@@ -797,7 +838,7 @@ export class UI {
       const b = el('button', { class: 'btn visit', title: `Fly to ${name}` }, 'Visit');
       b.onclick = () => {
         this.actions.flyToChunk(cx, cy, 1, 900);
-        this.closeWorldStats();
+        this.closeWorld();
       };
       return b;
     };
@@ -835,9 +876,9 @@ export class UI {
     const built = el(
       'div',
       { class: 'ws-grid small' },
-      tile(n(s.zones.res), 'homes', 'residential zones'),
-      tile(n(s.zones.com), 'shops & offices', 'commercial zones'),
-      tile(n(s.zones.ind), 'factories', 'industrial zones'),
+      tile(n(s.zones.res), 'Residential', 'residential zones'),
+      tile(n(s.zones.com), 'Commercial', 'commercial zones'),
+      tile(n(s.zones.ind), 'Industrial', 'industrial zones'),
       tile(n(s.roads), 'road tiles'),
       tile(n(s.rail), 'rail tiles'),
       tile(n(s.powerLines), 'power line tiles'),
@@ -1872,20 +1913,17 @@ export class UI {
   }
 
   // ---------- leaderboard ----------
+  /** The World panel is open on the top cities or the monuments. */
   isLeaderboardOpen(): boolean {
-    return !this.leaderboard.classList.contains('hidden');
+    return this.isWorldOpen() && this.worldTab !== 'stats';
   }
 
   openLeaderboard(): void {
-    this.hide(this.about);
-    this.setLeaderboardPage('top');
-    this.show(this.leaderboard);
-    this.refreshLeaderboard();
-    this.net.send({ t: 'leaderboard' }); // the server also pushes it periodically; this just freshens it
+    this.openWorld('top');
   }
 
   toggleLeaderboard(): void {
-    if (this.isLeaderboardOpen()) this.hide(this.leaderboard);
+    if (this.isLeaderboardOpen()) this.closeWorld();
     else this.openLeaderboard();
   }
 
@@ -1895,23 +1933,14 @@ export class UI {
     this.worldPop.parentElement!.title = `World population: ${total.toLocaleString('en-US')} people in ${cities} ${cities === 1 ? 'city' : 'cities'}`;
   }
 
-  /** Switch the Top cities panel between the ranking and the monuments. */
-  private setLeaderboardPage(page: 'top' | 'monuments'): void {
-    const mon = page === 'monuments';
-    this.lbView.classList.toggle('hidden', mon);
-    this.monView.classList.toggle('hidden', !mon);
-    this.lbTitle.textContent = mon ? '🏛 Monuments' : '🏆 Top cities';
-    this.refreshLeaderboard();
-  }
-
   private refreshLeaderboard(): void {
     if (!this.isLeaderboardOpen()) return;
     const mons = this.state.monuments;
-    // old servers don't send monuments: no button then
-    this.lbPageBtn.classList.toggle('hidden', mons === null);
-    const onMon = !this.monView.classList.contains('hidden');
-    this.lbPageBtn.textContent = onMon ? '← Top cities' : `🏛 Monuments${mons?.length ? ` (${mons.length})` : ''}`;
-    this.lbPageBtn.title = onMon ? 'Back to the most populous cities' : 'Cities retired as monuments';
+    // old servers don't send monuments: no tab then
+    const monTab = this.worldTabBtns.get('monuments')!;
+    monTab.classList.toggle('hidden', mons === null);
+    monTab.textContent = `🏛 Monuments${mons?.length ? ` (${mons.length})` : ''}`;
+    const onMon = this.worldTab === 'monuments';
     if (onMon) {
       this.monRows.replaceChildren(
         ...(mons?.length
@@ -1949,7 +1978,7 @@ export class UI {
     const visit = el('button', { class: 'btn visit', title: `Fly to ${city} (plot ${m.cx},${m.cy})` }, 'Visit');
     visit.onclick = () => {
       this.actions.flyToChunk(m.cx, m.cy, 1, 900);
-      this.hide(this.leaderboard);
+      this.closeWorld();
     };
     const sw = el('span', { class: 'sw' });
     sw.style.background = m.color;
@@ -1978,7 +2007,7 @@ export class UI {
     const visit = el('button', { class: 'btn visit', title: `Fly to ${city || `${e.name}'s city`} (plot ${e.cx},${e.cy})` }, 'Visit');
     visit.onclick = () => {
       this.actions.flyToChunk(e.cx, e.cy, 1, 900);
-      this.hide(this.leaderboard);
+      this.closeWorld();
     };
     const sw = el('span', { class: 'sw' });
     sw.style.background = e.color;
@@ -2294,8 +2323,7 @@ export class UI {
 
   closePanels(): void {
     this.hide(this.about);
-    this.hide(this.leaderboard);
-    this.hide(this.worldStats);
+    this.closeWorld();
     this.hideQuery();
   }
 
