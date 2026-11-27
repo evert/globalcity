@@ -1,3 +1,4 @@
+import './world-size.js';
 import { mkdirSync, existsSync, writeFileSync, readFileSync, statSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import { dirname, resolve } from 'node:path';
@@ -709,7 +710,7 @@ async function main() {
         layout: 'one byte per tile: bits 0-3 biome (0 temperate, 1 desert, 2 steppe, 3 tundra, 4 boreal, 5 snow), 0x20 trees, 0x40 frozen, 0x80 water',
         generatedAt: new Date().toISOString(),
         elevation: 'elevation.bin: Int16 little-endian per tile, metres above sea level (negative below), ETOPO 2022 surface',
-        hazards: 'hazards.bin: one byte per chunk (row-major 256x128), bit d set = Disaster d possible there (shared/src/disasters.ts)',
+        hazards: `hazards.bin: one byte per chunk (row-major ${CHUNKS_X}x${CHUNKS_Y}), bit d set = Disaster d possible there (shared/src/disasters.ts)`,
         sources: [land.url, lakes.url, rivers.url, glaciers.url, shelves.url, KOPPEN_URL, TREE_URL, SEAICE_URL, ELEV_URL, PLATES_URL],
       },
       null,

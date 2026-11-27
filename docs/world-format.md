@@ -3,7 +3,8 @@
 A world is a directory of files. The server plays on the one in `WORLD_DIR` (relative to the repo root; default
 `data/world-16384x8192`, the generated Earth). Three things write this format:
 
-- the world generator, `npm run gen:world` (`tools/src/gen-world.ts`), which makes the Earth;
+- the world generator, `npm run gen:world` (`tools/src/gen-world.ts`), which makes the Earth (16384 x 8192, or
+  another size with `WORLD_SIZE=<w>x<h>`, written to `data/world-<w>x<h>`);
 - the gameplay tests' fixture world (`server/test/support/fixture.ts`), 1024 x 512 tiles built in code;
 - any custom world, as long as it follows this page.
 
