@@ -2,8 +2,9 @@
 
 The fir was generated with the sprite-ai MCP (christmas_tree_ai.png, generation
 9200c525-e71c-41f2-8e5e-b3b61c84c4ea) and is mapped here onto the 14 Micropolis colours. The square
-round its foot (paving, lamps, benches, small round trees, people) is drawn by hand, and the fir's shadow
-is cast east by darkening the ground, the way the originals do. Strings of single-pixel bulbs (red, blue,
+round its foot (paving, lamps, benches, people) is drawn by hand. Around the square the ground is transparent,
+so the tree stands on whatever biome it is built in; the fir's shadow falls east as a translucent black there and
+darkens the paving the way the originals do. Strings of single-pixel bulbs (red, blue,
 yellow, white) are added on the needles. At night only the star, the bulbs and the baubles glow, each in its
 own colour: their pixels go to christmas_tree_lights.json, which the 'XMAS' entry in
 art/nightlights/lights.py reads.
@@ -18,7 +19,13 @@ sys.path.insert(0, os.path.join(HERE, '..', 'civic'))
 from _civ import *  # noqa: F401,F403  (pixlib colours + ground, shade_mask)
 
 W, H = 32, 64
-im = ground(4, 'grass', 'christmas_tree').crop((0, 0, W, H))
+# The ground is left transparent so the game's own biome ground (grass, sand, tundra, snow) shows through: the
+# tiles under a custom building are drawn as bare ground. Drawn on a key colour that becomes transparent at the
+# end; the shadow over it becomes a translucent black.
+KEY, KEY_SHADE = (255, 0, 255), (254, 0, 254)
+SHADOW_ALPHA = 80
+SHADE[KEY] = KEY_SHADE
+im = Image.new('RGB', (W, H), KEY)
 get = lambda x, y: im.getpixel((x, y)) if 0 <= x < W and 0 <= y < H else None
 
 # ---------- the square round the fir's foot: plain paving, sparse joints, a mid-grey kerb, a path south
@@ -30,13 +37,6 @@ for y in range(H):
 ellipse(im, 1, 30, 30, 62, None, MID)
 rect(im, 13, 58, 18, 63, LIGHT)
 line(im, [(12, 59), (12, 63)], MID); line(im, [(19, 59), (19, 63)], MID)
-
-# small round trees on the grass behind the square
-def round_tree(x, y):
-    for dx, dy in [(1, 0), (2, 0), (0, 1), (1, 1), (2, 1), (1, 2)]: px(im, x + dx, y + dy, FOREST)
-    for dx, dy in [(1, 0), (0, 1)]: px(im, x + dx, y + dy, GRASS)
-    for dx, dy in [(3, 1), (2, 2), (1, 3)]: px(im, x + dx, y + dy, BLACK)
-for (x, y) in [(1, 2), (26, 4), (2, 14), (27, 17), (1, 26), (27, 28), (0, 60), (28, 60)]: round_tree(x, y)
 
 # ---------- the fir (sprite-ai), mapped to the palette
 FIR = {0x102901: FOREST, 0x235201: GRASS, 0x295a02: GRASS, 0x181c02: BLACK,                # needles
@@ -101,13 +101,18 @@ shade_mask(im, mask)
 for (x, y), c in fir.items(): px(im, x, y, c)
 
 # ---------- save: native PNG, 4x preview, metadata, and the game copy
-bad = {c for c in im.getdata() if c not in PALETTE}
+bad = {c for c in im.getdata() if c not in PALETTE and c not in (KEY, KEY_SHADE)}
 assert not bad, f'off-palette colours {list(bad)[:5]}'
+out = im.convert('RGBA')
+out.putdata([(0, 0, 0, 0) if c[:3] == KEY else (0, 0, 0, SHADOW_ALPHA) if c[:3] == KEY_SHADE else c for c in out.getdata()])
+im = out
 im.save(os.path.join(HERE, 'christmas_tree.png'))
 im.resize((W * 4, H * 4), Image.NEAREST).save(os.path.join(HERE, 'christmas_tree@4x.png'))
-json.dump({'christmas_tree': {'name': 'Christmas tree', 'w': 2, 'h': 4, 'zone': 'none',
-           'idea': 'Seasonal decoration: a tall decorated fir on a little town square; its baubles, tinsel, star and lamps light up at night.'}},
-          open(os.path.join(HERE, 'meta.json'), 'w'), indent=2)
+meta = json.load(open(os.path.join(HERE, 'meta.json')))
+meta['christmas_tree'] = {'name': 'Christmas tree', 'w': 2, 'h': 4, 'zone': 'none',
+                          'idea': 'Seasonal decoration: a tall decorated fir on a little town square, on transparent ground so it '
+                                  'stands on the local biome; its star, lights and baubles glow at night.'}
+json.dump(meta, open(os.path.join(HERE, 'meta.json'), 'w'), indent=2)
 shutil.copy(os.path.join(HERE, 'christmas_tree.png'),
             os.path.join(HERE, '..', '..', '..', 'client', 'public', 'assets', 'buildings', 'christmastree.png'))
 print('wrote christmas_tree.png (32x64) and client/public/assets/buildings/christmastree.png')

@@ -3,7 +3,7 @@
 import {
   CHUNK, CHUNKS_X, CHUNKS_Y, WORLD_W, WORLD_H, TILE_PX, MAX_SUBSCRIBED_CHUNKS,
   LOMASK, ZONEBIT, PWRBIT, ANIMBIT, LIGHTNINGBOLT, FIRE, LASTFIRE, TOOLS, CUSTOM_BUILDINGS, footprintOrigin, toolW, toolH, chunkKey, parseChunkKey, clamp, inWorld,
-  sheetIndex, Disaster, DISASTERS, TICK_MS, type ActiveDisaster,
+  sheetIndex, Disaster, DISASTERS, TICK_MS, type ActiveDisaster, DIRT, isCustomTile,
 } from '@globalcity/shared';
 import type { ClaimInfo, Flight, ToolId, Voyage } from '@globalcity/shared';
 import type { SpriteSheet, Minimap } from './assets.ts';
@@ -1205,9 +1205,12 @@ export class Renderer extends Emitter<RendererEvents> {
   /** Blit sprite `frameId` (plus the power-bolt overlay for tile value `v`) at chunk index `idx`. */
   private drawFrame(cc: ChunkCanvas, v: number, idx: number, frameId: number, own: boolean): void {
     const r = cc.res, tx = (idx % CHUNK) * r, ty = Math.floor(idx / CHUNK) * r;
-    // the tile in its look (biome, ice, border); the plain sheet until the skins sheet is there
-    if (this.skins) drawTile(cc.g, this.skins, sheetIndex(v, frameId), tx, ty, r, r);
-    else drawTile(cc.g, this.sheet, frameId, tx, ty, r, r);
+    // the tile in its look (biome, ice, border); the plain sheet until the skins sheet is there. A custom
+    // building's tiles show the bare ground of their biome: its image is drawn on top, and where the image is
+    // transparent (the Christmas tree's grounds) the local sand, grass or snow shows through.
+    const kind = isCustomTile(v) ? DIRT : frameId;
+    if (this.skins) drawTile(cc.g, this.skins, sheetIndex(v, kind), tx, ty, r, r);
+    else drawTile(cc.g, this.sheet, kind, tx, ty, r, r);
     if (this.shouldBolt(v, own)) drawTile(cc.g, this.sheet, LIGHTNINGBOLT, tx, ty, r, r);
   }
 
