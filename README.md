@@ -60,13 +60,17 @@ process with in-memory state, so run it on a VM or container, not on a serverles
 
 Server environment variables: `PORT`, `HOST`, `DATA_DIR` (save directory relative to the repo
 root, default `data/save`), `TICK_MS` (game-month length, default 5000) and `DEV_HOOKS=1`, which
-is for tests only: it accepts non-protocol socket messages (start a fire, grant money, ...) and turns
-random fire outbreaks off.
+is for tests only: it accepts non-protocol socket messages (start a fire, grant money, reset the
+server, change test settings, ...) and turns random fire outbreaks off.
 
-Tests live in `server/test/`. `npm test` runs them all, each against its own throwaway server
-(fresh save dir, fast clock, the settings that test needs); `npm test -- water social` runs a few.
-They play on the generated world, so run `npm run gen:world` first. CI (`.github/workflows/ci.yml`)
-typechecks, builds the client, generates the world (cached) and runs the tests.
+Tests use [Vitest](https://vitest.dev/): `npm test` runs them all, `npm test -w server -- water social`
+a few. Pure logic tests live in `shared/test/` and `client/test/`. The server tests (`server/test/`) are
+end to end: Vitest boots one real server per worker (4 by default, `TEST_WORKERS`; ports from 8791,
+`TEST_PORT`), each loads the generated world once, and every test file starts with `resetServer()`,
+which puts its server back to a fresh boot on an empty save (`devReset`) with the settings that file
+needs (`devConfig`). They play on the generated world, so run `npm run gen:world` first; server logs
+end up in `$TMPDIR/globalcity-tests.*`. CI (`.github/workflows/ci.yml`) checks formatting, lints,
+typechecks and builds the client while it generates the world (cached), then runs the tests.
 
 Ready-made recipes: a Raspberry Pi behind a Cloudflare Tunnel in [deploy/pi/README.md](deploy/pi/README.md),
 or an Oracle Cloud Always Free VM with Caddy TLS in [deploy/oracle/README.md](deploy/oracle/README.md).
