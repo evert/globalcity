@@ -45,7 +45,7 @@ GlobalCity is licensed under the GNU General Public License, version 3 or (at yo
 
 ## Natural Earth
 
-- World coastlines, lakes, rivers, glaciers and the Antarctic ice shelves comes from Natural Earth, which is in the public domain: https://www.naturalearthdata.com
+- World coastlines, lakes, rivers, glaciers, the Antarctic ice shelves and the place names come from Natural Earth, which is in the public domain: https://www.naturalearthdata.com (fetched as GeoJSON from https://github.com/martynafford/natural-earth-geojson, CC0 1.0)
 
 ## Climate, forests, sea ice, elevation and plate boundaries
 
@@ -53,8 +53,8 @@ The world's biomes (desert, steppe, tundra, boreal forest, ice sheets), its fore
 
 - Climate zones: Beck, H. E., T. R. McVicar, N. Vergopolan, A. Berg, N. J. Lutsko, A. Dufour, Z. Zeng, X. Jiang, A. I. J. M. van Dijk, and D. G. Miralles. High-resolution (1 km) Köppen-Geiger maps for 1901–2099 based on constrained CMIP6 projections, Scientific Data 10, 724 (2023). 1991–2020 map, licensed CC BY 4.0: https://doi.org/10.6084/m9.figshare.21789074
 - Tree cover: Hengl, T. (2024). Global tree percent cover and impervious surfaces (urban) cover based on GLC_FCS30D for years 1985 and 2022, 2022 tree cover at 1 km, licensed CC BY 4.0: https://doi.org/10.5281/zenodo.14439377
-- Sea ice: Fetterer, F., K. Knowles, W. N. Meier, M. Savoie, and A. K. Windnagel. Sea Ice Index, Version 4 (G02135), monthly extent 2015–2024. NSIDC: National Snow and Ice Data Center: https://nsidc.org/data/g02135. A sea is frozen in GlobalCity where it had ice in at least half of those months.
-- Elevation: NOAA National Centers for Environmental Information. 2022: ETOPO 2022 15 Arc-Second Global Relief Model (60 arc-second surface elevation). NOAA National Centers for Environmental Information. https://doi.org/10.25921/fd45-gt74 (public domain). Stored per tile in data/world-*/elevation.bin; floods only cover low land.
+- Sea ice: Fetterer, F., K. Knowles, W. N. Meier, M. Savoie, and A. K. Windnagel. Sea Ice Index, Version 4 (G02135), monthly extent 2015–2024. Boulder, Colorado USA. NSIDC: National Snow and Ice Data Center. https://doi.org/10.7265/a98x-0f50. A sea is frozen in GlobalCity where it had ice in at least half of those months.
+- Elevation: NOAA National Centers for Environmental Information. 2022: ETOPO 2022 15 Arc-Second Global Relief Model (60 arc-second surface elevation). NOAA National Centers for Environmental Information. https://doi.org/10.25921/fd45-gt74 (public domain: CC0 1.0). Stored per tile in data/world-*/elevation.bin; floods only cover low land.
 - Earthquake zones: Bird, P. (2003), An updated digital model of plate boundaries, Geochemistry, Geophysics, Geosystems 4(3), 1027, doi:10.1029/2001GC000252, as converted by the fraxen/tectonicplates project (GeoJSON by csterling; https://github.com/fraxen/tectonicplates), licensed under the Open Data Commons Attribution License 1.0.
 
 ## Trademarks and non-affiliation
