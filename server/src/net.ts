@@ -178,7 +178,7 @@ export class Net {
     this.notify = opts.notify ?? null;
     this.leaderboard = new Leaderboard(players);
     this.worldStats = new WorldStatsCounter(world, players, sim);
-    if (this.devHooks) log('DEV_HOOKS enabled: devIgnite/devFunds/devTraffic/devPeak/devRailLink/devPlace/devDisaster accepted');
+    if (this.devHooks) log('DEV_HOOKS enabled: devIgnite/devFunds/devTraffic/devPeak/devIdle/devRailLink/devPlace/devDisaster accepted');
   }
 
   private get buildCtx(): { world: World; players: Players; railCitiesAt: (x: number, y: number) => number } {
@@ -517,6 +517,15 @@ export class Net {
         refreshMilestoneStats(p);
         this.players.dirty = true;
         this.sendStatsIfChanged(client);
+      }
+      return true;
+    }
+    if (m.t === 'devIdle') {
+      // {t:'devIdle', id, days}: mayor `id` was last seen `days` abandonment days ago (fast-forwards the idle clock)
+      const p = typeof m.id === 'string' ? this.players.players.get(m.id) : undefined;
+      if (p && isInt(m.days) && m.days >= 0) {
+        p.lastSeen = Date.now() - m.days * this.players.dayMs - 1;
+        this.players.dirty = true;
       }
       return true;
     }

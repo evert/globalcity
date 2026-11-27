@@ -1,6 +1,5 @@
-// Social features: city names, presence, neighbour + rail-link demand, plot cap, abandonment. Takes ~70 s: the
-// abandonment phase waits 61 "days" (a day is DAY_MS here); D's town is founded first, so its idle clock runs while
-// the other phases do.
+// Social features: city names, presence, neighbour + rail-link demand, plot cap, abandonment. The abandonment phase
+// fast-forwards D's idle clock with the devIdle hook instead of waiting out the days.
 import { describe, it, expect, beforeAll } from 'vitest';
 import {
   CHUNK,
@@ -20,8 +19,6 @@ import {
 } from '@globalcity/shared';
 import { TestClient, resetServer, sleep, waitFor, ticks } from './support/client.ts';
 import { site as siteNamed, type SiteName } from './support/fixture.ts';
-
-const DAY_MS = 1000;
 
 /** Sites with lots of land around, for the 15-plot city and the abandoned town. */
 const INTERIOR: SiteName[] = ['inland', 'east'];
@@ -68,13 +65,13 @@ describe('social', () => {
   let A: TestClient, B: TestClient;
   // D's town, abandoned
   let dSite: { cx: number; cy: number; X: number; Y: number };
-  let dKey: string, dBuilt: number, dLeft: number;
+  let dKey: string, dBuilt: number, dId: string;
   // A and B side by side
   let cx: number, cy: number, Y: number, AX: number, BX: number;
   let aClaim: ClaimInfo;
 
   beforeAll(async () => {
-    await resetServer({ abandonDayMs: DAY_MS });
+    await resetServer();
     A = await TestClient.connect('Alice');
     B = await TestClient.connect('Bob');
   });
@@ -109,8 +106,8 @@ describe('social', () => {
     dBuilt = 0;
     for (let dy = 0; dy < 5; dy++) for (let dx = 0; dx < 20; dx++) if (builtTile(A.tile(dSite.X + dx, dSite.Y + dy)!)) dBuilt++;
     expect(dBuilt, 'tiles D built, as A sees them').toBeGreaterThanOrEqual(70);
+    dId = D.id;
     await D.close();
-    dLeft = Date.now();
   });
 
   it('names cities after places, uniquely, and lets mayors rename them', async () => {
@@ -300,12 +297,16 @@ describe('social', () => {
       expect(builtInD(), `built tiles in D ${when}`).toBe(dBuilt);
     };
     const idleNow = (): number => A.claims.get(dKey)?.idleDays ?? -1;
-    expect(idleNow(), 'idleDays for D advance in the claims broadcasts').toBeGreaterThanOrEqual(1);
+    const idleFor = (days: number): void => A.sendRaw({ t: 'devIdle', id: dId, days });
+    idleFor(1);
+    await waitFor(() => idleNow() >= 1, 'idleDays for D advance in the claims broadcasts', ticks(4));
     intact('before it was abandoned');
-    await sleep(Math.max(0, dLeft + ABANDON_IDLE_DAYS * DAY_MS + 1000 - Date.now()) + ticks(10));
+    idleFor(ABANDON_IDLE_DAYS);
+    await waitFor(() => idleNow() >= ABANDON_IDLE_DAYS, 'D shown as abandoned', ticks(4));
     intact('once abandoned');
-    const freeAt = dLeft + ABANDON_FREE_DAYS * DAY_MS;
-    await waitFor(() => A.unclaims.includes(dKey), `unclaim of D's chunk`, Math.max(5000, freeAt + ticks(4) - Date.now()));
+    expect(A.unclaims.includes(dKey), 'not released before ABANDON_FREE_DAYS').toBe(false);
+    idleFor(ABANDON_FREE_DAYS);
+    await waitFor(() => A.unclaims.includes(dKey), `unclaim of D's chunk`, ticks(4));
     expect(A.claims.has(dKey), "D's claim listed after unclaim").toBe(false);
     await sleep(ticks(10));
     intact('after the release');
