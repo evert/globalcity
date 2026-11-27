@@ -31,6 +31,14 @@ describe('climate model', () => {
     expect(s.emissions).toBe(mt);
   });
 
+  it('a handful of cities barely registers; hundreds of coal cities warm the world within a century', () => {
+    // emissions measured on real saves: 6 cities, and 855 cities (mostly coal)
+    const few = run(startClimate(), 100, 140),
+      many = run(startClimate(), 100, 5770);
+    expect(Math.abs(warming(few))).toBeLessThan(0.1);
+    expect(warming(many)).toBeGreaterThan(1.5);
+  });
+
   it('after a switch to clean power, CO2 falls slowly and the warming levels off', () => {
     const peak = run(startClimate(), 100, 10_400);
     const later = run(peak, 100, 0);

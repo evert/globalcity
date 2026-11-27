@@ -6,7 +6,8 @@
 //              doubling) with an ocean lag of decades
 // Together that gives the real shape: emissions can drop fast, CO2 peaks and then falls slowly, and the
 // temperature levels off rather than coming back down (the falling CO2 and the ocean still catching up cancel).
-// Magnitudes are realistic per plant; the game's world is far smaller than Earth's economy, so warming is modest.
+// Magnitudes are realistic per plant. The game's economy is far smaller than Earth's, so its atmosphere is too
+// (AIR_SCALE): a handful of cities barely registers, hundreds of coal-burning cities warm the world within a century.
 
 /** CO2 in the air before industry, and at the start of the game's calendar (1900), in ppm. */
 export const PREINDUSTRIAL_PPM = 280;
@@ -19,8 +20,14 @@ export const OCEAN_LAG_YEARS = 40;
 export const QUICK_SINK = 0.5;
 /** Share of the excess CO2 over pre-industrial drained each year (slow ocean mixing). */
 export const SLOW_SINK = 0.005;
-/** Gigatonnes of CO2 that raise the air's CO2 by one ppm. */
+/** Gigatonnes of CO2 that raise Earth's air by one ppm. */
 export const GT_PER_PPM = 7.8;
+/**
+ * How much smaller the game's atmosphere is than Earth's. Fixed, so it depends only on what the world emits, never on
+ * how many players there are. At 8 (measured on real saves, all emitting at their current rate): 6 cities stay near
+ * 0 degC; 855 cities warm ~0.7 degC in 50 game years and ~1.7 in 100; 3,500 cities ~1.4 and ~3.1.
+ */
+export const AIR_SCALE = 8;
 /** Megatonnes of CO2 a year: a coal plant (400 MW running ~60% of the time: ~2.1 TWh at ~0.95 t of CO2 per MWh),
  *  and an industrial zone. */
 export const COAL_PLANT_MT = 2;
@@ -49,7 +56,7 @@ export const yearEmissions = (coalPlants: number, industryZones: number): number
 
 /** One year on: add the year's emissions, let the sinks work, move the temperature toward equilibrium. */
 export function climateYear(s: ClimateState, emissionsMt: number): ClimateState {
-  let co2 = s.co2 + ((emissionsMt / 1000) * (1 - QUICK_SINK)) / GT_PER_PPM;
+  let co2 = s.co2 + ((emissionsMt / 1000) * (1 - QUICK_SINK) * AIR_SCALE) / GT_PER_PPM;
   co2 -= (co2 - PREINDUSTRIAL_PPM) * SLOW_SINK;
   const temp = s.temp + (equilibriumTemp(co2) - s.temp) / OCEAN_LAG_YEARS;
   return { co2, temp, emissions: emissionsMt };
