@@ -637,9 +637,20 @@ export class Players {
   /** World population now (every city with land, monuments not counted): one point of the history, once a game
    *  year. Every point is kept: the server runs for months, 48 game years a day, so ~1,440 points a month (~35 KB). */
   recordPopulation(): void {
+    this.popHistory.push([this.time.year, this.worldPopulation()]);
+  }
+
+  /** People in every city with land (monuments not counted). */
+  worldPopulation(): number {
     let pop = 0;
     for (const p of this.players.values()) if (p.chunks.length && !p.monument) pop += p.stats.population;
-    this.popHistory.push([this.time.year, pop]);
+    return pop;
+  }
+
+  /** A world without history yet (new, or saved before the histories existed) starts them with a point for now. */
+  seedHistories(): void {
+    if (!this.popHistory.length) this.popHistory.push([this.time.year, this.worldPopulation()]);
+    if (!this.climateHistory.length) this.climateHistory.push([this.time.year, Math.round(warming(this.climate) * 1000) / 1000]);
   }
 
   /** A year of climate: this year's emissions from what stands in the world, then the yearly warming point. */

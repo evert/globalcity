@@ -418,6 +418,7 @@ export class Sim {
     private readonly players: Players,
     opts: SimOptions = {},
   ) {
+    this.players.seedHistories();
     this.randomFires = opts.randomFires ?? true;
     this.elevation = opts.elevation ?? new Elevation(null);
     this.disasters = new Disasters(world, players, opts.hazards ?? new Uint8Array(CHUNKS_X * CHUNKS_Y), this.elevation, {

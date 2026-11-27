@@ -23,9 +23,11 @@ describe('world population and climate history', () => {
     const s = await waitFor(() => c.worldStats, 'worldStats');
     const h = s.history ?? [];
     expect(h.length).toBeGreaterThanOrEqual(2);
-    for (let i = 1; i < h.length; i++) expect(h[i][0]).toBe(h[i - 1][0] + 1);
+    // yearly points from the start (seeded when the world began), then a live point for now
+    for (let i = 1; i < h.length - 1; i++) expect(h[i][0]).toBe(h[i - 1][0] + 1);
+    expect(h[h.length - 1][0]).toBeGreaterThan(h[h.length - 2][0]);
     for (const [, pop] of h) expect(pop).toBeGreaterThanOrEqual(0);
-    expect(h[h.length - 1][0]).toBeLessThanOrEqual(s.year);
+    expect(h[h.length - 1][0]).toBeLessThan(s.year + 1);
     // climate: one coal plant, no clean power; CO2 above where it started, a warming point every year
     const cl = s.climate!;
     expect(cl, 'climate in the world stats').toBeTruthy();

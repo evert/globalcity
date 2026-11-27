@@ -35,6 +35,11 @@ const WORLD_STATS_MS = 30_000;
 /** Points of the population history sent to clients: plenty for a chart, small however long the server runs. */
 const HISTORY_POINTS = 500;
 
+/** The history with a live point for now at the end (the yearly points lag up to a year behind). */
+export function withNow(points: [number, number][], t: number, v: number): [number, number][] {
+  return points.length && points[points.length - 1][0] >= t ? points : [...points, [t, v]];
+}
+
 /** At most `n` points: consecutive stretches averaged (time and value, the value to `decimals` places), the last point kept exact. */
 export function bucketed(points: readonly [number, number][], n: number, decimals = 0): [number, number][] {
   if (points.length <= n) return points.slice();
@@ -75,6 +80,11 @@ export class WorldStatsCounter {
     private readonly players: Players,
     private readonly sim: Sim,
   ) {}
+
+  /** The game time now, in years (month / 12 as the fraction). */
+  private now(): number {
+    return this.players.time.year + this.players.time.month / 12;
+  }
 
   get(online: number): WorldStats {
     const now = Date.now();
@@ -172,13 +182,13 @@ export class WorldStatsCounter {
     return {
       year: this.players.time.year,
       population,
-      history: bucketed(this.players.popHistory, HISTORY_POINTS),
+      history: withNow(bucketed(this.players.popHistory, HISTORY_POINTS), this.now(), population),
       climate: {
         cleanShare: powerSupply ? cleanSupply / powerSupply : 0,
         emissions: Math.round(yearEmissions(coalPlants, ind)),
         co2: Math.round(this.players.climate.co2 * 10) / 10,
         warming: Math.round(warming(this.players.climate) * 100) / 100,
-        history: bucketed(this.players.climateHistory, HISTORY_POINTS, 3),
+        history: withNow(bucketed(this.players.climateHistory, HISTORY_POINTS, 3), this.now(), Math.round(warming(this.players.climate) * 1000) / 1000),
       },
       cities,
       monuments,
