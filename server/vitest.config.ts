@@ -17,6 +17,6 @@ export default defineConfig({
     testTimeout: 120_000,
     hookTimeout: 60_000,
     // one test at a time within a file: the tests in a file play on, in order, on the same server
-    sequence: { concurrent: false },
+    sequence: { concurrent: false, groupOrder: 1 }, // after shared and client (a project with its own maxWorkers needs its own group)
   },
 });
