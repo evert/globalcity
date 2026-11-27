@@ -1,10 +1,11 @@
 // Natural disasters (shared/src/disasters.ts): which kinds a city can get comes from the world's hazard map; at
-// most one strikes every 10 minutes in the whole world (about one every 15 on average), always in a city whose mayor is online, and everyone playing is
+// most one strikes every 10 minutes in the whole world (about one every 15 on average), always in a city whose mayor is online and that hasn't
+// been struck in the last 4 hours (DISASTER_CITY_GAP_MS), and everyone playing is
 // told; a disaster only ever touches the plots of the city it strikes. Damage is Micropolis-style: buildings hit become rubble (or catch fire),
 // floods cover low land next to water and then recede, a tornado tears a path across town.
 import {
   WORLD_W, WORLD_H, CHUNK, LOMASK, BULLBIT, BURNBIT, RUBBLE, FLOOD, DIRT, WATER_LOW, WATER_HIGH,
-  Disaster, DISASTERS, DISASTER_COUNT, DISASTER_MIN_GAP_MS, DISASTER_STEP_P, DISASTER_MIN_POP, hazardBit,
+  Disaster, DISASTERS, DISASTER_COUNT, DISASTER_MIN_GAP_MS, DISASTER_CITY_GAP_MS, DISASTER_STEP_P, DISASTER_MIN_POP, hazardBit,
   isWater, isTree, isWire, isRoad, isRail, isOverWater, isOffshoreTile, chunkKey, parseChunkKey, type ActiveDisaster,
 } from '@globalcity/shared';
 import type { World } from './world.ts';
@@ -12,9 +13,11 @@ import type { Players, PlayerRecord } from './players.ts';
 import type { Elevation } from './elevation.ts';
 import { findZoneCenter, clearFootprint, isBuildingTile } from './zones.ts';
 
-/** DISASTER_EVERY_MS (testing): a disaster exactly this often, instead of the usual gap (DISASTER_MIN_GAP_MS) and the random wait after it */
+/** DISASTER_EVERY_MS (testing): a disaster exactly this often, instead of the usual gap (DISASTER_MIN_GAP_MS) and the random wait after
+ *  it, and no rest for a city that was just struck (DISASTER_CITY_GAP_MS) */
 const EVERY_MS = Number(process.env.DISASTER_EVERY_MS) || 0;
 const MIN_GAP_MS = EVERY_MS || DISASTER_MIN_GAP_MS, STEP_P = EVERY_MS ? 1 : DISASTER_STEP_P;
+const CITY_GAP_MS = EVERY_MS ? 0 : DISASTER_CITY_GAP_MS;
 
 /** Land no higher than this (metres) next to water floods. */
 const FLOOD_MAX_ELEV = 10;
@@ -99,11 +102,13 @@ export class Disasters {
     const moved = this.runs.some((r) => r.kind === Disaster.Tornado);
     this.runs = this.runs.filter((r) => !this.done(r, now));
     // at most one disaster per gap in the whole world: once the gap is up, now and then one strikes a city
-    // that can be struck (its mayor online, big enough, a hazard on its land), picked at random
+    // that can be struck (its mayor online, big enough, a hazard on its land, not struck in the last few hours),
+    // picked at random
     if (random && now - this.lastStrike >= MIN_GAP_MS && rand() < STEP_P) {
       const candidates: { p: PlayerRecord; kinds: Disaster[] }[] = [];
       for (const p of online) {
         if (p.stats.population < DISASTER_MIN_POP || p.monument) continue;
+        if (now - (p.lastDisaster ?? 0) < CITY_GAP_MS) continue; // spared a while after the last one
         const h = this.hazardsOf(p);
         const kinds: Disaster[] = [];
         for (let d = 0; d < DISASTER_COUNT; d++) if (h & hazardBit(d)) kinds.push(d);

@@ -21,6 +21,8 @@ export const DISASTERS: Record<Disaster, DisasterInfo> = {
 
 /** At most one disaster in the whole world in this long. */
 export const DISASTER_MIN_GAP_MS = 10 * 60_000;
+/** ...and a city that was struck is spared for this long (real time), however few other cities can be struck. */
+export const DISASTER_CITY_GAP_MS = 4 * 60 * 60_000;
 /** Once the gap has passed, the chance per simulation step that a disaster strikes one of the cities that can be
  *  struck (60 steps in 5 minutes at 5 s): on average 5 minutes later, so roughly one every 15 minutes worldwide. */
 export const DISASTER_STEP_P = 1 / 60;
