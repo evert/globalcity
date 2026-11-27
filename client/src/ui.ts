@@ -53,6 +53,7 @@ import type { Renderer } from './renderer.ts';
 import { ZONE_TOOLS, type TouchPlan } from './input.ts';
 import { NIGHT_REFRESH_MS } from './night.ts';
 import { isFireTile, withAlpha } from './renderer.ts';
+import { populationChart } from './chart.ts';
 import type { AppState } from './state.ts';
 
 /** Tabs of the World panel. */
@@ -834,45 +835,7 @@ export class UI {
       tile(n(s.online), 'mayors online'),
       tile(`${share}%`, 'of the land claimed', `${n(s.plots)} of ${n(s.landPlots)} plots with land`),
     );
-    const visit = (cx: number, cy: number, name: string) => {
-      const b = el('button', { class: 'btn visit', title: `Fly to ${name}` }, 'Visit');
-      b.onclick = () => {
-        this.actions.flyToChunk(cx, cy, 1, 900);
-        this.closeWorld();
-      };
-      return b;
-    };
-    const cityRow = (label: string, c: { name: string; cx: number; cy: number } | null, extra: string) =>
-      c
-        ? el(
-            'div',
-            { class: 'ws-row' },
-            el('span', { class: 'ws-k', text: label }),
-            el('span', { class: 'ws-v', text: `${c.name}${extra}` }),
-            visit(c.cx, c.cy, c.name),
-          )
-        : null;
     const present = (...xs: (HTMLElement | null)[]): HTMLElement[] => xs.filter((x): x is HTMLElement => x !== null);
-    const cities = el(
-      'div',
-      { class: 'ws-section' },
-      ...present(
-        cityRow('Biggest city', s.biggest, s.biggest ? ` · ${n(s.biggest.population)} people` : ''),
-        cityRow('Newest city', s.newest, ''),
-        el(
-          'div',
-          { class: 'ws-row' },
-          el('span', { class: 'ws-k', text: 'Monuments' }),
-          el('span', { class: 'ws-v', text: `${n(s.monuments)} retired cities, standing forever` }),
-        ),
-        el(
-          'div',
-          { class: 'ws-row' },
-          el('span', { class: 'ws-k', text: 'Abandoned' }),
-          el('span', { class: 'ws-v', text: `${n(s.abandoned)} cities whose mayor has been away a month` }),
-        ),
-      ),
-    );
     const built = el(
       'div',
       { class: 'ws-grid small' },
@@ -934,8 +897,8 @@ export class UI {
     );
     this.wsBody.replaceChildren(
       top,
-      el('h3', { text: 'Cities' }),
-      cities,
+      el('h3', { text: 'Population' }),
+      populationChart(s.history ?? [], fmtCompact),
       el('h3', { text: 'Built' }),
       built,
       el('h3', { text: 'Where cities are' }),

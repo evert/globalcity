@@ -536,6 +536,7 @@ export class Sim {
       t.year++;
     }
     const newYear = newMonth && t.month === 0;
+    if (newMonth) this.players.recordPopulation();
     this.players.dirty = true;
     this.toasts = [];
     this.stations = [];

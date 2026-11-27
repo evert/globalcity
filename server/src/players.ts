@@ -3,6 +3,7 @@
 import crypto from 'node:crypto';
 import {
   STARTING_FUNDS,
+  POP_HISTORY_MAX,
   ABANDON_RECLAIM_DAYS,
   MAX_MAYOR_NAME,
   MAX_CITY_NAME,
@@ -146,6 +147,8 @@ export interface StateFile {
   time: GameTime;
   players: PlayerRecord[];
   claims: [string, string][]; // chunkKey -> playerId
+  /** world population history (WorldStats.history); absent in older saves */
+  popHistory?: [number, number][];
   /** Older saves: released plots that were still crumbling. Nothing decays any more; ignored on load. */
   ruins?: string[];
 }
@@ -266,6 +269,8 @@ export class Players {
   readonly players = new Map<string, PlayerRecord>();
   readonly claims = new Map<string, string>();
   time: GameTime = { year: START_YEAR, month: 0, step: 0 };
+  /** world population once a game month: [game time in years, people] (see recordPopulation) */
+  popHistory: [number, number][] = [];
   /** state changed since last save */
   dirty = false;
   /** bumped whenever the claims map changes (consumers cache per version: neighbours, rail networks) */
@@ -619,13 +624,23 @@ export class Players {
     return out;
   }
 
+  /** World population now (every city with land, monuments not counted): one point of the history, once a game
+   *  month. When the history is full every other point is dropped, so it always spans the whole world's life. */
+  recordPopulation(): void {
+    let pop = 0;
+    for (const p of this.players.values()) if (p.chunks.length && !p.monument) pop += p.stats.population;
+    this.popHistory.push([this.time.year + this.time.month / 12, pop]);
+    if (this.popHistory.length > POP_HISTORY_MAX) this.popHistory = this.popHistory.filter((_, i, a) => i % 2 === 0 || i === a.length - 1);
+  }
+
   serialize(): StateFile {
-    return { version: 1, time: { ...this.time }, players: [...this.players.values()], claims: [...this.claims.entries()] };
+    return { version: 1, time: { ...this.time }, players: [...this.players.values()], claims: [...this.claims.entries()], popHistory: this.popHistory };
   }
 
   /** Load a state file; players saved by older versions get the new fields (cityName derived from their first chunk, lastSeen = now). */
   load(state: StateFile): void {
     this.time = { step: 0, ...state.time };
+    this.popHistory = Array.isArray(state.popHistory) ? state.popHistory.filter((p) => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1])) : [];
     const now = Date.now();
     const unnamed: PlayerRecord[] = [];
     for (const raw of state.players) {

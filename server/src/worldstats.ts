@@ -141,6 +141,7 @@ export class WorldStatsCounter {
     return {
       year: this.players.time.year,
       population,
+      history: this.players.popHistory.slice(),
       cities,
       monuments,
       abandoned,

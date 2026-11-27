@@ -154,6 +154,8 @@ export const FIRE_PREVENTED_P = 0.75;
 // the 2x world).
 // Money constants named "a year" below are per 12 steps (one real minute); a game year is STEPS_PER_MONTH times
 // as long, so its budget shows that many times more (gameYearAmount).
+/** Points kept in the world population history (one per game month; halved evenly when it fills up). */
+export const POP_HISTORY_MAX = 600;
 export const TICK_MS = 5000;
 export const STEPS_PER_MONTH = 30;
 /** What an amount given per 12 steps (the money constants) comes to over a game year. */

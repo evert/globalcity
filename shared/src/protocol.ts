@@ -60,6 +60,9 @@ export interface WorldStats {
   activeDisasters: number;
   /** claimed plots by their commonest biome (Biome) */
   biomes: number[];
+  /** world population over time: [game time in years (month / 12 as the fraction), people], oldest first; evenly
+   *  thinned as it grows (POP_HISTORY_MAX). Absent from old servers. */
+  history?: [number, number][];
 }
 
 export interface GameTime {

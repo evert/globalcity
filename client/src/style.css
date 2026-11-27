@@ -1468,3 +1468,60 @@ a.btn {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+/* world population graph (stats tab) */
+.ws-chart {
+  position: relative;
+}
+.ws-chart-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  touch-action: pan-y;
+}
+.ws-chart .ws-grid-line {
+  stroke: rgba(255, 255, 255, 0.07);
+  stroke-width: 1;
+}
+.ws-chart .ws-axis {
+  stroke: rgba(255, 255, 255, 0.22);
+  stroke-width: 1;
+}
+.ws-chart .ws-tick {
+  fill: var(--muted);
+  font-size: 11px;
+  font-family: var(--font);
+}
+.ws-chart .ws-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.ws-chart .ws-area {
+  fill: var(--accent);
+  opacity: 0.12;
+}
+.ws-chart .ws-cross {
+  stroke: rgba(255, 255, 255, 0.35);
+  stroke-width: 1;
+}
+.ws-chart .ws-dot {
+  fill: var(--accent);
+  stroke: var(--panel-border);
+  stroke-width: 2;
+}
+.ws-tip {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 10px));
+  background: #1b2232;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.ws-tip.hidden {
+  display: none;
+}
