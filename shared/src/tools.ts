@@ -1,11 +1,11 @@
 import * as T from './tiles.ts';
-import { UPKEEP_WIND, UPKEEP_OFFSHORE, gameYearAmount } from './constants.ts';
+import { UPKEEP_WIND, UPKEEP_OFFSHORE, CHRISTMAS_TREE_RANGE, gameYearAmount } from './constants.ts';
 
 export type ToolId =
   | 'query' | 'bulldozer' | 'road' | 'rail' | 'wire' | 'park'
   | 'residential' | 'commercial' | 'industrial'
   | 'fire' | 'police' | 'coal' | 'nuclear' | 'stadium' | 'seaport' | 'airport' | 'cityhall'
-  | 'school' | 'windfarm' | 'offshore' | 'university' | 'grandcentral';
+  | 'school' | 'windfarm' | 'offshore' | 'university' | 'grandcentral' | 'christmastree';
 
 export interface ToolDef {
   id: ToolId;
@@ -53,12 +53,13 @@ export const TOOLS: Record<ToolId, ToolDef> = {
   offshore:    { id: 'offshore',    name: 'Offshore wind farm', cost: 4000, size: 4, base: T.OFFSHOREBASE, hotkey: 'x', icon: T.OFFSHORE },
   university:  { id: 'university',  name: 'University',        cost: 8000,  size: 5, w: 5, h: 4, custom: 'university', hotkey: 'y', icon: T.CUSTOMCENTRE },
   grandcentral: { id: 'grandcentral', name: 'Grand Central',    cost: 25000, size: 6, w: 6, h: 3, custom: 'grandcentral', hot: { x: 2, y: 2 }, hotkey: 'k', icon: T.CUSTOMCENTRE },
+  christmastree: { id: 'christmastree', name: 'Christmas tree', cost: 500, size: 4, w: 2, h: 4, custom: 'christmastree', hotkey: '4', icon: T.CUSTOMCENTRE },
 };
 
 export const TOOL_ORDER: ToolId[] = [
   'query', 'bulldozer', 'road', 'rail', 'wire', 'park',
   'residential', 'commercial', 'industrial',
-  'fire', 'police', 'coal', 'nuclear', 'windfarm', 'offshore', 'school', 'university', 'stadium', 'seaport', 'airport', 'grandcentral', 'cityhall',
+  'fire', 'christmastree', 'police', 'coal', 'nuclear', 'windfarm', 'offshore', 'school', 'university', 'stadium', 'seaport', 'airport', 'grandcentral', 'cityhall',
 ];
 
 /** Extra costs for special placements. */
@@ -101,11 +102,19 @@ TOOLS.offshore.tradeoff = `${OFFSHORE_POWER} zones of clean power: more expensiv
 // Special buildings unlock when the city's peak population reaches their threshold; unlocks are permanent.
 // `max` limits how many a city may have (city hall: one); a destroyed one can always be rebuilt. Cities that
 // already had a building before it was unlocked keep it (grandfathered, counts as unlocked).
-export type MilestoneBuilding = 'fire' | 'police' | 'cityhall' | 'windfarm' | 'school' | 'seaport' | 'university' | 'stadium' | 'airport' | 'offshore';
-export interface MilestoneDef { name: string; tool: ToolId; pop: number; max?: number; benefits: string[]; centres: number[] }
+export type MilestoneBuilding = 'fire' | 'christmastree' | 'police' | 'cityhall' | 'windfarm' | 'school' | 'seaport' | 'university' | 'stadium' | 'airport' | 'offshore';
+export interface MilestoneDef {
+  name: string; tool: ToolId; pop: number; max?: number; benefits: string[]; centres: number[];
+  /** the name mid-sentence, when it isn't simply the name in lower case (a proper noun) */
+  lower?: string;
+  /** seasonal: it can only be built in these months (0 = January, UTC); `seasonName` names them for the UI */
+  months?: number[]; seasonName?: string;
+}
 export const MILESTONE_BUILDINGS: Record<MilestoneBuilding, MilestoneDef> = {
   fire: { name: 'Fire station', tool: 'fire', pop: 15_000, centres: [T.FIRESTATION],
     benefits: ['Fires can break out from this size on', 'Protects 12 tiles around it: most fires there never start, the rest spread slower and burn out sooner', 'Needs power'] },
+  christmastree: { name: 'Christmas tree', lower: 'Christmas tree', tool: 'christmastree', pop: 20_000, centres: [], months: [11], seasonName: 'December',
+    benefits: [`Lots within ${CHRISTMAS_TREE_RANGE} tiles gain land value`, 'Can only be built in December', 'Its lights glow at night', 'Needs power'] },
   police: { name: 'Police station', tool: 'police', pop: 30_000, centres: [T.POLICESTATION],
     benefits: ['Covers 14 tiles: no crime penalty on land value there', 'Needs power'] },
   cityhall: { name: 'City hall', tool: 'cityhall', pop: 75_000, max: 1, centres: [T.CITYHALL],
@@ -125,13 +134,23 @@ export const MILESTONE_BUILDINGS: Record<MilestoneBuilding, MilestoneDef> = {
   offshore: { name: 'Offshore wind farm', tool: 'offshore', pop: 300_000, centres: [T.OFFSHORE],
     benefits: [`${OFFSHORE_POWER} zones of clean power: more than a wind farm on land, on water you can't build on anyway`, 'Must be placed entirely on water', 'Connect it to shore with an underwater power line', `$${gameYearAmount(UPKEEP_OFFSHORE).toLocaleString('en-US')} a year to run`] },
 };
-export const MILESTONE_ORDER: readonly MilestoneBuilding[] = ['fire', 'police', 'school', 'cityhall', 'seaport', 'windfarm', 'university', 'stadium', 'offshore', 'airport'];
+export const MILESTONE_ORDER: readonly MilestoneBuilding[] = ['fire', 'christmastree', 'police', 'school', 'cityhall', 'seaport', 'windfarm', 'university', 'stadium', 'offshore', 'airport'];
 /** Everything the Milestones panel lists: the population ladder plus Grand Central (unlocked by a rail link). */
 export const MILESTONE_TOTAL = MILESTONE_ORDER.length + 1;
 /** Percentage of milestones a city has unlocked, from its unlocked list (ladder, grandfathered and grandcentral). */
 export const milestonePercent = (unlocked: readonly string[]): number =>
   Math.round((100 * new Set(unlocked.filter((b) => b === 'grandcentral' || (MILESTONE_ORDER as readonly string[]).includes(b))).size) / MILESTONE_TOTAL);
 export const isMilestoneTool = (t: ToolId): t is MilestoneBuilding => t in MILESTONE_BUILDINGS;
+/** A milestone building's name mid-sentence ("a fire station", "a Christmas tree"). */
+export const milestoneLower = (m: MilestoneDef): string => m.lower ?? m.name.toLowerCase();
+/** Is this tool in season in month `month` (0 = January)? True for every tool that isn't seasonal. */
+export function inSeason(t: ToolId, month: number): boolean {
+  const m = isMilestoneTool(t) ? MILESTONE_BUILDINGS[t].months : undefined;
+  return !m || m.includes(month);
+}
+/** The seasonal tools that can be built in month `month` (0 = January). */
+export const seasonalInSeason = (month: number): ToolId[] =>
+  MILESTONE_ORDER.filter((b) => MILESTONE_BUILDINGS[b].months?.includes(month)).map((b) => MILESTONE_BUILDINGS[b].tool);
 /** Milestone buildings unlocked by a peak population (not counting grandfathered ones). */
 export const milestoneUnlocksFor = (peakPop: number): MilestoneBuilding[] => MILESTONE_ORDER.filter((b) => peakPop >= MILESTONE_BUILDINGS[b].pop);
 /** The next milestone above a peak population, or null when all are reached. */
@@ -157,6 +176,7 @@ export interface CustomDef {
 export const CUSTOM_BUILDINGS: Record<string, CustomDef> = {
   university: { name: 'University', w: 5, h: 4, image: '/assets/buildings/university.png' },
   grandcentral: { name: 'Grand Central', w: 6, h: 3, image: '/assets/buildings/grandcentral.png', frames: 8, frameMs: 500, railRow: 2 },
+  christmastree: { name: 'Christmas tree', w: 2, h: 4, image: '/assets/buildings/christmastree.png' },
 };
 
 /**

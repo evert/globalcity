@@ -19,11 +19,11 @@ import {
   MILESTONE_BUILDINGS, isMilestoneTool, CITYHALLBASE, LASTCITYHALL,
   CHUNK,
   SCHOOLBASE, LASTSCHOOL, WINDBASE, LASTWIND, OFFSHOREBASE, LASTOFFSHORE, isOffshoreTile,
-  displayPopulation, CUSTOMCENTRE, CUSTOMFILL, CUSTOM_BUILDINGS, isCustomTile, toolW, toolH, GRAND_CENTRAL,
+  displayPopulation, CUSTOMCENTRE, CUSTOMFILL, CUSTOM_BUILDINGS, isCustomTile, toolW, toolH, GRAND_CENTRAL, inSeason, milestoneLower,
 } from '@globalcity/shared';
 import type { World } from './world.ts';
 import type { Players, PlayerRecord } from './players.ts';
-import { unlockedOf, spend } from './players.ts';
+import { unlockedOf, spend, seasonMonth } from './players.ts';
 import { findZoneCenter, zonePop, zoneKind, isBuildingTile, clearFootprint } from './zones.ts';
 import { randInt } from './util.ts';
 
@@ -189,8 +189,9 @@ export function applyBuild(ctx: BuildCtx, p: PlayerRecord, toolId: ToolId, x: nu
   // Milestone buildings: unlocked by population (or grandfathered); some have a per-city limit.
   if (isMilestoneTool(toolId) && !opts.ignoreMilestones) {
     const m = MILESTONE_BUILDINGS[toolId];
-    if (!unlockedOf(p).includes(toolId)) return fail(`The ${m.name.toLowerCase()} unlocks at ${m.pop.toLocaleString('en-US')} people`);
-    if (m.max !== undefined && countMilestone(world, p, toolId) >= m.max) return fail(`Your city already has a ${m.name.toLowerCase()} (one per city)`);
+    if (!unlockedOf(p).includes(toolId)) return fail(`The ${milestoneLower(m)} unlocks at ${m.pop.toLocaleString('en-US')} people`);
+    if (!inSeason(toolId, seasonMonth())) return fail(`The ${milestoneLower(m)} can only be built in ${m.seasonName}`, 'info');
+    if (m.max !== undefined && countMilestone(world, p, toolId) >= m.max) return fail(`Your city already has a ${milestoneLower(m)} (one per city)`);
   }
 
   // Grand Central: unlocked by the first rail link to another mayor's city; one per city.
@@ -213,6 +214,7 @@ export function applyBuild(ctx: BuildCtx, p: PlayerRecord, toolId: ToolId, x: nu
     case 'offshore': result = placeOffshore(world, p, tool.base!, tool.size, tool.cost, x0, y0); break;
     case 'university': result = placeCustom(world, p, tool.custom!, tool.cost, x0, y0); break;
     case 'grandcentral': result = placeCustom(world, p, tool.custom!, tool.cost, x0, y0); break;
+    case 'christmastree': result = placeCustom(world, p, tool.custom!, tool.cost, x0, y0); break;
     default: result = placeZone(world, p, tool.base!, tool.size, tool.cost, x0, y0); break;
   }
   if (result.ok) {

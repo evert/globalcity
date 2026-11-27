@@ -4,7 +4,7 @@
 import {
   CHUNK, LOMASK, ZONEBIT, PWRBIT, CONDBIT, BURNBIT, FIRESTATION, POLICESTATION, FIRE_STATION_RANGE, POLICE_RANGE, UNIVERSITY_POLICE_FACTOR,
   CRIME_LAND_VALUE_THRESHOLD, LTRFBASE, HTRFBASE, LASTROAD, isRoad, isWater, isTree, isIndZone, isComZone, isHouse,
-  isZoneTile, chunkKey, parseChunkKey, SCHOOL, SCHOOL_RANGE, pollutionSource, pollutionAt, POLLUTION_HIGH, POLLUTION_SEVERE, POLLUTION_MAX_RADIUS,
+  isZoneTile, chunkKey, parseChunkKey, SCHOOL, SCHOOL_RANGE, CHRISTMAS_TREE_RANGE, pollutionSource, pollutionAt, POLLUTION_HIGH, POLLUTION_SEVERE, POLLUTION_MAX_RADIUS,
   FREEZ, RZB, HOSPITALBASE, CZB, COMLAST, IZB, INDLAST, resZonePop, comZonePop, indZonePop, displayPopulation,
 } from '@globalcity/shared';
 import type { TileMap } from './map.ts';
@@ -46,7 +46,10 @@ export class OverlayLayer {
   /** set by the renderer: owner id of the plot under a tile, and the owners whose university is powered */
   ownerAt: (x: number, y: number) => string | undefined = () => undefined;
   uniOwners: () => Set<string> = () => new Set();
+  /** set by the renderer: centres of the powered Christmas trees */
+  xmasTrees: () => { x: number; y: number }[] = () => [];
   private schoolCover = new Set<number>();
+  private xmasCover = new Set<number>();
   /** pollution sources in loaded chunks: x, y, strength, radius */
   private sources: number[] = [];
   private coverDirty = true;
@@ -78,8 +81,10 @@ export class OverlayLayer {
 
   private computeCoverage(): void {
     this.coverDirty = false;
-    this.fireCover.clear(); this.policeCover.clear(); this.schoolCover.clear(); this.sources = [];
+    this.fireCover.clear(); this.policeCover.clear(); this.schoolCover.clear(); this.xmasCover.clear(); this.sources = [];
     const uni = this.uniOwners();
+    const R = CHRISTMAS_TREE_RANGE;
+    for (const t of this.xmasTrees()) for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) this.xmasCover.add((t.y + dy) * 65536 + (t.x + dx));
     for (const [key, tiles] of this.map.chunks) {
       const { cx, cy } = parseChunkKey(key);
       for (let i = 0; i < tiles.length; i++) {
@@ -199,7 +204,8 @@ export class OverlayLayer {
 
   /**
    * Land value 0..3 for every tile of the plot at (bx, by), with the server's rules (sim.ts landValue):
-   * +1 park/forest/water within 3 tiles, +1 no industry within 12, +1 commerce within 8, -1 for a high-crime
+   * +1 park/forest/water within 3 tiles, +1 no industry within 12, +1 commerce within 8, +1 near a powered school
+   * or Christmas tree, -1 for a high-crime
    * own city outside police cover. Box sums keep it to O(1) per tile.
    */
   private landValues(bx: number, by: number): Uint8Array {
@@ -230,6 +236,7 @@ export class OverlayLayer {
       if (smog[i] >= POLLUTION_HIGH) val--;
       if (smog[i] >= POLLUTION_SEVERE) val--;
       if (this.schoolCover.has(wy * 65536 + wx)) val++;
+      if (this.xmasCover.has(wy * 65536 + wx)) val++;
       if (highCrime && !this.policeCover.has(wy * 65536 + wx)) val--;
       // (The server also adds a per-lot random step to vary building looks; the overlay leaves it out so
       // it shows the underlying value as smooth areas rather than speckle.)

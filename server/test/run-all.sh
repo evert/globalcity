@@ -36,6 +36,8 @@ TESTS=(
   "disasters|"
   "notify|"
   "firstplot|"
+  "christmastree|SEASON_MONTH=12"
+  "christmastree_off|SEASON_MONTH=11"
 )
 
 want=" $* "

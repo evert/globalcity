@@ -6,7 +6,7 @@ import {
   chunkKey, parseChunkKey, colorForId,
   type PlayerStats, type PlayerPublic, type ClaimInfo, type GameTime, START_YEAR, type BudgetYear, BUDGET_YEARS_SENT,
   type IncomeLine, type ExpenseLine, type MoneyLine, INCOME_LINES, EXPENSE_LINES, emptyBudgetYear,
-  MILESTONE_BUILDINGS, milestoneUnlocksFor, nextMilestone,
+  MILESTONE_BUILDINGS, milestoneUnlocksFor, nextMilestone, seasonalInSeason,
   LIFELINE_MAX_FUNDS, LIFELINE_REPAY_SHARE, LIFELINE_AMOUNT, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT,
 } from '@globalcity/shared';
 import { World, validChunk } from './world.ts';
@@ -159,6 +159,12 @@ export function unlockedOf(p: PlayerRecord): string[] {
   return [...new Set([...milestoneUnlocksFor(p.peakPop ?? 0), ...(p.grandfathered ?? []), ...(p.railLinked ? ['grandcentral'] : [])])];
 }
 
+/** The calendar month for seasonal buildings (0 = January, UTC). SEASON_MONTH=1..12 pretends another month (tests). */
+export function seasonMonth(): number {
+  const m = Number(process.env.SEASON_MONTH);
+  return Number.isInteger(m) && m >= 1 && m <= 12 ? m - 1 : new Date().getUTCMonth();
+}
+
 /** Recompute the milestone part of a player's stats from their record. */
 export function refreshMilestoneStats(p: PlayerRecord): void {
   const peak = p.peakPop ?? 0;
@@ -166,6 +172,7 @@ export function refreshMilestoneStats(p: PlayerRecord): void {
   s.peakPop = peak;
   s.nextMilestone = nextMilestone(peak)?.pop ?? null;
   s.unlocked = unlockedOf(p);
+  s.inSeason = seasonalInSeason(seasonMonth());
   refreshLifeline(p);
 }
 

@@ -119,6 +119,7 @@ export const UPKEEP_GRANDCENTRAL = 200; // per year
 export const UNIVERSITY_POLICE_FACTOR = 2; // police stations in a city with a powered university cover twice the range
 export const UNIVERSITY_RANGE = 12; // a powered university raises land value within this range
 export const UNIVERSITY_IND_BOOST = 0.1;
+export const CHRISTMAS_TREE_RANGE = 6; // a powered Christmas tree raises land value within this Chebyshev range
 export const SCHOOL_RANGE = 8; // a powered school raises land value within this Chebyshev range
 export const STADIUM_RES_BOOST = 0.15; // residential demand per powered stadium (cap 1 stadium counts)
 export const SEAPORT_IND_BOOST = 0.2; // industrial demand per powered seaport (needs water within 6 tiles)

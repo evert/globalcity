@@ -102,6 +102,7 @@ export interface PlayerStats {
   peakPop: number; // highest population reached (milestones are based on it)
   nextMilestone: number | null; // population needed for the next unlock (null when all are reached)
   unlocked: string[]; // milestone buildings this city may build (reached or grandfathered)
+  inSeason?: string[]; // seasonal buildings that can be built this month (absent from old servers)
   built: Record<string, number>; // milestone buildings currently standing, by id (seaport/airport/cityhall)
   cityHall: number; // powered city halls (benefits apply)
   // Lifeline

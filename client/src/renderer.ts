@@ -196,6 +196,15 @@ export class Renderer extends Emitter<RendererEvents> {
       }
       return out;
     };
+    // a powered Christmas tree raises land value around it: the overlay asks where the lit ones stand
+    this.overlay.xmasTrees = () => {
+      const out: { x: number; y: number }[] = [];
+      for (const b of this.customs.ofKind('christmastree')) {
+        const v = this.map.get(b.x + 1, b.y + 1);
+        if (v !== undefined && (v & PWRBIT)) out.push({ x: b.x + 1, y: b.y + 1 });
+      }
+      return out;
+    };
     try { this.nightLights = new NightLights(sheet); this.nightLights.onReady = () => this.invalidate(); } catch { this.nightLights = null; }
     this.customs.onChange = () => this.invalidate();
     // day and night move with the real sun: check once a minute and redraw when the shade changed

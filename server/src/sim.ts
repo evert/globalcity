@@ -31,7 +31,7 @@ import {
   WINDFARM, OFFSHORE, SCHOOL, WIND_POWER, OFFSHORE_POWER, UPKEEP_WIND, UPKEEP_OFFSHORE, UPKEEP_SCHOOL, SCHOOL_RANGE,
   milestoneForCentre, pollutionSource, pollutionAt, POLLUTION_HIGH, POLLUTION_SEVERE, POLLUTION_MAX_RADIUS,
   NUCLEAR,
-  MILESTONE_ORDER,
+  MILESTONE_ORDER, milestoneLower, CHRISTMAS_TREE_RANGE,
   CUSTOMCENTRE, UPKEEP_UNIVERSITY, UNIVERSITY_RANGE, UNIVERSITY_POLICE_FACTOR, UNIVERSITY_IND_BOOST, GRAND_CENTRAL_RANGE, GRAND_CENTRAL_RAIL_BOOST, UPKEEP_GRANDCENTRAL,
 } from '@globalcity/shared';
 import { type World, chunkIndex, chunkCoords, type ChunkIndex } from './world.ts';
@@ -220,6 +220,9 @@ export class Sim {
   private nextSchools: number[] = [];
   private universities: number[] = [];
   private nextUniversities: number[] = [];
+  /** powered Christmas tree centres (last tick / this tick), for land value */
+  private xmasTrees: number[] = [];
+  private nextXmasTrees: number[] = [];
   /** powered Grand Central centres (tile index) and the cities that have one, from the last tick */
   private grandCentrals: number[] = [];
   private nextGrandCentrals: number[] = [];
@@ -354,6 +357,8 @@ export class Sim {
     this.nextSchools = [];
     this.universities = this.nextUniversities;
     this.nextUniversities = [];
+    this.xmasTrees = this.nextXmasTrees;
+    this.nextXmasTrees = [];
     this.grandCentrals = this.nextGrandCentrals;
     this.nextGrandCentrals = [];
     this.gcCities = this.nextGcCities;
@@ -818,6 +823,7 @@ export class Sim {
         const mb = id === CUSTOMCENTRE ? this.world.buildings.at(x, y)?.kind : milestoneForCentre(id);
         if (mb && mb in c.built) c.built[mb]++;
         if (mb === 'university') { c.upkeep.services += UPKEEP_UNIVERSITY; if (powered) { c.university++; this.nextUniversities.push(i); this.nextUniCities.add(p.id); } }
+        if (mb === 'christmastree' && powered) this.nextXmasTrees.push(i);
         if (mb === 'grandcentral') { c.upkeep.services += UPKEEP_GRANDCENTRAL; if (powered) { this.nextGrandCentrals.push(i); this.nextGcCities.add(p.id); } }
         if (id === SCHOOL) { c.upkeep.services += UPKEEP_SCHOOL; if (powered) this.nextSchools.push(i); }
         if (id === STADIUM || id === FULLSTADIUM) { if (powered) c.stadium++; this.animateStadium(x, y, v); }
@@ -910,7 +916,7 @@ export class Sim {
       (p.announced ??= []).push(b);
       if ((p.grandfathered ?? []).includes(b)) continue; // they already have one
       const m = MILESTONE_BUILDINGS[b];
-      this.toasts.push({ playerId: p.id, kind: 'success', msg: `Milestone: ${m.pop.toLocaleString('en-US')} people! You can now build ${/^[aeiou]/i.test(m.name) ? 'an' : 'a'} ${m.name.toLowerCase()} (${m.benefits[0].toLowerCase()}). See 🏛 Milestones.` });
+      this.toasts.push({ playerId: p.id, kind: 'success', msg: `Milestone: ${m.pop.toLocaleString('en-US')} people! You can now build ${/^[aeiou]/i.test(m.name) ? 'an' : 'a'} ${milestoneLower(m)}${m.seasonName ? ` in ${m.seasonName}` : ''} (${m.benefits[0].toLowerCase()}). See 🏛 Milestones.` });
     }
 
     // 6. Random fire outbreak: p = BASE * sqrt(zones/30), capped; bigger cities burn more often.
@@ -1142,6 +1148,7 @@ export class Sim {
     if (pollution >= POLLUTION_SEVERE) value--; // heavy smog, close to a coal plant
     if (this.schools.some((sc) => chebyshev(sc, x, y) <= SCHOOL_RANGE)) value++; // a powered school nearby
     if (this.universities.some((u) => chebyshev(u, x, y) <= UNIVERSITY_RANGE)) value++; // a powered university nearby
+    if (this.xmasTrees.some((t) => chebyshev(t, x, y) <= CHRISTMAS_TREE_RANGE)) value++; // a lit Christmas tree nearby
     // Crime (city-wide, from population) hurts lots outside the reach of a powered police station.
     if (this.curCrime >= CRIME_LAND_VALUE_THRESHOLD && !this.policeCovers(x, y)) value--;
     // per-lot jitter so a street of identical conditions still shows different buildings
