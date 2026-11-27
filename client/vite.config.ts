@@ -12,7 +12,9 @@ const buildVersion = `${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, 
 const versionFile = (): Plugin => ({
   name: 'globalcity-version',
   apply: 'build',
-  generateBundle() { this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ version: buildVersion }) + '\n' }); },
+  generateBundle() {
+    this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ version: buildVersion }) + '\n' });
+  },
 });
 
 export default defineConfig(({ command }) => ({

@@ -10,7 +10,7 @@ export function subsolarPoint(ms: number): { lat: number; lon: number } {
   const d = ms / 86_400_000 + 2440587.5 - 2451545.0; // days since J2000.0
   const g = (357.529 + 0.98560028 * d) * RAD; // mean anomaly
   const q = 280.459 + 0.98564736 * d; // mean longitude
-  const L = (q + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * RAD; // ecliptic longitude
+  const L = (q + 1.915 * Math.sin(g) + 0.02 * Math.sin(2 * g)) * RAD; // ecliptic longitude
   const e = (23.439 - 0.00000036 * d) * RAD; // obliquity
   const decl = Math.asin(Math.sin(e) * Math.sin(L));
   const ra = Math.atan2(Math.cos(e) * Math.sin(L), Math.cos(L)) / RAD;
@@ -33,6 +33,7 @@ export function nightLevel(elevation: number): number {
 
 /** Night level at tile (x, y) at time `ms`. */
 export function nightAtTile(x: number, y: number, ms: number, sub = subsolarPoint(ms)): number {
-  const lon = (x / WORLD_W) * 360 - 180, lat = 90 - (y / WORLD_H) * 180;
+  const lon = (x / WORLD_W) * 360 - 180,
+    lat = 90 - (y / WORLD_H) * 180;
   return nightLevel(sunElevation(lat, lon, sub));
 }

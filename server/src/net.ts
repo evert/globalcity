@@ -11,16 +11,50 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { WebSocketServer, WebSocket, type RawData } from 'ws';
 import {
-  WORLD_W, WORLD_H, CHUNK, CHUNKS_X, CHUNKS_Y, MAX_SUBSCRIBED_CHUNKS, TOOLS, LEADERBOARD_PUSH_TICKS,
-  PRESENCE_INTERVAL_MS, PRESENCE_MAX,
-  encodeChunk, inWorld, clamp, Disaster, DISASTERS, DISASTER_COUNT, hazardBit,
-  type ClientMsg, type ServerMsg, type ToolId, type Presence, type SantaTree, SANTA_MIN_TREES,
-  LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, MONUMENT_MIN_POP, STARTING_FUNDS, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT,
+  WORLD_W,
+  WORLD_H,
+  CHUNK,
+  CHUNKS_X,
+  CHUNKS_Y,
+  MAX_SUBSCRIBED_CHUNKS,
+  TOOLS,
+  LEADERBOARD_PUSH_TICKS,
+  PRESENCE_INTERVAL_MS,
+  PRESENCE_MAX,
+  encodeChunk,
+  inWorld,
+  clamp,
+  Disaster,
+  DISASTERS,
+  DISASTER_COUNT,
+  hazardBit,
+  type ClientMsg,
+  type ServerMsg,
+  type ToolId,
+  type Presence,
+  type SantaTree,
+  SANTA_MIN_TREES,
+  LIFELINE_AMOUNT,
+  LIFELINE_MAX_FUNDS,
+  MONUMENT_MIN_POP,
+  STARTING_FUNDS,
+  LIFELINE_EARLY_PEAK_POP,
+  LIFELINE_MAX_DEBT,
 } from '@globalcity/shared';
 import type { MapTiles } from './maptiles.ts';
 import { WorldStatsCounter } from './worldstats.ts';
 import { World, chunkIndex, chunkCoords, type ChunkIndex } from './world.ts';
-import { Players, NAMES_LOCKED_MSG, sanitizeName, sanitizeCityName, refreshMilestoneStats, refreshLifeline, earn, seasonMonth, type PlayerRecord } from './players.ts';
+import {
+  Players,
+  NAMES_LOCKED_MSG,
+  sanitizeName,
+  sanitizeCityName,
+  refreshMilestoneStats,
+  refreshLifeline,
+  earn,
+  seasonMonth,
+  type PlayerRecord,
+} from './players.ts';
 import { Sim, type TickResult, type SimToast } from './sim.ts';
 import { applyBuild, queryTile } from './tools.ts';
 import { Leaderboard } from './leaderboard.ts';
@@ -36,7 +70,14 @@ const VIEW_RATE_PER_SEC = 10;
 const PRESENCE_STALE_MS = 10_000;
 const MAX_ZOOM = 64;
 
-interface View { x: number; y: number; zoom: number; cx?: number; cy?: number; at: number }
+interface View {
+  x: number;
+  y: number;
+  zoom: number;
+  cx?: number;
+  cy?: number;
+  at: number;
+}
 
 interface Client {
   ws: WebSocket;
@@ -113,10 +154,16 @@ export class Net {
     this.devHooks = opts.devHooks ?? false;
     this.mapTiles = opts.mapTiles ?? null;
     world.buildings.onChange = (op, b) => this.broadcast({ t: 'building', op, b });
-    this.admin = new Admin(clientDist, opts.dataDir ?? path.join(repoRoot, 'data/save'),
+    this.admin = new Admin(
+      clientDist,
+      opts.dataDir ?? path.join(repoRoot, 'data/save'),
       (v) => this.broadcast({ t: 'version', version: v }),
-      (a) => { for (const c of this.clients) if (c.player) this.sendAnnouncement(c, a); },
-      (who, amount) => this.adminGrant(who, amount), opts.notify ?? null);
+      (a) => {
+        for (const c of this.clients) if (c.player) this.sendAnnouncement(c, a);
+      },
+      (who, amount) => this.adminGrant(who, amount),
+      opts.notify ?? null,
+    );
     this.notify = opts.notify ?? null;
     this.leaderboard = new Leaderboard(players);
     this.worldStats = new WorldStatsCounter(world, players, sim);
@@ -135,12 +182,18 @@ export class Net {
     this.presenceTimer = setInterval(() => this.presenceTick(), PRESENCE_INTERVAL_MS);
     return new Promise((resolve, reject) => {
       server.once('error', reject);
-      server.listen(port, host, () => { server.off('error', reject); resolve(); });
+      server.listen(port, host, () => {
+        server.off('error', reject);
+        resolve();
+      });
     });
   }
 
   close(): void {
-    if (this.presenceTimer) { clearInterval(this.presenceTimer); this.presenceTimer = null; }
+    if (this.presenceTimer) {
+      clearInterval(this.presenceTimer);
+      this.presenceTimer = null;
+    }
     for (const c of this.clients) c.ws.close(1001, 'server shutting down');
     this.httpServer?.close();
   }
@@ -149,7 +202,9 @@ export class Net {
   private adminGrant(who: { id?: string; name?: string }, amount: number): GrantResult {
     const all = [...this.players.players.values()];
     const matches = who.id
-      ? (who.id.length >= 6 ? all.filter((p) => p.id.startsWith(who.id!)) : [])
+      ? who.id.length >= 6
+        ? all.filter((p) => p.id.startsWith(who.id!))
+        : []
       : all.filter((p) => p.name.toLowerCase() === who.name!.trim().toLowerCase());
     if (matches.length !== 1) return { ok: false, error: `expected exactly one player, found ${matches.length}` };
     const p = matches[0];
@@ -166,12 +221,18 @@ export class Net {
   /** Test servers (DISASTER_TRIGGER=1): a player starts a disaster now, in the city owning chunk cx,cy or in a
    *  random city, ignoring where that disaster can happen and the time since the last one. */
   private onTestDisaster(client: Client, p: PlayerRecord, kind: number, cx?: number, cy?: number): void {
-    if (!DISASTER_TRIGGER) { this.toast(client, 'Disasters can only be started on a test server', 'error'); return; }
+    if (!DISASTER_TRIGGER) {
+      this.toast(client, 'Disasters can only be started on a test server', 'error');
+      return;
+    }
     if (kind < 0 || kind >= DISASTER_COUNT) return;
     let target: PlayerRecord | undefined;
     if (cx !== undefined && cy !== undefined) {
       target = this.players.ownerOf(cx, cy);
-      if (!target || target.monument) { this.toast(client, 'No city here: move the map so a city is in the middle of the screen', 'error'); return; }
+      if (!target || target.monument) {
+        this.toast(client, 'No city here: move the map so a city is in the middle of the screen', 'error');
+        return;
+      }
     }
     const name = DISASTERS[kind as Disaster].name;
     let ok = false;
@@ -186,11 +247,17 @@ export class Net {
         target = pool[Math.floor(Math.random() * pool.length)];
         ok = this.sim.disasters.start(target, kind as Disaster, Date.now());
       }
-      if (!target) { this.toast(client, 'There is no city to strike', 'error'); return; }
+      if (!target) {
+        this.toast(client, 'There is no city to strike', 'error');
+        return;
+      }
     }
     const city = target.cityName || `${target.name}'s city`;
     log(`test disaster by ${p.name}: ${name} in ${city}: ${ok ? 'started' : 'nothing to hit'}`);
-    if (!ok) { this.toast(client, `${name}: nothing it can hit in ${city}`, 'error'); return; }
+    if (!ok) {
+      this.toast(client, `${name}: nothing it can hit in ${city}`, 'error');
+      return;
+    }
     this.broadcast({ t: 'disasters', list: this.sim.disasters.active() });
     for (const t of this.sim.disasters.takeToasts()) this.deliverToast(t);
   }
@@ -210,22 +277,38 @@ export class Net {
   // for at its current version never changes, so it may be cached for good (by browsers and the CDN).
   private serveMap(req: http.IncomingMessage, res: http.ServerResponse, url: URL): void {
     const m = this.mapTiles;
-    if (!m) { res.writeHead(404); res.end(); return; }
+    if (!m) {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
     if (url.pathname === '/map/manifest') {
       const { json, gz } = m.manifest();
       const gzip = /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''));
       const body = gzip ? gz : Buffer.from(json);
-      res.writeHead(200, { 'content-type': 'application/json', 'content-length': body.length, 'cache-control': 'no-cache', ...(gzip ? { 'content-encoding': 'gzip' } : {}) });
+      res.writeHead(200, {
+        'content-type': 'application/json',
+        'content-length': body.length,
+        'cache-control': 'no-cache',
+        ...(gzip ? { 'content-encoding': 'gzip' } : {}),
+      });
       res.end(req.method === 'HEAD' ? undefined : body);
       return;
     }
     const r = /^\/map\/(day|lights)\/(\d+)\/(\d+)\/(\d+)\.png$/.exec(url.pathname);
-    const level = Number(r?.[2]), rx = Number(r?.[3]), ry = Number(r?.[4]);
-    if (!r || !m.valid(level, rx, ry)) { res.writeHead(404); res.end(); return; }
+    const level = Number(r?.[2]),
+      rx = Number(r?.[3]),
+      ry = Number(r?.[4]);
+    if (!r || !m.valid(level, rx, ry)) {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
     const { png, ver } = m.image(r[1] as 'day' | 'lights', level, rx, ry);
     const current = url.searchParams.get('v') === String(ver);
     res.writeHead(200, {
-      'content-type': 'image/png', 'content-length': png.length,
+      'content-type': 'image/png',
+      'content-length': png.length,
       'cache-control': current ? 'public, max-age=31536000, immutable' : 'no-cache',
     });
     res.end(req.method === 'HEAD' ? undefined : png);
@@ -235,7 +318,10 @@ export class Net {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (this.admin.handle(req, res, url.pathname)) return;
     if (this.notify?.handle(req, res, url.pathname)) return;
-    if (url.pathname.startsWith('/map/')) { this.serveMap(req, res, url); return; }
+    if (url.pathname.startsWith('/map/')) {
+      this.serveMap(req, res, url);
+      return;
+    }
     if (url.pathname === '/health') {
       const body = JSON.stringify({
         online: this.onlineCount(),
@@ -247,25 +333,52 @@ export class Net {
       res.end(body);
       return;
     }
-    if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); res.end(); return; }
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      res.writeHead(405);
+      res.end();
+      return;
+    }
     // Licensing files live at the repo root; the client links to /ATTRIBUTION.md.
     const rootFile = ROOT_FILES[url.pathname];
-    if (rootFile) { this.serveFile(req, res, path.join(this.repoRoot, rootFile.file), rootFile.type); return; }
+    if (rootFile) {
+      this.serveFile(req, res, path.join(this.repoRoot, rootFile.file), rootFile.type);
+      return;
+    }
     if (!fs.existsSync(this.clientDist)) {
       res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
       res.end('GlobalCity server is running, but no client build was found (client/dist). Run `npm run build` or use the Vite dev server.');
       return;
     }
     let pathname: string;
-    try { pathname = decodeURIComponent(url.pathname); } catch { res.writeHead(400); res.end(); return; }
+    try {
+      pathname = decodeURIComponent(url.pathname);
+    } catch {
+      res.writeHead(400);
+      res.end();
+      return;
+    }
     let file = path.resolve(this.clientDist, '.' + pathname);
-    if (!file.startsWith(this.clientDist)) { res.writeHead(403); res.end(); return; }
+    if (!file.startsWith(this.clientDist)) {
+      res.writeHead(403);
+      res.end();
+      return;
+    }
     let st = statOrNull(file);
-    if (st?.isDirectory()) { file = path.join(file, 'index.html'); st = statOrNull(file); }
+    if (st?.isDirectory()) {
+      file = path.join(file, 'index.html');
+      st = statOrNull(file);
+    }
     if (!st) {
       // SPA fallback for extension-less routes.
-      if (path.extname(pathname) === '') { file = path.join(this.clientDist, 'index.html'); st = statOrNull(file); }
-      if (!st) { res.writeHead(404, { 'content-type': 'text/plain' }); res.end('Not found'); return; }
+      if (path.extname(pathname) === '') {
+        file = path.join(this.clientDist, 'index.html');
+        st = statOrNull(file);
+      }
+      if (!st) {
+        res.writeHead(404, { 'content-type': 'text/plain' });
+        res.end('Not found');
+        return;
+      }
     }
     const ext = path.extname(file).toLowerCase();
     this.serveFile(req, res, file, MIME[ext] ?? 'application/octet-stream', ext === '.html' ? 'no-cache' : 'public, max-age=3600');
@@ -273,9 +386,16 @@ export class Net {
 
   private serveFile(req: http.IncomingMessage, res: http.ServerResponse, file: string, type: string, cache = 'no-cache'): void {
     const st = statOrNull(file);
-    if (!st || !st.isFile()) { res.writeHead(404, { 'content-type': 'text/plain' }); res.end('Not found'); return; }
+    if (!st || !st.isFile()) {
+      res.writeHead(404, { 'content-type': 'text/plain' });
+      res.end('Not found');
+      return;
+    }
     res.writeHead(200, { 'content-type': type, 'content-length': st.size, 'cache-control': cache });
-    if (req.method === 'HEAD') { res.end(); return; }
+    if (req.method === 'HEAD') {
+      res.end();
+      return;
+    }
     fs.createReadStream(file).pipe(res);
   }
 
@@ -284,23 +404,42 @@ export class Net {
   // ---------------------------------------------------------------------------
   private onConnection(ws: WebSocket): void {
     const client: Client = {
-      ws, player: null, subs: new Set(), buildTokens: BUILD_BURST, lastRefill: Date.now(), droppedAt: 0, clientVersion: '',
-      viewTokens: VIEW_RATE_PER_SEC, viewRefill: Date.now(), lastStatsJson: '', view: null, presenceEmpty: true,
+      ws,
+      player: null,
+      subs: new Set(),
+      buildTokens: BUILD_BURST,
+      lastRefill: Date.now(),
+      droppedAt: 0,
+      clientVersion: '',
+      viewTokens: VIEW_RATE_PER_SEC,
+      viewRefill: Date.now(),
+      lastStatsJson: '',
+      view: null,
+      presenceEmpty: true,
     };
     this.clients.add(client);
     ws.on('message', (data: RawData, isBinary: boolean) => {
       if (isBinary) return;
       let raw: unknown;
-      try { raw = JSON.parse(data.toString()); } catch { return; }
+      try {
+        raw = JSON.parse(data.toString());
+      } catch {
+        return;
+      }
       if (this.devHooks && client.player && this.onDevMessage(client, raw)) return;
       const msg = parseClientMsg(raw);
       if (msg) this.onMessage(client, msg);
     });
     ws.on('close', () => {
-      if (client.player) { client.player.lastSeen = Date.now(); this.players.dirty = true; }
+      if (client.player) {
+        client.player.lastSeen = Date.now();
+        this.players.dirty = true;
+      }
       this.clients.delete(client);
     });
-    ws.on('error', () => { /* close follows */ });
+    ws.on('error', () => {
+      /* close follows */
+    });
   }
 
   private send(client: Client, msg: ServerMsg): void {
@@ -331,19 +470,35 @@ export class Net {
     if (m.t === 'devSetFunds') {
       // {t:'devSetFunds', amount}: set this player's funds (lifeline tests)
       const p = client.player;
-      if (p && isInt(m.amount) && m.amount >= 0) { p.funds = m.amount; p.stats.funds = m.amount; refreshLifeline(p); this.players.dirty = true; this.sendStatsIfChanged(client); }
+      if (p && isInt(m.amount) && m.amount >= 0) {
+        p.funds = m.amount;
+        p.stats.funds = m.amount;
+        refreshLifeline(p);
+        this.players.dirty = true;
+        this.sendStatsIfChanged(client);
+      }
       return true;
     }
     if (m.t === 'devPeak') {
       // {t:'devPeak', pop}: raise this player's peak population (milestone tests)
       const p = client.player;
-      if (p && isInt(m.pop) && m.pop >= 0) { p.peakPop = Math.max(p.peakPop ?? 0, m.pop); refreshMilestoneStats(p); this.players.dirty = true; this.sendStatsIfChanged(client); }
+      if (p && isInt(m.pop) && m.pop >= 0) {
+        p.peakPop = Math.max(p.peakPop ?? 0, m.pop);
+        refreshMilestoneStats(p);
+        this.players.dirty = true;
+        this.sendStatsIfChanged(client);
+      }
       return true;
     }
     if (m.t === 'devRailLink') {
       // {t:'devRailLink'}: mark this player's rail as having reached a neighbour (Grand Central tests)
       const p = client.player;
-      if (p) { p.railLinked = true; refreshMilestoneStats(p); this.players.dirty = true; this.sendStatsIfChanged(client); }
+      if (p) {
+        p.railLinked = true;
+        refreshMilestoneStats(p);
+        this.players.dirty = true;
+        this.sendStatsIfChanged(client);
+      }
       return true;
     }
     if (m.t === 'devPlace') {
@@ -397,20 +552,38 @@ export class Net {
   }
 
   private onMessage(client: Client, msg: ClientMsg): void {
-    if (msg.t === 'hello') { this.onHello(client, msg); return; }
+    if (msg.t === 'hello') {
+      this.onHello(client, msg);
+      return;
+    }
     const p = client.player;
     if (!p) return; // ignore everything before hello
     this.players.touch(p);
     switch (msg.t) {
-      case 'ping': this.send(client, { t: 'pong' }); break;
-      case 'leaderboard': this.send(client, this.leaderboard.messageFor(p)); break;
-      case 'worldStats': this.send(client, { t: 'worldStats', stats: this.worldStats.get(this.onlineCount()) }); break;
-      case 'sub': this.onSub(client, msg.chunks); break;
-      case 'claim': this.onClaim(client, p, msg.cx, msg.cy); break;
-      case 'build': this.onBuild(client, p, msg.tool, msg.x, msg.y); break;
-      case 'view': this.onView(client, msg); break;
+      case 'ping':
+        this.send(client, { t: 'pong' });
+        break;
+      case 'leaderboard':
+        this.send(client, this.leaderboard.messageFor(p));
+        break;
+      case 'worldStats':
+        this.send(client, { t: 'worldStats', stats: this.worldStats.get(this.onlineCount()) });
+        break;
+      case 'sub':
+        this.onSub(client, msg.chunks);
+        break;
+      case 'claim':
+        this.onClaim(client, p, msg.cx, msg.cy);
+        break;
+      case 'build':
+        this.onBuild(client, p, msg.tool, msg.x, msg.y);
+        break;
+      case 'view':
+        this.onView(client, msg);
+        break;
       case 'query':
-        if (inWorld(msg.x, msg.y)) this.send(client, { t: 'query', info: { ...queryTile(this.buildCtx, msg.x, msg.y), elev: this.sim.elevation.at(msg.x, msg.y) } });
+        if (inWorld(msg.x, msg.y))
+          this.send(client, { t: 'query', info: { ...queryTile(this.buildCtx, msg.x, msg.y), elev: this.sim.elevation.at(msg.x, msg.y) } });
         break;
       case 'findFree': {
         const spot = this.players.findFree(msg.cx, msg.cy);
@@ -419,8 +592,14 @@ export class Net {
       }
       case 'rename': {
         const name = sanitizeName(msg.name);
-        if (!name) { this.toast(client, 'Invalid name', 'error'); break; }
-        if (!this.players.rename(p, name)) { this.toast(client, NAMES_LOCKED_MSG, 'error'); break; }
+        if (!name) {
+          this.toast(client, 'Invalid name', 'error');
+          break;
+        }
+        if (!this.players.rename(p, name)) {
+          this.toast(client, NAMES_LOCKED_MSG, 'error');
+          break;
+        }
         this.broadcast({ t: 'claims', claims: this.players.claimInfosOf(p) });
         this.toast(client, `You are now ${name}`, 'success');
         break;
@@ -429,13 +608,23 @@ export class Net {
         refreshLifeline(p);
         if (!p.stats.lifelineAvailable) {
           const owed = p.debt ?? 0;
-          this.toast(client, owed > 0 && (p.peakPop ?? 0) >= LIFELINE_EARLY_PEAK_POP ? 'Repay your current lifeline first'
-            : owed > 0 && owed + LIFELINE_AMOUNT > LIFELINE_MAX_DEBT ? `You already owe $${owed.toLocaleString('en-US')}: the limit is $${LIFELINE_MAX_DEBT.toLocaleString('en-US')}`
-            : p.chunks.length === 0 ? 'Claim a plot first' : `A lifeline is only for cities with less than $${LIFELINE_MAX_FUNDS.toLocaleString('en-US')}`, 'error');
+          this.toast(
+            client,
+            owed > 0 && (p.peakPop ?? 0) >= LIFELINE_EARLY_PEAK_POP
+              ? 'Repay your current lifeline first'
+              : owed > 0 && owed + LIFELINE_AMOUNT > LIFELINE_MAX_DEBT
+                ? `You already owe $${owed.toLocaleString('en-US')}: the limit is $${LIFELINE_MAX_DEBT.toLocaleString('en-US')}`
+                : p.chunks.length === 0
+                  ? 'Claim a plot first'
+                  : `A lifeline is only for cities with less than $${LIFELINE_MAX_FUNDS.toLocaleString('en-US')}`,
+            'error',
+          );
           break;
         }
-        earn(p, 'lifeline', LIFELINE_AMOUNT); p.debt = (p.debt ?? 0) + LIFELINE_AMOUNT;
-        refreshLifeline(p); this.players.dirty = true;
+        earn(p, 'lifeline', LIFELINE_AMOUNT);
+        p.debt = (p.debt ?? 0) + LIFELINE_AMOUNT;
+        refreshLifeline(p);
+        this.players.dirty = true;
         log(`${p.name} (${p.cityName}) took a $${LIFELINE_AMOUNT} lifeline`);
         this.toast(client, `🛟 Lifeline: $${LIFELINE_AMOUNT.toLocaleString('en-US')} added. It is repaid from a quarter of each month's surplus.`, 'success');
         this.sendStatsIfChanged(client);
@@ -447,7 +636,8 @@ export class Net {
           this.toast(client, `Only a city of more than ${min.toLocaleString('en-US')} people can become a monument`, 'error');
           break;
         }
-        const city = p.cityName || `${p.name}'s city`, pop = p.stats.population;
+        const city = p.cityName || `${p.name}'s city`,
+          pop = p.stats.population;
         const m = this.players.makeMonument(p);
         log(`${p.name} retired ${city} (${pop} people, ${m.chunks.length} plots) as a monument; starting over`);
         this.broadcast({ t: 'claims', claims: this.players.claimInfosOf(m) });
@@ -456,12 +646,18 @@ export class Net {
         this.send(client, this.leaderboard.messageFor(p));
         client.lastStatsJson = JSON.stringify(p.stats);
         this.toast(client, `🏛 ${city} is now a monument and will stand forever. Claim a plot anywhere to start a new city.`, 'success');
-        for (const c of this.clients) if (c !== client && c.player) this.toast(c, `🏛 ${p.name} retired ${city} (${pop.toLocaleString('en-US')} people) as a monument`, 'info');
+        for (const c of this.clients)
+          if (c !== client && c.player) this.toast(c, `🏛 ${p.name} retired ${city} (${pop.toLocaleString('en-US')} people) as a monument`, 'info');
         break;
       }
-      case 'testDisaster': this.onTestDisaster(client, p, msg.kind, msg.cx, msg.cy); break;
+      case 'testDisaster':
+        this.onTestDisaster(client, p, msg.kind, msg.cx, msg.cy);
+        break;
       case 'abandon': {
-        if (p.chunks.length === 0) { this.toast(client, 'You have no city to abandon', 'error'); break; }
+        if (p.chunks.length === 0) {
+          this.toast(client, 'You have no city to abandon', 'error');
+          break;
+        }
         const city = p.cityName || `${p.name}'s city`;
         const released = this.players.abandon(p);
         this.sim.clearReleased(released);
@@ -471,14 +667,24 @@ export class Net {
         this.sendDisasters(client);
         this.send(client, this.leaderboard.messageFor(p));
         client.lastStatsJson = JSON.stringify(p.stats);
-        this.toast(client, `You left ${city}. Anyone can claim its plots and everything built on them. Claim a plot anywhere to start again with $${STARTING_FUNDS.toLocaleString('en-US')}.`, 'info');
+        this.toast(
+          client,
+          `You left ${city}. Anyone can claim its plots and everything built on them. Claim a plot anywhere to start again with $${STARTING_FUNDS.toLocaleString('en-US')}.`,
+          'info',
+        );
         break;
       }
       case 'renameCity': {
         const name = sanitizeCityName(msg.name);
-        if (!name) { this.toast(client, 'Invalid city name', 'error'); break; }
+        if (!name) {
+          this.toast(client, 'Invalid city name', 'error');
+          break;
+        }
         const r = this.players.renameCity(p, name);
-        if (!r.ok) { this.toast(client, r.msg, 'error'); break; }
+        if (!r.ok) {
+          this.toast(client, r.msg, 'error');
+          break;
+        }
         if (p.chunks.length > 0) this.broadcast({ t: 'claims', claims: this.players.claimInfosOf(p) });
         this.toast(client, `Your city is now called ${name}`, 'success');
         log(`${p.name} renamed their city to ${name}`);
@@ -512,10 +718,14 @@ export class Net {
     const now = Date.now();
     const active: { id: string; presence: Presence }[] = [];
     for (const c of this.clients) {
-      const p = c.player, v = c.view;
+      const p = c.player,
+        v = c.view;
       if (!p || !v || now - v.at > PRESENCE_STALE_MS || c.ws.readyState !== WebSocket.OPEN) continue;
       const presence: Presence = { id: p.id, name: p.name, cityName: p.cityName, color: p.color, x: v.x, y: v.y, zoom: v.zoom };
-      if (v.cx !== undefined && v.cy !== undefined) { presence.cx = v.cx; presence.cy = v.cy; }
+      if (v.cx !== undefined && v.cy !== undefined) {
+        presence.cx = v.cx;
+        presence.cy = v.cy;
+      }
       active.push({ id: p.id, presence });
       if (active.length >= PRESENCE_MAX + 1) break; // +1: one entry may be the receiver itself
     }
@@ -542,14 +752,18 @@ export class Net {
     if (p.chunks.length > 0) this.sim.initMilestones(p); // a returning mayor of a frozen city sees correct unlocks at once
     client.lastStatsJson = JSON.stringify(p.stats);
     this.send(client, this.welcomeMsg(p));
-        this.sendDisasters(client);
+    this.sendDisasters(client);
     this.send(client, this.leaderboard.messageFor(p));
     this.send(client, this.airportsMsg());
     this.send(client, this.santaMsg());
     this.send(client, this.shippingMsg());
     this.send(client, { t: 'buildings', list: this.world.buildings.list() });
     if (this.admin.version) this.send(client, { t: 'version', version: this.admin.version });
-    if (p.notice) { this.toast(client, p.notice, 'info'); delete p.notice; this.players.dirty = true; }
+    if (p.notice) {
+      this.toast(client, p.notice, 'info');
+      delete p.notice;
+      this.players.dirty = true;
+    }
     const ann = this.admin.active();
     if (ann) this.sendAnnouncement(client, ann);
     log(`${p.name} (${p.id.slice(0, 8)}) connected; online=${this.onlineCount()}`);
@@ -598,10 +812,17 @@ export class Net {
 
   private onClaim(client: Client, p: PlayerRecord, cx: number, cy: number): void {
     const r = this.players.claim(p, cx, cy);
-    if (!r.ok) { this.toast(client, r.msg, 'error'); return; }
+    if (!r.ok) {
+      this.toast(client, r.msg, 'error');
+      return;
+    }
     this.broadcast({ t: 'claim', claim: this.players.claimInfo(cx, cy, p) });
     const took = r.inherited > 0 ? `, with the ${r.inherited === 1 ? 'building' : `${r.inherited} zones and buildings`} already standing there` : '';
-    this.toast(client, r.cost > 0 ? `Claimed chunk ${cx},${cy} for $${r.cost}${took}` : `Welcome, Mayor! You founded your city at chunk ${cx},${cy}${took}`, 'success');
+    this.toast(
+      client,
+      r.cost > 0 ? `Claimed chunk ${cx},${cy} for $${r.cost}${took}` : `Welcome, Mayor! You founded your city at chunk ${cx},${cy}${took}`,
+      'success',
+    );
     this.sendStatsIfChanged(client);
     log(`${p.name} claimed ${cx},${cy} (cost ${r.cost}${r.inherited ? `, ${r.inherited} zones/buildings inherited` : ''})`);
   }
@@ -613,13 +834,19 @@ export class Net {
     client.lastRefill = now;
     if (client.buildTokens < 1) {
       // Say so (at most every 2 s) instead of silently dropping the build.
-      if (now - client.droppedAt > 2000) { client.droppedAt = now; this.toast(client, 'Building too fast; some tiles were skipped', 'info'); }
+      if (now - client.droppedAt > 2000) {
+        client.droppedAt = now;
+        this.toast(client, 'Building too fast; some tiles were skipped', 'info');
+      }
       return;
     }
     client.buildTokens -= 1;
 
     const r = applyBuild(this.buildCtx, p, tool, x, y);
-    if (!r.ok) { this.toast(client, r.msg, r.kind); return; }
+    if (!r.ok) {
+      this.toast(client, r.msg, r.kind);
+      return;
+    }
     if (r.msg) this.toast(client, r.msg, 'info', { x, y });
     this.sendStatsIfChanged(client);
     this.scheduleFlush();
@@ -637,7 +864,10 @@ export class Net {
   private scheduleFlush(): void {
     if (this.flushScheduled) return;
     this.flushScheduled = true;
-    setImmediate(() => { this.flushScheduled = false; this.flushTiles(); });
+    setImmediate(() => {
+      this.flushScheduled = false;
+      this.flushTiles();
+    });
   }
 
   /** Send pending tile updates to each socket, filtered to its subscribed chunks. */
@@ -658,32 +888,54 @@ export class Net {
 
   /** New clients get a banner; old clients (no version in hello) only understand toasts. */
   private sendAnnouncement(c: Client, a: Announcement | null): void {
-    if (c.clientVersion) { this.send(c, a ? { t: 'announce', ...a } : { t: 'announceClear' }); return; }
+    if (c.clientVersion) {
+      this.send(c, a ? { t: 'announce', ...a } : { t: 'announceClear' });
+      return;
+    }
     if (a) this.toast(c, `📣 ${a.msg}`, a.level === 'warn' ? 'error' : 'info');
   }
 
   /** last airports list sent to clients (JSON), so we only broadcast when it changes */
   private airportsJson = '[]';
-  private airportsMsg(): ServerMsg { return { t: 'airports', airports: this.sim.airports, now: Date.now() }; }
+  private airportsMsg(): ServerMsg {
+    return { t: 'airports', airports: this.sim.airports, now: Date.now() };
+  }
   /** Santa's stops (the tops of the Christmas trees) in December once there are enough of them, else none */
   private santaTrees(): SantaTree[] {
     if (seasonMonth() !== 11) return [];
-    const trees = this.world.buildings.list().filter((b) => b.kind === 'christmastree').map((b) => ({ x: b.x + 1, y: b.y }));
+    const trees = this.world.buildings
+      .list()
+      .filter((b) => b.kind === 'christmastree')
+      .map((b) => ({ x: b.x + 1, y: b.y }));
     return trees.length >= SANTA_MIN_TREES ? trees : [];
   }
   private santaJson = '[]';
-  private santaMsg(): ServerMsg { return { t: 'santa', trees: this.santaTrees(), now: Date.now() }; }
+  private santaMsg(): ServerMsg {
+    return { t: 'santa', trees: this.santaTrees(), now: Date.now() };
+  }
   private shippingVersion = -1;
-  private shippingMsg(): ServerMsg { return { t: 'shipping', ports: this.sim.shipping.ports, routes: this.sim.shipping.routes, now: Date.now() }; }
+  private shippingMsg(): ServerMsg {
+    return { t: 'shipping', ports: this.sim.shipping.ports, routes: this.sim.shipping.routes, now: Date.now() };
+  }
 
   afterTick(result: TickResult): void {
     this.broadcast({ t: 'time', time: result.time, online: this.onlineCount() });
     if (result.disasters) this.broadcast({ t: 'disasters', list: result.disasters });
     const aj = JSON.stringify(this.sim.airports);
-    if (aj !== this.airportsJson) { this.airportsJson = aj; this.broadcast(this.airportsMsg()); }
-    const sm = this.santaMsg(), sj = JSON.stringify((sm as { trees: SantaTree[] }).trees);
-    if (sj !== this.santaJson) { this.santaJson = sj; this.broadcast(sm); }
-    if (this.sim.shipping.version !== this.shippingVersion) { this.shippingVersion = this.sim.shipping.version; this.broadcast(this.shippingMsg()); }
+    if (aj !== this.airportsJson) {
+      this.airportsJson = aj;
+      this.broadcast(this.airportsMsg());
+    }
+    const sm = this.santaMsg(),
+      sj = JSON.stringify((sm as { trees: SantaTree[] }).trees);
+    if (sj !== this.santaJson) {
+      this.santaJson = sj;
+      this.broadcast(sm);
+    }
+    if (this.sim.shipping.version !== this.shippingVersion) {
+      this.shippingVersion = this.sim.shipping.version;
+      this.broadcast(this.shippingMsg());
+    }
     for (const u of result.unclaimed) this.broadcast({ t: 'unclaim', cx: u.cx, cy: u.cy });
     if (result.claimsChanged.length > 0) this.broadcast({ t: 'claims', claims: result.claimsChanged });
     for (const c of this.clients) this.sendStatsIfChanged(c);
@@ -697,7 +949,11 @@ export class Net {
 }
 
 function statOrNull(file: string): fs.Stats | null {
-  try { return fs.statSync(file); } catch { return null; }
+  try {
+    return fs.statSync(file);
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -726,28 +982,42 @@ function parseClientMsg(raw: unknown): ClientMsg | null {
       }
       return { t: 'sub', chunks };
     }
-    case 'claim': return isInt(m.cx) && isInt(m.cy) ? { t: 'claim', cx: m.cx, cy: m.cy } : null;
-    case 'findFree': return isNum(m.cx) && isNum(m.cy) ? { t: 'findFree', cx: m.cx, cy: m.cy } : null;
-    case 'query': return isInt(m.x) && isInt(m.y) ? { t: 'query', x: m.x, y: m.y } : null;
+    case 'claim':
+      return isInt(m.cx) && isInt(m.cy) ? { t: 'claim', cx: m.cx, cy: m.cy } : null;
+    case 'findFree':
+      return isNum(m.cx) && isNum(m.cy) ? { t: 'findFree', cx: m.cx, cy: m.cy } : null;
+    case 'query':
+      return isInt(m.x) && isInt(m.y) ? { t: 'query', x: m.x, y: m.y } : null;
     case 'build':
-      return typeof m.tool === 'string' && m.tool in TOOLS && isInt(m.x) && isInt(m.y)
-        ? { t: 'build', tool: m.tool as ToolId, x: m.x, y: m.y }
-        : null;
-    case 'rename': return typeof m.name === 'string' ? { t: 'rename', name: m.name } : null;
-    case 'renameCity': return typeof m.name === 'string' ? { t: 'renameCity', name: m.name } : null;
+      return typeof m.tool === 'string' && m.tool in TOOLS && isInt(m.x) && isInt(m.y) ? { t: 'build', tool: m.tool as ToolId, x: m.x, y: m.y } : null;
+    case 'rename':
+      return typeof m.name === 'string' ? { t: 'rename', name: m.name } : null;
+    case 'renameCity':
+      return typeof m.name === 'string' ? { t: 'renameCity', name: m.name } : null;
     case 'view': {
       if (!isNum(m.x) || !isNum(m.y) || !isNum(m.zoom)) return null;
       const out: ClientMsg = { t: 'view', x: m.x, y: m.y, zoom: m.zoom };
-      if (isNum(m.cx) && isNum(m.cy)) { out.cx = m.cx; out.cy = m.cy; }
+      if (isNum(m.cx) && isNum(m.cy)) {
+        out.cx = m.cx;
+        out.cy = m.cy;
+      }
       return out;
     }
-    case 'leaderboard': return { t: 'leaderboard' };
-    case 'worldStats': return { t: 'worldStats' };
-    case 'lifeline': return { t: 'lifeline' };
-    case 'monument': return { t: 'monument' };
-    case 'abandon': return { t: 'abandon' };
-    case 'testDisaster': return isInt(m.kind) ? { t: 'testDisaster', kind: m.kind, ...(isInt(m.cx) && isInt(m.cy) ? { cx: m.cx, cy: m.cy } : {}) } : null;
-    case 'ping': return { t: 'ping' };
-    default: return null;
+    case 'leaderboard':
+      return { t: 'leaderboard' };
+    case 'worldStats':
+      return { t: 'worldStats' };
+    case 'lifeline':
+      return { t: 'lifeline' };
+    case 'monument':
+      return { t: 'monument' };
+    case 'abandon':
+      return { t: 'abandon' };
+    case 'testDisaster':
+      return isInt(m.kind) ? { t: 'testDisaster', kind: m.kind, ...(isInt(m.cx) && isInt(m.cy) ? { cx: m.cx, cy: m.cy } : {}) } : null;
+    case 'ping':
+      return { t: 'ping' };
+    default:
+      return null;
   }
 }

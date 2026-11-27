@@ -2,12 +2,44 @@
 
 import crypto from 'node:crypto';
 import {
-  STARTING_FUNDS, ABANDON_RECLAIM_DAYS, MAX_MAYOR_NAME, MAX_CITY_NAME, claimCost, minLandToClaim, MIN_LAND_TILES_FIRST_CLAIM, CHUNKS_X, CHUNKS_Y, CHUNK, MAX_CHUNKS_PER_PLAYER, WORLD_W, ZONEBIT,
-  chunkKey, parseChunkKey, colorForId,
-  type PlayerStats, type PlayerPublic, type ClaimInfo, type GameTime, START_YEAR, type BudgetYear, BUDGET_YEARS_SENT,
-  type IncomeLine, type ExpenseLine, type MoneyLine, INCOME_LINES, EXPENSE_LINES, emptyBudgetYear,
-  MILESTONE_BUILDINGS, milestoneUnlocksFor, nextMilestone, seasonalInSeason,
-  LIFELINE_MAX_FUNDS, LIFELINE_REPAY_SHARE, LIFELINE_AMOUNT, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT,
+  STARTING_FUNDS,
+  ABANDON_RECLAIM_DAYS,
+  MAX_MAYOR_NAME,
+  MAX_CITY_NAME,
+  claimCost,
+  minLandToClaim,
+  MIN_LAND_TILES_FIRST_CLAIM,
+  CHUNKS_X,
+  CHUNKS_Y,
+  CHUNK,
+  MAX_CHUNKS_PER_PLAYER,
+  WORLD_W,
+  ZONEBIT,
+  chunkKey,
+  parseChunkKey,
+  colorForId,
+  type PlayerStats,
+  type PlayerPublic,
+  type ClaimInfo,
+  type GameTime,
+  START_YEAR,
+  type BudgetYear,
+  BUDGET_YEARS_SENT,
+  type IncomeLine,
+  type ExpenseLine,
+  type MoneyLine,
+  INCOME_LINES,
+  EXPENSE_LINES,
+  emptyBudgetYear,
+  MILESTONE_BUILDINGS,
+  milestoneUnlocksFor,
+  nextMilestone,
+  seasonalInSeason,
+  LIFELINE_MAX_FUNDS,
+  LIFELINE_REPAY_SHARE,
+  LIFELINE_AMOUNT,
+  LIFELINE_EARLY_PEAK_POP,
+  LIFELINE_MAX_DEBT,
 } from '@globalcity/shared';
 import { World, validChunk } from './world.ts';
 import type { Places } from './places.ts';
@@ -89,8 +121,12 @@ export function budgetStats(p: PlayerRecord, year: number): PlayerStats['budget'
  * whole dollars actually moved. The only things that set funds outright are a fresh start and the
  * dev/test hook.
  */
-export function earn(p: PlayerRecord, line: IncomeLine, amount: number): number { return move(p, line, amount); }
-export function spend(p: PlayerRecord, line: ExpenseLine, amount: number): number { return -move(p, line, -amount); }
+export function earn(p: PlayerRecord, line: IncomeLine, amount: number): number {
+  return move(p, line, amount);
+}
+export function spend(p: PlayerRecord, line: ExpenseLine, amount: number): number {
+  return -move(p, line, -amount);
+}
 function move(p: PlayerRecord, line: MoneyLine, signed: number): number {
   if (!(Math.abs(signed) > 0)) return 0; // nothing, or NaN
   bookOf(p)[line] += Math.abs(signed);
@@ -121,15 +157,22 @@ const FIND_FREE_MAX_RADIUS = 40;
 export function sanitizeName(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
   // eslint-disable-next-line no-control-regex
-  const s = raw.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim().slice(0, MAX_MAYOR_NAME);
+  const s = raw
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
+    .trim()
+    .slice(0, MAX_MAYOR_NAME);
   return s.length > 0 ? s : null;
 }
-
 
 export function sanitizeCityName(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
   // eslint-disable-next-line no-control-regex
-  const s = raw.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').replace(/\s+/g, ' ').trim().slice(0, MAX_CITY_NAME).trim();
+  const s = raw
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_CITY_NAME)
+    .trim();
   return s.length > 0 ? s : null;
 }
 
@@ -140,14 +183,36 @@ export interface PlayersOptions {
 
 export function emptyStats(funds: number): PlayerStats {
   return {
-    funds, population: 0, resPop: 0, comPop: 0, indPop: 0,
-    powerSupply: 0, powerDemand: 0, demand: { r: 0, c: 0, i: 0 }, chunks: 0, lastIncome: 0,
-    powerImported: 0, powerExported: 0, powerTradeNet: 0,
-    fires: 0, fireStations: 0,
-    neighbours: 0, neighbourDemand: { r: 0, c: 0, i: 0 }, railLinks: 0, railDemand: 0,
-    crime: 0, policeStations: 0, specials: { stadium: 0, seaport: 0, airport: 0 }, traffic: 0,
-    peakPop: 0, nextMilestone: MILESTONE_BUILDINGS.cityhall.pop, unlocked: [], built: {}, cityHall: 0,
-    debt: 0, lifelineAvailable: false,
+    funds,
+    population: 0,
+    resPop: 0,
+    comPop: 0,
+    indPop: 0,
+    powerSupply: 0,
+    powerDemand: 0,
+    demand: { r: 0, c: 0, i: 0 },
+    chunks: 0,
+    lastIncome: 0,
+    powerImported: 0,
+    powerExported: 0,
+    powerTradeNet: 0,
+    fires: 0,
+    fireStations: 0,
+    neighbours: 0,
+    neighbourDemand: { r: 0, c: 0, i: 0 },
+    railLinks: 0,
+    railDemand: 0,
+    crime: 0,
+    policeStations: 0,
+    specials: { stadium: 0, seaport: 0, airport: 0 },
+    traffic: 0,
+    peakPop: 0,
+    nextMilestone: MILESTONE_BUILDINGS.cityhall.pop,
+    unlocked: [],
+    built: {},
+    cityHall: 0,
+    debt: 0,
+    lifelineAvailable: false,
     budget: { current: emptyBudgetYear(START_YEAR), years: [] },
   };
 }
@@ -216,7 +281,11 @@ export class Players {
   private neighbourCache = new Map<string, Set<string>>();
   private neighbourCacheVersion = -1;
 
-  constructor(private readonly world: World, private readonly places: Places, opts: PlayersOptions = {}) {
+  constructor(
+    private readonly world: World,
+    private readonly places: Places,
+    opts: PlayersOptions = {},
+  ) {
     this.dayMs = opts.dayMs ?? 86_400_000;
   }
 
@@ -293,7 +362,8 @@ export class Players {
 
   /** Default city name for a city founded on chunk (cx,cy): nearest populated place, made unique. */
   defaultCityName(cx: number, cy: number, except?: PlayerRecord): string {
-    const x = cx * CHUNK + CHUNK / 2, y = cy * CHUNK + CHUNK / 2;
+    const x = cx * CHUNK + CHUNK / 2,
+      y = cy * CHUNK + CHUNK / 2;
     const base = this.places.nearestName(x, y) ?? `Settlement ${cx},${cy}`;
     return this.uniqueCityName(sanitizeCityName(base) ?? `Settlement ${cx},${cy}`, except);
   }
@@ -335,19 +405,26 @@ export class Players {
     if (this.claims.has(key)) {
       return { ok: false, msg: this.claims.get(key) === p.id ? 'You already own this chunk' : 'Chunk already claimed' };
     }
-    if (p.leftPlots && Date.now() >= p.leftPlots.until) { delete p.leftPlots; this.dirty = true; }
+    if (p.leftPlots && Date.now() >= p.leftPlots.until) {
+      delete p.leftPlots;
+      this.dirty = true;
+    }
     if (p.leftPlots?.keys.includes(key)) {
       const days = Math.max(1, Math.ceil((p.leftPlots.until - Date.now()) / this.dayMs));
-      return { ok: false, msg: `You left this plot when you abandoned your city: you can claim it again in ${days} ${days === 1 ? 'day' : 'days'}. Start your new city somewhere else.` };
+      return {
+        ok: false,
+        msg: `You left this plot when you abandoned your city: you can claim it again in ${days} ${days === 1 ? 'day' : 'days'}. Start your new city somewhere else.`,
+      };
     }
     const minLand = minLandToClaim(p.chunks.length);
     if (!this.world.hasEnoughLand(cx, cy, minLand)) {
       const land = this.world.landCount(cx, cy).toLocaleString('en-US');
       return {
         ok: false,
-        msg: p.chunks.length === 0
-          ? `Not enough land here to found a city: a first plot needs at least ${minLand.toLocaleString('en-US')} land tiles, this one has ${land}. Try "Find nearest free plot".`
-          : `Not enough land here: a plot needs at least ${minLand.toLocaleString('en-US')} land tiles, this one has ${land}`,
+        msg:
+          p.chunks.length === 0
+            ? `Not enough land here to found a city: a first plot needs at least ${minLand.toLocaleString('en-US')} land tiles, this one has ${land}. Try "Find nearest free plot".`
+            : `Not enough land here: a plot needs at least ${minLand.toLocaleString('en-US')} land tiles, this one has ${land}`,
       };
     }
     if (p.chunks.length >= MAX_CHUNKS_PER_PLAYER) return { ok: false, msg: `Your city is at the maximum of ${MAX_CHUNKS_PER_PLAYER} plots` };
@@ -425,9 +502,18 @@ export class Players {
     const now = Date.now();
     const m = this.create(p.name);
     Object.assign(m, {
-      cityName: p.cityName, color: p.color, funds: p.funds, chunks: [...p.chunks], stats: { ...p.stats },
-      peakPop: p.peakPop, grandfathered: p.grandfathered, announced: p.announced, railLinked: p.railLinked,
-      namesLocked: true, createdAt: p.createdAt, lastSeen: now,
+      cityName: p.cityName,
+      color: p.color,
+      funds: p.funds,
+      chunks: [...p.chunks],
+      stats: { ...p.stats },
+      peakPop: p.peakPop,
+      grandfathered: p.grandfathered,
+      announced: p.announced,
+      railLinked: p.railLinked,
+      namesLocked: true,
+      createdAt: p.createdAt,
+      lastSeen: now,
       monument: { at: now, population: p.stats.population, founderId: p.id },
     });
     m.token = crypto.randomBytes(16).toString('hex'); // nobody can log in as a monument
@@ -461,7 +547,10 @@ export class Players {
   // ---- neighbours: other players owning a chunk 8-adjacent to one of mine (cached per claimsVersion) ----
 
   neighboursOf(p: PlayerRecord): Set<string> {
-    if (this.neighbourCacheVersion !== this.claimsVersion) { this.neighbourCache.clear(); this.neighbourCacheVersion = this.claimsVersion; }
+    if (this.neighbourCacheVersion !== this.claimsVersion) {
+      this.neighbourCache.clear();
+      this.neighbourCacheVersion = this.claimsVersion;
+    }
     let s = this.neighbourCache.get(p.id);
     if (s) return s;
     s = new Set();
@@ -490,7 +579,8 @@ export class Players {
       for (let dy = -r; dy <= r; dy++) {
         const edgeRow = Math.abs(dy) === r;
         for (let dx = -r; dx <= r; dx += edgeRow ? 1 : 2 * r) {
-          const x = cx + dx, y = cy + dy;
+          const x = cx + dx,
+            y = cy + dy;
           if (!validChunk(x, y) || !this.isClaimable(x, y)) continue;
           const d = dx * dx + dy * dy;
           if (!best || d < best.d) best = { cx: x, cy: y, d };
@@ -502,14 +592,26 @@ export class Players {
   }
 
   claimInfo(cx: number, cy: number, p: PlayerRecord, now = Date.now()): ClaimInfo {
-    const info: ClaimInfo = { cx, cy, ownerId: p.id, ownerName: p.name, cityName: p.cityName, color: p.color, pop: p.stats.population, idleDays: p.monument ? 0 : this.idleDays(p, now) };
+    const info: ClaimInfo = {
+      cx,
+      cy,
+      ownerId: p.id,
+      ownerName: p.name,
+      cityName: p.cityName,
+      color: p.color,
+      pop: p.stats.population,
+      idleDays: p.monument ? 0 : this.idleDays(p, now),
+    };
     if (p.monument) info.monument = true;
     return info;
   }
 
   claimInfosOf(p: PlayerRecord): ClaimInfo[] {
     const now = Date.now();
-    return p.chunks.map((k) => { const c = parseChunkKey(k); return this.claimInfo(c.cx, c.cy, p, now); });
+    return p.chunks.map((k) => {
+      const c = parseChunkKey(k);
+      return this.claimInfo(c.cx, c.cy, p, now);
+    });
   }
 
   allClaims(): ClaimInfo[] {
@@ -550,7 +652,7 @@ export class Players {
       };
       p.stats.funds = p.funds;
       p.stats.chunks = p.chunks.length;
-      if (p.yearBook && typeof p.yearBook.taxes !== 'number' || (p.yearBook as unknown as { upkeep?: unknown })?.upkeep !== undefined) delete p.yearBook; // older book shapes
+      if ((p.yearBook && typeof p.yearBook.taxes !== 'number') || (p.yearBook as unknown as { upkeep?: unknown })?.upkeep !== undefined) delete p.yearBook; // older book shapes
       if (!Array.isArray(p.budgetHistory)) delete p.budgetHistory;
       this.players.set(p.id, p);
       if (!p.cityName && p.chunks.length > 0) unnamed.push(p);

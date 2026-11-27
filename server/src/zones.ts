@@ -3,11 +3,43 @@
 // footprint's top-left for every size (3x3, 4x4, 6x6).
 
 import {
-  LOMASK, ZONEBIT, BULLBIT, PWRBIT, BNCNBIT,
-  FREEZ, RZB, COMCLR, CZB, INDCLR, IZB, HOUSE, HHTHR, RESBASE, HOSPITALBASE, COMBASE, COMLAST, INDBASE, INDLAST,
-  POWERPLANT, NUCLEAR, WINDFARM, OFFSHORE, RADAR0, RADAR7, SMOKEBASE, FOOTBALLGAME2, NUKESWIRL1, NUKESWIRL4,
-  zoneSizeForCenter, resZonePop, comZonePop, indZonePop, inWorld, isZoneTile,
-  isCustomTile, CUSTOM_BUILDINGS,
+  LOMASK,
+  ZONEBIT,
+  BULLBIT,
+  PWRBIT,
+  BNCNBIT,
+  FREEZ,
+  RZB,
+  COMCLR,
+  CZB,
+  INDCLR,
+  IZB,
+  HOUSE,
+  HHTHR,
+  RESBASE,
+  HOSPITALBASE,
+  COMBASE,
+  COMLAST,
+  INDBASE,
+  INDLAST,
+  POWERPLANT,
+  NUCLEAR,
+  WINDFARM,
+  OFFSHORE,
+  RADAR0,
+  RADAR7,
+  SMOKEBASE,
+  FOOTBALLGAME2,
+  NUKESWIRL1,
+  NUKESWIRL4,
+  zoneSizeForCenter,
+  resZonePop,
+  comZonePop,
+  indZonePop,
+  inWorld,
+  isZoneTile,
+  isCustomTile,
+  CUSTOM_BUILDINGS,
 } from '@globalcity/shared';
 import type { World } from './world.ts';
 
@@ -34,8 +66,12 @@ export function zoneKind(centerTile: number): ZoneKind {
 export const isBuildingTile = (v: number): boolean => {
   if (isZoneTile(v)) return true;
   const t = v & LOMASK;
-  return (t >= RADAR0 && t <= RADAR7) || (t >= SMOKEBASE && t <= SMOKEBASE + 7)
-    || (t >= SMOKEBASE + 32 && t <= FOOTBALLGAME2 + 7) || (t >= NUKESWIRL1 && t <= NUKESWIRL4);
+  return (
+    (t >= RADAR0 && t <= RADAR7) ||
+    (t >= SMOKEBASE && t <= SMOKEBASE + 7) ||
+    (t >= SMOKEBASE + 32 && t <= FOOTBALLGAME2 + 7) ||
+    (t >= NUKESWIRL1 && t <= NUKESWIRL4)
+  );
 };
 
 export const isPlantCenter = (v: number): boolean => {
@@ -61,10 +97,14 @@ export function countHouses(world: World, x: number, y: number): number {
 export function zonePop(world: World, x: number, y: number, centerTile: number): number {
   const id = centerTile & LOMASK;
   switch (zoneKind(centerTile)) {
-    case 'res': return id === FREEZ ? countHouses(world, x, y) : resZonePop(id);
-    case 'com': return id === COMCLR ? 0 : comZonePop(id);
-    case 'ind': return id === INDCLR ? 0 : indZonePop(id);
-    default: return 0;
+    case 'res':
+      return id === FREEZ ? countHouses(world, x, y) : resZonePop(id);
+    case 'com':
+      return id === COMCLR ? 0 : comZonePop(id);
+    case 'ind':
+      return id === INDCLR ? 0 : indZonePop(id);
+    default:
+      return 0;
   }
 }
 
@@ -88,7 +128,8 @@ export function findZoneCenter(world: World, x: number, y: number): { cx: number
       if ((v & ZONEBIT) === 0) continue;
       const size = zoneSizeForCenter(v);
       if (size === 0) continue;
-      const ox = cx - 1, oy = cy - 1;
+      const ox = cx - 1,
+        oy = cy - 1;
       if (x >= ox && x < ox + size && y >= oy && y < oy + size) return { cx, cy, size, w: size, h: size };
     }
   }
@@ -99,10 +140,11 @@ export function findZoneCenter(world: World, x: number, y: number): { cx: number
 export function clearFootprint(world: World, z: { cx: number; cy: number; w: number; h: number }, tile: (dx: number, dy: number) => number): void {
   const b = isCustomTile(world.get(z.cx, z.cy)) ? world.buildings.at(z.cx, z.cy) : undefined;
   const keepRow = b ? CUSTOM_BUILDINGS[b.kind]?.railRow : undefined; // a station's track outlives the station
-  for (let dy = 0; dy < z.h; dy++) for (let dx = 0; dx < z.w; dx++) {
-    if (dy === keepRow) continue;
-    world.set(z.cx - 1 + dx, z.cy - 1 + dy, tile(dx, dy));
-  }
+  for (let dy = 0; dy < z.h; dy++)
+    for (let dx = 0; dx < z.w; dx++) {
+      if (dy === keepRow) continue;
+      world.set(z.cx - 1 + dx, z.cy - 1 + dy, tile(dx, dy));
+    }
   if (b) world.buildings.remove(b);
 }
 

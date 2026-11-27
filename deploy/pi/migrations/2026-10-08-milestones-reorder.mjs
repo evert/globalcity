@@ -6,26 +6,44 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const PREVIOUS = { fire: 5000, police: 10000, cityhall: 20000, airport: 35000, school: 50000, seaport: 100000, university: 150000, stadium: 250000, windfarm: 500000, offshore: 1000000 };
+const PREVIOUS = {
+  fire: 5000,
+  police: 10000,
+  cityhall: 20000,
+  airport: 35000,
+  school: 50000,
+  seaport: 100000,
+  university: 150000,
+  stadium: 250000,
+  windfarm: 500000,
+  offshore: 1000000,
+};
 const dir = process.argv[2] ?? 'data/save';
 const dry = process.argv.includes('--dry-run');
 const file = path.join(dir, 'state.json');
 const state = JSON.parse(fs.readFileSync(file, 'utf8'));
 
-let players = 0, kept = 0;
+let players = 0,
+  kept = 0;
 const byBuilding = {};
 for (const p of state.players) {
   const had = Object.keys(PREVIOUS).filter((b) => (p.peakPop ?? 0) >= PREVIOUS[b]);
   if (!had.length) continue;
-  const g = new Set(p.grandfathered ?? []), a = new Set(p.announced ?? []);
+  const g = new Set(p.grandfathered ?? []),
+    a = new Set(p.announced ?? []);
   let added = 0;
   for (const b of had) {
-    if (!g.has(b)) { g.add(b); added++; byBuilding[b] = (byBuilding[b] ?? 0) + 1; }
+    if (!g.has(b)) {
+      g.add(b);
+      added++;
+      byBuilding[b] = (byBuilding[b] ?? 0) + 1;
+    }
     a.add(b);
   }
   p.grandfathered = [...g];
   p.announced = [...a];
-  players++; kept += added;
+  players++;
+  kept += added;
 }
 console.log(`${dry ? '[dry run] ' : ''}${players} players with unlocks; ${kept} unlocks newly grandfathered`);
 console.log('by building:', JSON.stringify(byBuilding));

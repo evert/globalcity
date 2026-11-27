@@ -3,13 +3,24 @@
 
 function hash(str: string, n: number): number {
   let h = 2166136261 ^ n;
-  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
-  h ^= h >>> 13; h = Math.imul(h, 0x5bd1e995); h ^= h >>> 15;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  h ^= h >>> 13;
+  h = Math.imul(h, 0x5bd1e995);
+  h ^= h >>> 15;
   return h >>> 0;
 }
 
 const SHIPS: { kind: string; unit: string; min: number; max: number; goods: string[] }[] = [
-  { kind: 'Container ship', unit: 'containers', min: 800, max: 9000, goods: ['electronics', 'clothing', 'furniture', 'toys', 'machine parts', 'household goods'] },
+  {
+    kind: 'Container ship',
+    unit: 'containers',
+    min: 800,
+    max: 9000,
+    goods: ['electronics', 'clothing', 'furniture', 'toys', 'machine parts', 'household goods'],
+  },
   { kind: 'Bulk carrier', unit: 'tonnes', min: 20000, max: 90000, goods: ['grain', 'iron ore', 'coal', 'timber', 'fertiliser'] },
   { kind: 'Tanker', unit: 'tonnes', min: 30000, max: 120000, goods: ['crude oil', 'diesel', 'liquefied gas'] },
   { kind: 'Car carrier', unit: 'cars', min: 1500, max: 6000, goods: ['new cars'] },
@@ -18,12 +29,17 @@ const SHIPS: { kind: string; unit: string; min: number; max: number; goods: stri
 
 const round = (n: number, step: number): number => Math.max(step, Math.round(n / step) * step);
 
-export interface Cargo { kind: string; amount: number; unit: string; goods: string }
+export interface Cargo {
+  kind: string;
+  amount: number;
+  unit: string;
+  goods: string;
+}
 
 /** Ship type and load for a voyage key. */
 export function shipCargo(key: string): Cargo {
   const t = SHIPS[hash(key, 1) % SHIPS.length];
-  const amount = round(t.min + (hash(key, 2) % 1000) / 1000 * (t.max - t.min), t.unit === 'containers' || t.unit === 'cars' ? 50 : 500);
+  const amount = round(t.min + ((hash(key, 2) % 1000) / 1000) * (t.max - t.min), t.unit === 'containers' || t.unit === 'cars' ? 50 : 500);
   return { kind: t.kind, amount, unit: t.unit, goods: t.goods[hash(key, 3) % t.goods.length] };
 }
 

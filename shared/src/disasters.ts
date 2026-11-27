@@ -4,12 +4,23 @@
 // always a city whose mayor is online, and everyone playing is told. A disaster only touches the plots of the
 // city it strikes.
 
-export enum Disaster { Earthquake = 0, Flood = 1, Tornado = 2, Storm = 3, Wildfire = 4, Blizzard = 5 }
+export enum Disaster {
+  Earthquake = 0,
+  Flood = 1,
+  Tornado = 2,
+  Storm = 3,
+  Wildfire = 4,
+  Blizzard = 5,
+}
 export const DISASTER_COUNT = 6;
 /** hazards.bin bits: the disasters possible in a chunk */
 export const hazardBit = (d: Disaster): number => 1 << d;
 
-export interface DisasterInfo { name: string; emoji: string; verb: string }
+export interface DisasterInfo {
+  name: string;
+  emoji: string;
+  verb: string;
+}
 export const DISASTERS: Record<Disaster, DisasterInfo> = {
   [Disaster.Earthquake]: { name: 'Earthquake', emoji: '🌋', verb: 'An earthquake shook' },
   [Disaster.Flood]: { name: 'Flood', emoji: '🌊', verb: 'Floodwater is rising in' },
@@ -51,4 +62,12 @@ export const inRegions = (regions: readonly [number, number, number, number][], 
   regions.some(([s, n, w, e]) => lat >= s && lat <= n && lon >= w && lon <= e);
 
 /** Active disasters the clients draw (tornadoes move; the others are where they are). */
-export interface ActiveDisaster { id: number; kind: Disaster; x: number; y: number; ownerId: string; city: string; until: number }
+export interface ActiveDisaster {
+  id: number;
+  kind: Disaster;
+  x: number;
+  y: number;
+  ownerId: string;
+  city: string;
+  until: number;
+}

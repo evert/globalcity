@@ -30,23 +30,35 @@ const RESET_NOTIFICATION = {
 
 self.addEventListener('push', (e) => {
   let msg = RESET_NOTIFICATION;
-  try { if (e.data) msg = { ...RESET_NOTIFICATION, ...e.data.json() }; } catch { /* not JSON: use the default */ }
-  e.waitUntil(self.registration.showNotification(msg.title, {
-    body: msg.body,
-    icon: '/icons/icon-192.png',
-    badge: '/icons/badge-96.png',
-    tag: 'world-reset',
-    data: { url: msg.url },
-  }));
+  try {
+    if (e.data) msg = { ...RESET_NOTIFICATION, ...e.data.json() };
+  } catch {
+    /* not JSON: use the default */
+  }
+  e.waitUntil(
+    self.registration.showNotification(msg.title, {
+      body: msg.body,
+      icon: '/icons/icon-192.png',
+      badge: '/icons/badge-96.png',
+      tag: 'world-reset',
+      data: { url: msg.url },
+    }),
+  );
 });
 
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
   const url = new URL(e.notification.data?.url || '/', self.location.origin).href;
-  e.waitUntil((async () => {
-    const open = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    const tab = open.find((c) => new URL(c.url).origin === self.location.origin);
-    if (tab) { await tab.focus(); if ('navigate' in tab) await tab.navigate(url).catch(() => {}); return; }
-    await self.clients.openWindow(url);
-  })());
+  e.waitUntil(
+    (async () => {
+      const open = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      const tab = open.find((c) => new URL(c.url).origin === self.location.origin);
+      if (tab) {
+        await tab.focus();
+        if ('navigate' in tab) await tab.navigate(url).catch(() => {});
+        return;
+      }
+      await self.clients.openWindow(url);
+    })(),
+  );
 });

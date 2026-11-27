@@ -3,7 +3,22 @@
 import * as T from './tiles.ts';
 
 export enum OvClass {
-  Dirt, Water, Trees, Park, Road, Traffic, Rail, Wire, Res, Com, Ind, Civic, Power, Special, Rubble, Fire,
+  Dirt,
+  Water,
+  Trees,
+  Park,
+  Road,
+  Traffic,
+  Rail,
+  Wire,
+  Res,
+  Com,
+  Ind,
+  Civic,
+  Power,
+  Special,
+  Rubble,
+  Fire,
 }
 
 /** RGB per class. Terrain matches the Micropolis tile art; buildings use map-view colours that stay distinct. */
@@ -28,14 +43,15 @@ export const OVERVIEW_PALETTE: readonly (readonly [number, number, number])[] = 
 
 /** Darker "speck" variant used for terrain texture (every few tiles), like the specks in the tile art. */
 export const OVERVIEW_SPECK: readonly (readonly [number, number, number])[] = OVERVIEW_PALETTE.map(([r, g, b], i) =>
-  i === OvClass.Dirt ? [0x99, 0x5c, 0x48] : i === OvClass.Water ? [0x33, 0x33, 0xc8] : i === OvClass.Trees ? [0x00, 0x7f, 0x00] : [r, g, b]);
+  i === OvClass.Dirt ? [0x99, 0x5c, 0x48] : i === OvClass.Water ? [0x33, 0x33, 0xc8] : i === OvClass.Trees ? [0x00, 0x7f, 0x00] : [r, g, b],
+);
 
 export function overviewClass(v: number): OvClass {
   const id = v & T.LOMASK;
   if (id >= T.FIRE && id <= T.LASTFIRE) return OvClass.Fire;
   if (id >= T.FLOOD && id <= T.LASTFLOOD) return OvClass.Water; // floodwater shows as water on the map
   if (id >= T.WATER_LOW && id <= T.WATER_HIGH) return OvClass.Water;
-  if (id >= T.WOODS2 && id <= T.WOODS5 || id === T.FOUNTAIN || (id >= T.FOUNTAIN && id <= T.FOUNTAIN + 3)) return OvClass.Park;
+  if ((id >= T.WOODS2 && id <= T.WOODS5) || id === T.FOUNTAIN || (id >= T.FOUNTAIN && id <= T.FOUNTAIN + 3)) return OvClass.Park;
   if (id >= T.WOODS_LOW && id <= T.WOODS_HIGH) return OvClass.Trees;
   if (id >= T.RUBBLE && id <= T.LASTRUBBLE) return OvClass.Rubble;
   if (id >= T.HTRFBASE && id <= T.LASTROAD) return OvClass.Traffic;
@@ -58,8 +74,8 @@ export function overviewClass(v: number): OvClass {
   // animated building cells (smoke, radar, stadium game, swirl) belong to their buildings
   if (id >= T.COALSMOKE1 && id < T.COALSMOKE4 + 4) return OvClass.Power;
   if (id >= T.NUKESWIRL1 && id <= T.NUKESWIRL4) return OvClass.Power;
-  if (id >= T.SMOKEBASE && id < T.SMOKEBASE + 8 || (id >= 884 && id <= 915)) return OvClass.Ind;
-  if (id >= T.RADAR0 && id <= T.RADAR7 || (id >= T.FOOTBALLGAME1 && id < T.FOOTBALLGAME2 + 8)) return OvClass.Special;
+  if ((id >= T.SMOKEBASE && id < T.SMOKEBASE + 8) || (id >= 884 && id <= 915)) return OvClass.Ind;
+  if ((id >= T.RADAR0 && id <= T.RADAR7) || (id >= T.FOOTBALLGAME1 && id < T.FOOTBALLGAME2 + 8)) return OvClass.Special;
   return OvClass.Dirt;
 }
 

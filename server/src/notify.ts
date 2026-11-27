@@ -27,8 +27,18 @@ const MAX_SUBSCRIPTIONS = 200_000;
 const SEND_CONCURRENCY = 16;
 const APPS = new Set(['android-app', 'android', 'ios', 'desktop', 'other']);
 
-export interface NotifyStats { total: number; sent: number; byApp: Record<string, number>; lastDay: number }
-export interface SendResult { sent: number; failed: number; removed: number; skipped: number }
+export interface NotifyStats {
+  total: number;
+  sent: number;
+  byApp: Record<string, number>;
+  lastDay: number;
+}
+export interface SendResult {
+  sent: number;
+  failed: number;
+  removed: number;
+  skipped: number;
+}
 
 const b64url = (b: Buffer): string => b.toString('base64url');
 
@@ -38,7 +48,10 @@ export class Notify {
   private readonly vapidPrivate: crypto.KeyObject;
   private sending = false;
 
-  constructor(file: string, private readonly allowInsecureEndpoints = false) {
+  constructor(
+    file: string,
+    private readonly allowInsecureEndpoints = false,
+  ) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     this.db = new DatabaseSync(file);
     this.db.exec(`
@@ -55,13 +68,15 @@ export class Notify {
       );
       CREATE INDEX IF NOT EXISTS push_subscriptions_topic ON push_subscriptions (topic);
     `);
-    let pub = this.setting('vapid_public'), priv = this.setting('vapid_private');
+    let pub = this.setting('vapid_public'),
+      priv = this.setting('vapid_private');
     if (!pub || !priv) {
       const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
       const jwk = publicKey.export({ format: 'jwk' });
       pub = b64url(Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x!, 'base64url'), Buffer.from(jwk.y!, 'base64url')]));
       priv = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString();
-      this.setSetting('vapid_public', pub); this.setSetting('vapid_private', priv);
+      this.setSetting('vapid_public', pub);
+      this.setSetting('vapid_private', priv);
       log(`notify: new VAPID key pair in ${file}`);
     }
     this.vapidPublic = pub;
@@ -82,11 +97,17 @@ export class Notify {
     if (v === undefined) return DEFAULT_RESET_AT;
     return v === 'none' ? null : Number(v);
   }
-  set resetAt(at: number | null) { this.setSetting('world_reset_at', at === null ? 'none' : String(at)); }
+  set resetAt(at: number | null) {
+    this.setSetting('world_reset_at', at === null ? 'none' : String(at));
+  }
 
   stats(topic = TOPIC_WORLD_RESET): NotifyStats {
     const byApp: Record<string, number> = {};
-    for (const r of this.db.prepare('SELECT app, COUNT(*) AS n FROM push_subscriptions WHERE topic = ? GROUP BY app').all(topic) as { app: string; n: number }[]) byApp[r.app] = r.n;
+    for (const r of this.db.prepare('SELECT app, COUNT(*) AS n FROM push_subscriptions WHERE topic = ? GROUP BY app').all(topic) as {
+      app: string;
+      n: number;
+    }[])
+      byApp[r.app] = r.n;
     const one = (sql: string, ...a: (string | number)[]): number => (this.db.prepare(sql).get(...a) as { n: number }).n;
     return {
       total: one('SELECT COUNT(*) AS n FROM push_subscriptions WHERE topic = ?', topic),
@@ -105,7 +126,8 @@ export class Notify {
     const app = typeof j?.app === 'string' && APPS.has(j.app) ? j.app : 'other';
     const exists = this.db.prepare('SELECT 1 FROM push_subscriptions WHERE endpoint = ?').get(endpoint);
     if (!exists && this.stats(topic).total >= MAX_SUBSCRIPTIONS) return 'too many subscriptions';
-    this.db.prepare(`INSERT INTO push_subscriptions (endpoint, topic, p256dh, auth, app, created_at) VALUES (?, ?, ?, ?, ?, ?)
+    this.db
+      .prepare(`INSERT INTO push_subscriptions (endpoint, topic, p256dh, auth, app, created_at) VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT (endpoint) DO UPDATE SET topic = excluded.topic, p256dh = excluded.p256dh, auth = excluded.auth, app = excluded.app, sent_at = NULL, last_error = NULL`)
       .run(endpoint, topic, key(j?.keys?.p256dh), key(j?.keys?.auth), app, Date.now());
     return null;
@@ -118,7 +140,11 @@ export class Notify {
   private validEndpoint(s: string): boolean {
     if (s.length > 1024) return false;
     let u: URL;
-    try { u = new URL(s); } catch { return false; }
+    try {
+      u = new URL(s);
+    } catch {
+      return false;
+    }
     if (u.protocol === 'https:') return true;
     return this.allowInsecureEndpoints && u.protocol === 'http:' && (u.hostname === '127.0.0.1' || u.hostname === 'localhost');
   }
@@ -152,10 +178,15 @@ export class Notify {
   /** Notify every subscriber of a topic that hasn't been notified yet (or all of them again with `again`). */
   async sendAll(topic = TOPIC_WORLD_RESET, again = false): Promise<SendResult> {
     const result: SendResult = { sent: 0, failed: 0, removed: 0, skipped: 0 };
-    if (this.sending) { result.skipped = -1; return result; }
+    if (this.sending) {
+      result.skipped = -1;
+      return result;
+    }
     this.sending = true;
     try {
-      const rows = this.db.prepare(`SELECT endpoint FROM push_subscriptions WHERE topic = ?${again ? '' : ' AND sent_at IS NULL'}`).all(topic) as { endpoint: string }[];
+      const rows = this.db.prepare(`SELECT endpoint FROM push_subscriptions WHERE topic = ?${again ? '' : ' AND sent_at IS NULL'}`).all(topic) as {
+        endpoint: string;
+      }[];
       result.skipped = again ? 0 : this.stats(topic).sent;
       const markSent = this.db.prepare('UPDATE push_subscriptions SET sent_at = ?, last_error = NULL WHERE endpoint = ?');
       const markFailed = this.db.prepare('UPDATE push_subscriptions SET last_error = ? WHERE endpoint = ?');
@@ -164,9 +195,16 @@ export class Notify {
         while (next < rows.length) {
           const { endpoint } = rows[next++];
           const r = await this.push(endpoint);
-          if (r === 'ok') { markSent.run(Date.now(), endpoint); result.sent++; }
-          else if (r === 'gone') { this.unsubscribe(endpoint); result.removed++; }
-          else { markFailed.run(r.slice(0, 200), endpoint); result.failed++; }
+          if (r === 'ok') {
+            markSent.run(Date.now(), endpoint);
+            result.sent++;
+          } else if (r === 'gone') {
+            this.unsubscribe(endpoint);
+            result.removed++;
+          } else {
+            markFailed.run(r.slice(0, 200), endpoint);
+            result.failed++;
+          }
         }
       };
       await Promise.all(Array.from({ length: Math.min(SEND_CONCURRENCY, rows.length) }, worker));
@@ -184,18 +222,35 @@ export class Notify {
       res.end(JSON.stringify(body));
     };
     if (pathname === '/api/world-reset') {
-      if (req.method !== 'GET' && req.method !== 'HEAD') { reply(405, { error: 'GET only' }); return true; }
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        reply(405, { error: 'GET only' });
+        return true;
+      }
       reply(200, { at: this.resetAt, vapidKey: this.vapidPublic });
       return true;
     }
     if (pathname !== '/api/notify' && pathname !== '/api/notify/remove') return false;
-    if (req.method !== 'POST') { reply(405, { error: 'POST only' }); return true; }
+    if (req.method !== 'POST') {
+      reply(405, { error: 'POST only' });
+      return true;
+    }
     let body = '';
-    req.on('data', (c) => { body += c; if (body.length > 4096) { reply(413, { error: 'too large' }); req.destroy(); } });
+    req.on('data', (c) => {
+      body += c;
+      if (body.length > 4096) {
+        reply(413, { error: 'too large' });
+        req.destroy();
+      }
+    });
     req.on('end', () => {
       if (res.headersSent) return;
       let j: unknown;
-      try { j = JSON.parse(body); } catch { reply(400, { error: 'invalid JSON' }); return; }
+      try {
+        j = JSON.parse(body);
+      } catch {
+        reply(400, { error: 'invalid JSON' });
+        return;
+      }
       try {
         if (pathname === '/api/notify') {
           const err = this.subscribe(j);

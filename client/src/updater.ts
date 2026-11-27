@@ -11,14 +11,25 @@ export class Updater {
   private lastInput = Date.now();
   private timer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(private readonly current: string, private readonly showBanner: (reload: () => void) => void) {
+  constructor(
+    private readonly current: string,
+    private readonly showBanner: (reload: () => void) => void,
+  ) {
     for (const ev of ['pointerdown', 'keydown', 'wheel', 'touchstart']) {
-      window.addEventListener(ev, () => { this.lastInput = Date.now(); }, { passive: true, capture: true });
+      window.addEventListener(
+        ev,
+        () => {
+          this.lastInput = Date.now();
+        },
+        { passive: true, capture: true },
+      );
     }
     document.addEventListener('visibilitychange', () => this.maybeReload());
   }
 
-  get outdated(): boolean { return !!this.latest && this.current !== 'dev' && this.latest !== this.current; }
+  get outdated(): boolean {
+    return !!this.latest && this.current !== 'dev' && this.latest !== this.current;
+  }
 
   /** Server told us the current build. */
   onVersion(version: string): void {
@@ -27,7 +38,11 @@ export class Updater {
     // Don't loop: if we already reloaded for this exact version and still run an old build (a stale
     // cache somewhere), stop auto-reloading and just offer the button.
     let guarded = false;
-    try { guarded = sessionStorage.getItem(GUARD_KEY) === version; } catch { /* storage blocked */ }
+    try {
+      guarded = sessionStorage.getItem(GUARD_KEY) === version;
+    } catch {
+      /* storage blocked */
+    }
     this.showBanner(() => this.reload());
     if (guarded) return;
     if (!this.maybeReload() && !this.timer) this.timer = setInterval(() => this.maybeReload(), CHECK_MS);
@@ -36,15 +51,26 @@ export class Updater {
   private maybeReload(): boolean {
     if (!this.outdated) return false;
     let guarded = false;
-    try { guarded = sessionStorage.getItem(GUARD_KEY) === this.latest; } catch { /* ignore */ }
+    try {
+      guarded = sessionStorage.getItem(GUARD_KEY) === this.latest;
+    } catch {
+      /* ignore */
+    }
     if (guarded) return false;
     const idle = Date.now() - this.lastInput >= IDLE_MS;
-    if (document.visibilityState === 'hidden' || idle) { this.reload(); return true; }
+    if (document.visibilityState === 'hidden' || idle) {
+      this.reload();
+      return true;
+    }
     return false;
   }
 
   reload(): void {
-    try { sessionStorage.setItem(GUARD_KEY, this.latest); } catch { /* ignore */ }
+    try {
+      sessionStorage.setItem(GUARD_KEY, this.latest);
+    } catch {
+      /* ignore */
+    }
     location.reload();
   }
 }

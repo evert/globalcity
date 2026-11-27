@@ -3,9 +3,18 @@
 
 import WebSocket from 'ws';
 import {
-  DEFAULT_PORT, CHUNK, STARTING_FUNDS, LOMASK,
-  lonLatToTile, chunkOf, decodeChunk, isWater, isTree,
-  type ClientMsg, type ServerMsg, type PlayerStats,
+  DEFAULT_PORT,
+  CHUNK,
+  STARTING_FUNDS,
+  LOMASK,
+  lonLatToTile,
+  chunkOf,
+  decodeChunk,
+  isWater,
+  isTree,
+  type ClientMsg,
+  type ServerMsg,
+  type PlayerStats,
   COAL_POWER,
 } from '@globalcity/shared';
 
@@ -14,7 +23,9 @@ const url = `ws://localhost:${port}/ws`;
 const WAIT_MS = 15_000;
 
 const ws = new WebSocket(url);
-const send = (m: ClientMsg): void => { ws.send(JSON.stringify(m)); };
+const send = (m: ClientMsg): void => {
+  ws.send(JSON.stringify(m));
+};
 
 let chunk: { cx: number; cy: number; tiles: Uint32Array } | null = null;
 let statsCount = 0;
@@ -28,8 +39,13 @@ const waitFor = <T>(pred: () => T | null | undefined | false, label: string, ms 
     const t0 = Date.now();
     const iv = setInterval(() => {
       const v = pred();
-      if (v) { clearInterval(iv); resolve(v); }
-      else if (Date.now() - t0 > ms) { clearInterval(iv); reject(new Error(`timeout waiting for ${label}`)); }
+      if (v) {
+        clearInterval(iv);
+        resolve(v);
+      } else if (Date.now() - t0 > ms) {
+        clearInterval(iv);
+        reject(new Error(`timeout waiting for ${label}`));
+      }
     }, 20);
   });
 
@@ -45,14 +61,31 @@ const welcome = new Promise<Extract<ServerMsg, { t: 'welcome' }>>((resolve) => {
     }
     const msg = JSON.parse(data.toString()) as ServerMsg;
     switch (msg.t) {
-      case 'welcome': ownerId = msg.player.id; resolve(msg); break;
-      case 'stats': statsCount++; lastStats = msg.stats; break;
-      case 'tiles': tileUpdates += msg.u.length / 3; break;
-      case 'toast': toasts.push(`${msg.kind}: ${msg.msg}`); break;
-      case 'freeSpot': freeSpot = msg; break;
-      case 'claim': if (msg.claim.ownerId === ownerId) claimed = msg.claim; break;
-      case 'worldStats': worldStats = msg.stats; break;
-      default: break;
+      case 'welcome':
+        ownerId = msg.player.id;
+        resolve(msg);
+        break;
+      case 'stats':
+        statsCount++;
+        lastStats = msg.stats;
+        break;
+      case 'tiles':
+        tileUpdates += msg.u.length / 3;
+        break;
+      case 'toast':
+        toasts.push(`${msg.kind}: ${msg.msg}`);
+        break;
+      case 'freeSpot':
+        freeSpot = msg;
+        break;
+      case 'claim':
+        if (msg.claim.ownerId === ownerId) claimed = msg.claim;
+        break;
+      case 'worldStats':
+        worldStats = msg.stats;
+        break;
+      default:
+        break;
     }
   });
 });
@@ -67,7 +100,10 @@ function fail(msg: string): never {
 }
 
 async function main(): Promise<void> {
-  await new Promise<void>((res, rej) => { ws.on('open', res); ws.on('error', rej); });
+  await new Promise<void>((res, rej) => {
+    ws.on('open', res);
+    ws.on('error', rej);
+  });
   send({ t: 'hello', name: 'SmokeTester' });
   const w = await welcome;
   console.log(`welcome: player=${w.player.name} funds=${w.stats.funds} claims=${w.claims.length} online=${w.online} time=${w.time.year}-${w.time.month + 1}`);
@@ -88,16 +124,24 @@ async function main(): Promise<void> {
   const { cx, cy } = ch;
 
   // Find a 15x5 rectangle of land (dirt/trees) for: coal plant (4x4) | 2 wires | 3 res zones; road along row 4 below them.
-  const RW = 15, RH = 5;
+  const RW = 15,
+    RH = 5;
   let origin: { x: number; y: number } | null = null;
   outer: for (let oy = 1; oy + RH < CHUNK - 1; oy++) {
     for (let ox = 1; ox + RW < CHUNK - 1; ox++) {
       let ok = true;
-      for (let dy = 0; dy < RH && ok; dy++) for (let dx = 0; dx < RW; dx++) {
-        const v = ch.tiles[(oy + dy) * CHUNK + ox + dx];
-        if (isWater(v)) { ok = false; break; }
+      for (let dy = 0; dy < RH && ok; dy++)
+        for (let dx = 0; dx < RW; dx++) {
+          const v = ch.tiles[(oy + dy) * CHUNK + ox + dx];
+          if (isWater(v)) {
+            ok = false;
+            break;
+          }
+        }
+      if (ok) {
+        origin = { x: cx * CHUNK + ox, y: cy * CHUNK + oy };
+        break outer;
       }
-      if (ok) { origin = { x: cx * CHUNK + ox, y: cy * CHUNK + oy }; break outer; }
     }
   }
   if (!origin) fail('no 15x5 land rectangle in the chunk');
@@ -106,16 +150,20 @@ async function main(): Promise<void> {
 
   // Bulldoze trees in the rectangle first (exercises the bulldozer; zones would auto-bulldoze anyway).
   let dozed = 0;
-  for (let dy = 0; dy < RH; dy++) for (let dx = 0; dx < RW; dx++) {
-    if (isTree(ch.tiles[(Y - cy * CHUNK + dy) * CHUNK + (X - cx * CHUNK + dx)])) { send({ t: 'build', tool: 'bulldozer', x: X + dx, y: Y + dy }); dozed++; }
-  }
+  for (let dy = 0; dy < RH; dy++)
+    for (let dx = 0; dx < RW; dx++) {
+      if (isTree(ch.tiles[(Y - cy * CHUNK + dy) * CHUNK + (X - cx * CHUNK + dx)])) {
+        send({ t: 'build', tool: 'bulldozer', x: X + dx, y: Y + dy });
+        dozed++;
+      }
+    }
   await new Promise((r) => setTimeout(r, 300));
-  send({ t: 'build', tool: 'coal', x: X + 1, y: Y + 1 });          // footprint X..X+3, Y..Y+3
+  send({ t: 'build', tool: 'coal', x: X + 1, y: Y + 1 }); // footprint X..X+3, Y..Y+3
   send({ t: 'build', tool: 'wire', x: X + 4, y: Y + 1 });
   send({ t: 'build', tool: 'wire', x: X + 5, y: Y + 1 });
-  send({ t: 'build', tool: 'residential', x: X + 7, y: Y + 1 });   // X+6..X+8
-  send({ t: 'build', tool: 'residential', x: X + 10, y: Y + 1 });  // X+9..X+11
-  send({ t: 'build', tool: 'residential', x: X + 13, y: Y + 1 });  // X+12..X+14
+  send({ t: 'build', tool: 'residential', x: X + 7, y: Y + 1 }); // X+6..X+8
+  send({ t: 'build', tool: 'residential', x: X + 10, y: Y + 1 }); // X+9..X+11
+  send({ t: 'build', tool: 'residential', x: X + 13, y: Y + 1 }); // X+12..X+14
   for (let dx = 0; dx < RW; dx++) send({ t: 'build', tool: 'road', x: X + dx, y: Y + 4 });
   send({ t: 'query', x: X + 1, y: Y + 1 });
   send({ t: 'ping' });
@@ -124,7 +172,9 @@ async function main(): Promise<void> {
   await new Promise((r) => setTimeout(r, WAIT_MS));
 
   const s = lastStats ?? fail('no stats message received');
-  console.log(`stats: funds=${s.funds} pop=${s.population} resPop=${s.resPop} power=${s.powerDemand}/${s.powerSupply} demand=${JSON.stringify(s.demand)} chunks=${s.chunks}`);
+  console.log(
+    `stats: funds=${s.funds} pop=${s.population} resPop=${s.resPop} power=${s.powerDemand}/${s.powerSupply} demand=${JSON.stringify(s.demand)} chunks=${s.chunks}`,
+  );
   console.log(`tile updates received: ${tileUpdates}; stats messages: ${statsCount}; trees bulldozed: ${dozed}`);
   console.log('toasts:', toasts);
   const expected = STARTING_FUNDS - 3000 - 2 * 5 - 3 * 100 - RW * 10; // minus auto-bulldozing, plus taxes
@@ -138,7 +188,9 @@ async function main(): Promise<void> {
   // the world stats dialog's numbers: this city is in them
   send({ t: 'worldStats' });
   const wst = await waitFor(() => worldStats, 'worldStats');
-  console.log(`world stats: ${wst.cities} cities, ${wst.plots}/${wst.landPlots} plots, ${wst.roads} road tiles, ${wst.plants} plants supplying ${wst.powerSupply}`);
+  console.log(
+    `world stats: ${wst.cities} cities, ${wst.plots}/${wst.landPlots} plots, ${wst.roads} road tiles, ${wst.plants} plants supplying ${wst.powerSupply}`,
+  );
   if (wst.cities < 1 || wst.plots < 1 || wst.landPlots < 1000 || wst.plants < 1 || wst.roads < 1) fail('world stats missing this city');
   console.log('PASS');
   ws.close();

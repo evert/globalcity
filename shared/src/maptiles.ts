@@ -28,7 +28,8 @@ export function mapRegionGrid(level: number): { cols: number; rows: number } {
 }
 /** Pixel size of one region image (the last row/column of a level may be smaller). */
 export function mapRegionSize(level: number, rx: number, ry: number): { w: number; h: number } {
-  const lw = WORLD_W >> level, lh = WORLD_H >> level;
+  const lw = WORLD_W >> level,
+    lh = WORLD_H >> level;
   return { w: Math.min(MAP_REGION, lw - rx * MAP_REGION), h: Math.min(MAP_REGION, lh - ry * MAP_REGION) };
 }
 
@@ -62,7 +63,7 @@ export const MAP_PALETTE: readonly (readonly [number, number, number])[] = (() =
   const p: [number, number, number][] = OVERVIEW_PALETTE.map((c) => [c[0], c[1], c[2]]);
   for (let b = 0; b < BIOME_COUNT; b++) {
     const c = biomeMapColours(b as Biome);
-    const darker = (x: readonly [number, number, number]): [number, number, number] => [x[0] * 0.75 | 0, x[1] * 0.75 | 0, x[2] * 0.75 | 0];
+    const darker = (x: readonly [number, number, number]): [number, number, number] => [(x[0] * 0.75) | 0, (x[1] * 0.75) | 0, (x[2] * 0.75) | 0];
     p.push([...c.ground], [...c.speck], [...c.trees], darker(c.trees));
   }
   p.push([0x66, 0x66, 0xe6], [0x33, 0x33, 0xc8], [...ICE_RGB], [...ICE_SPECK_RGB]);
@@ -86,7 +87,7 @@ export function mapIndex(v: number, terrain: number): number {
   const c = MAP_CLASS_OF_ID[v & LOMASK];
   if (c === OvClass.Dirt) return MAP_TERRAIN_BASE + baseBiome(terrain) * 4;
   if (c === OvClass.Trees) return MAP_TERRAIN_BASE + baseBiome(terrain) * 4 + 2;
-  if (c === OvClass.Water) return (terrain & BASE_WATER) && baseIsFrozen(terrain) ? MAP_ICE : MAP_WATER;
+  if (c === OvClass.Water) return terrain & BASE_WATER && baseIsFrozen(terrain) ? MAP_ICE : MAP_WATER;
   return c;
 }
 
@@ -105,9 +106,16 @@ export function mapPick4(a: number, b: number, c: number, d: number): number {
   const sb = b === a ? 0 : W[b] * (1 + +(c === b) + +(d === b));
   const sc = c === a || c === b ? 0 : W[c] * (1 + +(d === c));
   const sd = d === a || d === b || d === c ? 0 : W[d];
-  let best = a, bs = sa;
-  if (sb > bs) { best = b; bs = sb; }
-  if (sc > bs) { best = c; bs = sc; }
+  let best = a,
+    bs = sa;
+  if (sb > bs) {
+    best = b;
+    bs = sb;
+  }
+  if (sc > bs) {
+    best = c;
+    bs = sc;
+  }
   if (sd > bs) best = d;
   return best;
 }
@@ -127,8 +135,9 @@ export const MAP_LIGHTS: Partial<Record<OvClass, { rgb: [number, number, number]
   [OvClass.Fire]: { rgb: [255, 120, 40], share: 1, alpha: 255 },
 };
 /** Deterministic pattern of which tiles of a class are lit. */
-export const mapLitAt = (x: number, y: number, share: number): boolean => ((((x * 2654435761) ^ (y * 2246822519)) >>> 0) % 1000) < share * 1000;
-export const MAP_GLOW_BASE = 32, MAP_GLOW_STEPS = 16;
+export const mapLitAt = (x: number, y: number, share: number): boolean => (((x * 2654435761) ^ (y * 2246822519)) >>> 0) % 1000 < share * 1000;
+export const MAP_GLOW_BASE = 32,
+  MAP_GLOW_STEPS = 16;
 export const MAP_LIGHTS_PALETTE: readonly (readonly [number, number, number, number])[] = (() => {
   const p: [number, number, number, number][] = Array.from({ length: MAP_GLOW_BASE + MAP_GLOW_STEPS }, () => [0, 0, 0, 0]);
   for (const [c, L] of Object.entries(MAP_LIGHTS)) if (L) p[1 + Number(c)] = [...L.rgb, L.alpha];

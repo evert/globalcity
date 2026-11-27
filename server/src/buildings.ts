@@ -4,7 +4,10 @@
 // lookups are O(1). Persisted to <save dir>/buildings.json.
 import { WORLD_W, CUSTOM_BUILDINGS, type CustomBuilding } from '@globalcity/shared';
 
-export interface PlacedBuilding extends CustomBuilding { w: number; h: number }
+export interface PlacedBuilding extends CustomBuilding {
+  w: number;
+  h: number;
+}
 
 export class Buildings {
   private readonly byAnchor = new Map<number, PlacedBuilding>(); // key: y*WORLD_W+x of the top-left tile
@@ -13,7 +16,9 @@ export class Buildings {
   /** called on add/remove (the network layer broadcasts it) */
   onChange: (op: 'add' | 'remove', b: CustomBuilding) => void = () => {};
 
-  get size(): number { return this.byAnchor.size; }
+  get size(): number {
+    return this.byAnchor.size;
+  }
 
   add(kind: string, x: number, y: number): PlacedBuilding {
     const def = CUSTOM_BUILDINGS[kind];
@@ -41,14 +46,17 @@ export class Buildings {
     this.onChange('remove', { kind: b.kind, x: b.x, y: b.y });
   }
 
-  list(): CustomBuilding[] { return [...this.byAnchor.values()].map(({ kind, x, y }) => ({ kind, x, y })); }
+  list(): CustomBuilding[] {
+    return [...this.byAnchor.values()].map(({ kind, x, y }) => ({ kind, x, y }));
+  }
 
   load(list: CustomBuilding[]): void {
-    for (const b of list) if (CUSTOM_BUILDINGS[b.kind] && Number.isInteger(b.x) && Number.isInteger(b.y)) {
-      const def = CUSTOM_BUILDINGS[b.kind];
-      const key = b.y * WORLD_W + b.x;
-      this.byAnchor.set(key, { ...b, w: def.w, h: def.h });
-      for (let dy = 0; dy < def.h; dy++) for (let dx = 0; dx < def.w; dx++) this.cover.set((b.y + dy) * WORLD_W + b.x + dx, key);
-    }
+    for (const b of list)
+      if (CUSTOM_BUILDINGS[b.kind] && Number.isInteger(b.x) && Number.isInteger(b.y)) {
+        const def = CUSTOM_BUILDINGS[b.kind];
+        const key = b.y * WORLD_W + b.x;
+        this.byAnchor.set(key, { ...b, w: def.w, h: def.h });
+        for (let dy = 0; dy < def.h; dy++) for (let dx = 0; dx < def.w; dx++) this.cover.set((b.y + dy) * WORLD_W + b.x + dx, key);
+      }
   }
 }

@@ -1,8 +1,50 @@
 // DOM overlay: top bar, toolbar, RCI, toasts, query popover, welcome/about panels, minimap widget.
 import type { BudgetYear, ClaimInfo, Demand, LeaderboardEntry, MonumentEntry, QueryInfo, ToolId } from '@globalcity/shared';
 import { OVERLAY_INFO, OVERLAY_MODES, type OverlayMode } from './overlays.ts';
-import { budgetTotals, MONUMENT_MIN_POP, ABANDON_MAX_FUNDS, ABANDON_RECLAIM_DAYS, MAX_MAYOR_NAME, MAX_CITY_NAME, STARTING_FUNDS, LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, LIFELINE_REPAY_SHARE, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT, LOMASK, FIRESTBASE, POLICESTBASE, CITYHALLBASE, LASTCITYHALL, chunkKey, shipCargo, flightLoad } from '@globalcity/shared';
-import { CHUNK, claimCost, chunkLandCount, minLandToClaim, MILESTONE_BUILDINGS, MILESTONE_ORDER, isMilestoneTool, nextMilestone, type MilestoneBuilding, MAX_CHUNKS_PER_PLAYER, POWER_PRICE_PER_UNIT, TOOLS, TOOL_ORDER, PLANT_OUTPUT, CUSTOM_BUILDINGS, GRAND_CENTRAL, WORLD_H, WORLD_W, chunkOf, lonLatToTile } from '@globalcity/shared';
+import {
+  budgetTotals,
+  MONUMENT_MIN_POP,
+  ABANDON_MAX_FUNDS,
+  ABANDON_RECLAIM_DAYS,
+  MAX_MAYOR_NAME,
+  MAX_CITY_NAME,
+  STARTING_FUNDS,
+  LIFELINE_AMOUNT,
+  LIFELINE_MAX_FUNDS,
+  LIFELINE_REPAY_SHARE,
+  LIFELINE_EARLY_PEAK_POP,
+  LIFELINE_MAX_DEBT,
+  LOMASK,
+  FIRESTBASE,
+  POLICESTBASE,
+  CITYHALLBASE,
+  LASTCITYHALL,
+  chunkKey,
+  shipCargo,
+  flightLoad,
+} from '@globalcity/shared';
+import {
+  CHUNK,
+  claimCost,
+  chunkLandCount,
+  minLandToClaim,
+  MILESTONE_BUILDINGS,
+  MILESTONE_ORDER,
+  isMilestoneTool,
+  nextMilestone,
+  type MilestoneBuilding,
+  MAX_CHUNKS_PER_PLAYER,
+  POWER_PRICE_PER_UNIT,
+  TOOLS,
+  TOOL_ORDER,
+  PLANT_OUTPUT,
+  CUSTOM_BUILDINGS,
+  GRAND_CENTRAL,
+  WORLD_H,
+  WORLD_W,
+  chunkOf,
+  lonLatToTile,
+} from '@globalcity/shared';
 import { DISASTERS, DISASTER_COUNT, Disaster, type WorldStats } from '@globalcity/shared';
 import type { Actions } from './actions.ts';
 import type { Minimap, SpriteSheet } from './assets.ts';
@@ -20,7 +62,18 @@ const TOOL_GROUPS: { id: string; name: string; members: ToolId[] }[] = [
   { id: 'education', name: 'Education', members: ['school', 'university'] },
   { id: 'ports', name: 'Ports', members: ['seaport', 'airport'] },
 ];
-interface ToolGroupUi { def: (typeof TOOL_GROUPS)[number]; wrap: HTMLElement; head: HTMLButtonElement; icon: HTMLCanvasElement; label: HTMLElement; cost: HTMLElement; flyout: HTMLElement; grouped: boolean | null; last: ToolId | null; shown: ToolId | null }
+interface ToolGroupUi {
+  def: (typeof TOOL_GROUPS)[number];
+  wrap: HTMLElement;
+  head: HTMLButtonElement;
+  icon: HTMLCanvasElement;
+  label: HTMLElement;
+  cost: HTMLElement;
+  flyout: HTMLElement;
+  grouped: boolean | null;
+  last: ToolId | null;
+  shown: ToolId | null;
+}
 
 /** Price for a toolbar label; power plants add how many zones they power. */
 const priceLabel = (id: ToolId): string => `${fmtMoney(TOOLS[id].cost)}${PLANT_OUTPUT[id] ? ` · ⚡${PLANT_OUTPUT[id]}` : ''}`;
@@ -28,8 +81,11 @@ const priceLabel = (id: ToolId): string => `${fmtMoney(TOOLS[id].cost)}${PLANT_O
 /** Draw a custom building's image (its first frame, when animated) centred in a px x px square. */
 function drawCustomFit(g: CanvasRenderingContext2D, img: HTMLImageElement, kind: string, px: number): void {
   const frames = CUSTOM_BUILDINGS[kind]?.frames ?? 1;
-  const fw = img.naturalWidth / frames, fh = img.naturalHeight;
-  const s = Math.min(px / fw, px / fh), w = fw * s, h = fh * s;
+  const fw = img.naturalWidth / frames,
+    fh = img.naturalHeight;
+  const s = Math.min(px / fw, px / fh),
+    w = fw * s,
+    h = fh * s;
   g.drawImage(img, 0, 0, fw, fh, (px - w) / 2, (px - h) / 2, w, h);
 }
 
@@ -38,7 +94,12 @@ function milestoneCell(pct: number | undefined): HTMLElement {
   if (pct === undefined) return el('span', { class: 'ms' });
   const fill = el('i', { class: 'lbms-fill' });
   fill.style.width = `${Math.max(0, Math.min(100, pct))}%`;
-  return el('span', { class: `ms${pct >= 100 ? ' full' : ''}`, title: `${pct}% of milestones unlocked` }, el('b', { text: `${pct}%` }), el('span', { class: 'lbms-bar' }, fill));
+  return el(
+    'span',
+    { class: `ms${pct >= 100 ? ' full' : ''}`, title: `${pct}% of milestones unlocked` },
+    el('b', { text: `${pct}%` }),
+    el('span', { class: 'lbms-bar' }, fill),
+  );
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -61,7 +122,10 @@ export function trafficLabel(t: number): '' | 'light' | 'moderate' | 'heavy' {
 }
 
 export type ToastKind = 'info' | 'error' | 'success';
-export interface ToastAt { x: number; y: number }
+export interface ToastAt {
+  x: number;
+  y: number;
+}
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, string> = {}, ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -78,12 +142,17 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string,
 /** Community Discord invite (top bar, welcome panel, about panel). */
 export const DISCORD_URL = 'https://discord.gg/xgtC47ux4z';
 /** Discord's logo mark (path from Simple Icons, CC0). Used only to link to our Discord server. */
-const DISCORD_SVG_PATH = 'M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z';
+const DISCORD_SVG_PATH =
+  'M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z';
 function discordIcon(): SVGSVGElement {
   const NS = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(NS, 'svg');
-  svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('class', 'discord-icon');
-  const path = document.createElementNS(NS, 'path'); path.setAttribute('d', DISCORD_SVG_PATH); path.setAttribute('fill', 'currentColor');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('class', 'discord-icon');
+  const path = document.createElementNS(NS, 'path');
+  path.setAttribute('d', DISCORD_SVG_PATH);
+  path.setAttribute('fill', 'currentColor');
   svg.appendChild(path);
   return svg;
 }
@@ -101,44 +170,97 @@ export function fmtMoney(n: number): string {
   const s = Math.abs(Math.round(n)).toLocaleString('en-US');
   return (n < 0 ? '-$' : '$') + s;
 }
-export function fmtDate(year: number, month: number): string { return `${MONTHS[((month % 12) + 12) % 12]} ${year}`; }
+export function fmtDate(year: number, month: number): string {
+  return `${MONTHS[((month % 12) + 12) % 12]} ${year}`;
+}
 
 export class UI {
   readonly root: HTMLElement;
-  private funds!: HTMLElement; private pop!: HTMLElement; private date!: HTMLElement; private online!: HTMLElement; private worldPop!: HTMLElement; private lbWorld!: HTMLElement;
-  private nameBtn!: HTMLButtonElement; private cityNameBtn!: HTMLButtonElement; private plots!: HTMLElement; private plotsStat!: HTMLElement;
-  private status!: HTMLElement; private offline!: HTMLElement;
-  private claimBtn!: HTMLButtonElement; private findBtn!: HTMLButtonElement; private cityBtn!: HTMLButtonElement; private worldBtn!: HTMLButtonElement;
+  private funds!: HTMLElement;
+  private pop!: HTMLElement;
+  private date!: HTMLElement;
+  private online!: HTMLElement;
+  private worldPop!: HTMLElement;
+  private lbWorld!: HTMLElement;
+  private nameBtn!: HTMLButtonElement;
+  private cityNameBtn!: HTMLButtonElement;
+  private plots!: HTMLElement;
+  private plotsStat!: HTMLElement;
+  private status!: HTMLElement;
+  private offline!: HTMLElement;
+  private claimBtn!: HTMLButtonElement;
+  private findBtn!: HTMLButtonElement;
+  private cityBtn!: HTMLButtonElement;
+  private worldBtn!: HTMLButtonElement;
   private toolButtons = new Map<ToolId, HTMLButtonElement>();
   private toolGroups: ToolGroupUi[] = [];
   private openGroup: ToolGroupUi | null = null;
   private autoOverlay: OverlayMode | null = null; // map view opened by clicking a station
-  private rciBars!: Record<'r' | 'c' | 'i', HTMLElement>; private rciBoost!: Record<'r' | 'c' | 'i', HTMLElement>;
-  private powerText!: HTMLElement; private tradeText!: HTMLElement; private neighbourText!: HTMLElement; private budgetText!: HTMLElement;
-  private crimeText!: HTMLElement; private trafficText!: HTMLElement; private trafficWord!: HTMLElement; private trafficFill!: HTMLElement;
-  private toasts!: HTMLElement; private lastToast: { msg: string; kind: ToastKind; el: HTMLElement; at: number; timer: ReturnType<typeof setTimeout> } | null = null;
-  private lifelineBtn!: HTMLButtonElement; private lifelinePanel!: HTMLElement;
-  private monumentBtn!: HTMLButtonElement; private monumentPanel!: HTMLElement; private monumentCity!: HTMLElement;
+  private rciBars!: Record<'r' | 'c' | 'i', HTMLElement>;
+  private rciBoost!: Record<'r' | 'c' | 'i', HTMLElement>;
+  private powerText!: HTMLElement;
+  private tradeText!: HTMLElement;
+  private neighbourText!: HTMLElement;
+  private budgetText!: HTMLElement;
+  private crimeText!: HTMLElement;
+  private trafficText!: HTMLElement;
+  private trafficWord!: HTMLElement;
+  private trafficFill!: HTMLElement;
+  private toasts!: HTMLElement;
+  private lastToast: { msg: string; kind: ToastKind; el: HTMLElement; at: number; timer: ReturnType<typeof setTimeout> } | null = null;
+  private lifelineBtn!: HTMLButtonElement;
+  private lifelinePanel!: HTMLElement;
+  private monumentBtn!: HTMLButtonElement;
+  private monumentPanel!: HTMLElement;
+  private monumentCity!: HTMLElement;
   private abandonBtn!: HTMLButtonElement;
   /** the mayor dialog (behind the mayor name): rename the mayor and the city, and abandon the city to start over */
-  private mayorPanel!: HTMLElement; private mayorName!: HTMLInputElement; private mayorCity!: HTMLInputElement; private mayorCityRow!: HTMLElement;
-  private mayorStart!: HTMLElement; private mayorStartText!: HTMLElement; private mayorAbandonBtn!: HTMLButtonElement;
+  private mayorPanel!: HTMLElement;
+  private mayorName!: HTMLInputElement;
+  private mayorCity!: HTMLInputElement;
+  private mayorCityRow!: HTMLElement;
+  private mayorStart!: HTMLElement;
+  private mayorStartText!: HTMLElement;
+  private mayorAbandonBtn!: HTMLButtonElement;
   /** when this mayor last abandoned their city: the plots it releases are not "released after inactivity" */
   private abandonedAt = 0;
-  private mayorConfirm!: HTMLElement; private mayorConfirmList!: HTMLElement; private mayorMonumentBtn!: HTMLButtonElement; private mayorConfirmBtn!: HTMLButtonElement;
-  private budgetBtn!: HTMLButtonElement; private budgetPanel!: HTMLElement; private budgetTable!: HTMLElement;
-  private milestones!: HTMLElement; private msRows!: HTMLElement; private msBtn!: HTMLButtonElement;
-  private leaderboard!: HTMLElement; private lbRows!: HTMLElement; private lbMe!: HTMLElement; private lbBtn!: HTMLButtonElement;
+  private mayorConfirm!: HTMLElement;
+  private mayorConfirmList!: HTMLElement;
+  private mayorMonumentBtn!: HTMLButtonElement;
+  private mayorConfirmBtn!: HTMLButtonElement;
+  private budgetBtn!: HTMLButtonElement;
+  private budgetPanel!: HTMLElement;
+  private budgetTable!: HTMLElement;
+  private milestones!: HTMLElement;
+  private msRows!: HTMLElement;
+  private msBtn!: HTMLButtonElement;
+  private leaderboard!: HTMLElement;
+  private lbRows!: HTMLElement;
+  private lbMe!: HTMLElement;
+  private lbBtn!: HTMLButtonElement;
   /** the Top cities panel has two pages: the ranking and the monuments */
-  private lbTitle!: HTMLElement; private lbPageBtn!: HTMLButtonElement; private lbView!: HTMLElement; private monView!: HTMLElement; private monRows!: HTMLElement;
-  private fireBtn!: HTMLButtonElement; private fireCycle = 0;
-  private query!: HTMLElement; private queryPos = { x: 0, y: 0 }; private queryTimer: ReturnType<typeof setTimeout> | null = null; private queryPending = false;
-  private welcome!: HTMLElement; private welcomeStatus!: HTMLElement; private welcomeDismissed = false; private welcomeMode: 'idle' | 'locating' | 'pick' = 'idle';
+  private lbTitle!: HTMLElement;
+  private lbPageBtn!: HTMLButtonElement;
+  private lbView!: HTMLElement;
+  private monView!: HTMLElement;
+  private monRows!: HTMLElement;
+  private fireBtn!: HTMLButtonElement;
+  private fireCycle = 0;
+  private query!: HTMLElement;
+  private queryPos = { x: 0, y: 0 };
+  private queryTimer: ReturnType<typeof setTimeout> | null = null;
+  private queryPending = false;
+  private welcome!: HTMLElement;
+  private welcomeStatus!: HTMLElement;
+  private welcomeDismissed = false;
+  private welcomeMode: 'idle' | 'locating' | 'pick' = 'idle';
   /** we saw this player with zero plots this session, so the next plot is a founding */
-  private sawNoPlots = false; private foundedToastShown = false;
+  private sawNoPlots = false;
+  private foundedToastShown = false;
   private discordInvite!: HTMLElement;
   private about!: HTMLElement;
-  private mini!: HTMLCanvasElement; private miniDirty = true;
+  private mini!: HTMLCanvasElement;
+  private miniDirty = true;
 
   constructor(
     readonly state: AppState,
@@ -188,7 +310,12 @@ export class UI {
     this.cityNameBtn = el('button', { class: 'btn ghost city hidden', id: 'cityNameBtn', title: 'Your city — click to rename' }, '');
     this.cityNameBtn.onclick = () => this.toggleMayor('city');
     this.plots = el('span', { class: 'val', text: `0/${MAX_CHUNKS_PER_PLAYER}` });
-    this.plotsStat = el('div', { class: 'stat hidden', id: 'plots', title: `Plots claimed (a city is at most ${MAX_CHUNKS_PER_PLAYER} plots)` }, el('span', { class: 'ico' }, 'Plots'), this.plots);
+    this.plotsStat = el(
+      'div',
+      { class: 'stat hidden', id: 'plots', title: `Plots claimed (a city is at most ${MAX_CHUNKS_PER_PLAYER} plots)` },
+      el('span', { class: 'ico' }, 'Plots'),
+      this.plots,
+    );
     this.claimBtn = el('button', { class: 'btn primary hidden', id: 'claimBtn' }, 'Claim this plot');
     this.claimBtn.onclick = () => this.claimCenter();
     this.findBtn = el('button', { class: 'btn hidden', id: 'findBtn', title: 'Ask the server for the nearest free plot' }, 'Find free plot');
@@ -203,11 +330,27 @@ export class UI {
     this.budgetBtn.onclick = () => this.toggleBudget();
     this.lbBtn = el('button', { class: 'btn', id: 'lbBtn', title: 'Leaderboard: the most populous cities on the planet' }, '🏆 Top cities');
     this.lbBtn.onclick = () => this.toggleLeaderboard();
-    this.lifelineBtn = el('button', { class: 'btn lifeline hidden', id: 'lifelineBtn', title: 'Your city is nearly broke: an emergency loan is available' }, '🛟 Lifeline');
+    this.lifelineBtn = el(
+      'button',
+      { class: 'btn lifeline hidden', id: 'lifelineBtn', title: 'Your city is nearly broke: an emergency loan is available' },
+      '🛟 Lifeline',
+    );
     this.lifelineBtn.onclick = () => this.toggleLifeline();
-    this.monumentBtn = el('button', { class: 'btn hidden', id: 'monumentBtn', title: `Your city has over ${MONUMENT_MIN_POP.toLocaleString('en-US')} people: you can retire it as a monument and start over` }, '🏛 Monument');
+    this.monumentBtn = el(
+      'button',
+      {
+        class: 'btn hidden',
+        id: 'monumentBtn',
+        title: `Your city has over ${MONUMENT_MIN_POP.toLocaleString('en-US')} people: you can retire it as a monument and start over`,
+      },
+      '🏛 Monument',
+    );
     this.monumentBtn.onclick = () => this.toggleMonument();
-    this.abandonBtn = el('button', { class: 'btn hidden', id: 'abandonBtn', title: 'Your city is broke and already used its lifeline: you can abandon it and start over' }, '🏳 Abandon city');
+    this.abandonBtn = el(
+      'button',
+      { class: 'btn hidden', id: 'abandonBtn', title: 'Your city is broke and already used its lifeline: you can abandon it and start over' },
+      '🏳 Abandon city',
+    );
     this.abandonBtn.onclick = () => this.toggleMayor('abandon');
     this.fireBtn = el('button', { class: 'btn fire hidden', id: 'fireBtn', title: 'Your city is burning! Click to jump to the next fire.' }, '🔥 0 fires');
     this.fireBtn.onclick = () => this.nextFire();
@@ -217,19 +360,50 @@ export class UI {
     discordBtn.title = 'Join the GlobalCity Discord: chat with other mayors, report bugs, suggest features';
     const aboutBtn = el('button', { class: 'btn ghost round', id: 'aboutBtn', title: 'About & attribution' }, 'ⓘ');
     aboutBtn.onclick = () => this.toggle(this.about);
-    const fundsStat = el('div', { class: 'stat clickable', id: 'fundsStat', title: 'Funds — click for the budget' }, el('span', { class: 'ico' }, '💵'), this.funds);
+    const fundsStat = el(
+      'div',
+      { class: 'stat clickable', id: 'fundsStat', title: 'Funds — click for the budget' },
+      el('span', { class: 'ico' }, '💵'),
+      this.funds,
+    );
     fundsStat.onclick = () => this.toggleBudget();
-    const bar = el('div', { id: 'topbar' },
+    const bar = el(
+      'div',
+      { id: 'topbar' },
       el('div', { class: 'brand' }, 'GlobalCity'),
       fundsStat,
       el('div', { class: 'stat', title: 'Population' }, el('span', { class: 'ico' }, '👥'), this.pop),
       el('div', { class: 'stat', title: 'Date' }, el('span', { class: 'ico' }, '📅'), this.date),
       el('div', { class: 'stat', title: 'Players online' }, el('span', { class: 'ico online-dot' }, '●'), this.online),
-      this.worldPopStat = el('div', { class: 'stat world-pop clickable', title: 'World population: every city on the planet combined. Click for the world stats', role: 'button', tabindex: '0' }, el('span', { class: 'ico' }, '🌍'), this.worldPop),
+      (this.worldPopStat = el(
+        'div',
+        {
+          class: 'stat world-pop clickable',
+          title: 'World population: every city on the planet combined. Click for the world stats',
+          role: 'button',
+          tabindex: '0',
+        },
+        el('span', { class: 'ico' }, '🌍'),
+        this.worldPop,
+      )),
       this.plotsStat,
-      this.claimBtn, this.findBtn, this.cityBtn, this.worldBtn, this.msBtn, this.budgetBtn, this.lbBtn, this.lifelineBtn, this.abandonBtn, this.monumentBtn, this.fireBtn,
+      this.claimBtn,
+      this.findBtn,
+      this.cityBtn,
+      this.worldBtn,
+      this.msBtn,
+      this.budgetBtn,
+      this.lbBtn,
+      this.lifelineBtn,
+      this.abandonBtn,
+      this.monumentBtn,
+      this.fireBtn,
       el('div', { class: 'spacer' }),
-      this.status, this.cityNameBtn, this.nameBtn, discordBtn, aboutBtn,
+      this.status,
+      this.cityNameBtn,
+      this.nameBtn,
+      discordBtn,
+      aboutBtn,
     );
     this.offline = el('div', { id: 'offline', class: 'hidden' }, 'Connecting to server…');
     this.root.append(bar, this.offline);
@@ -237,8 +411,10 @@ export class UI {
 
   /** Tell the renderer how much of the left / top edge the fixed UI covers, so chunk labels stay readable. */
   measureOverlay(): void {
-    const toolbar = this.root.querySelector<HTMLElement>('#toolbar'), topbar = this.root.querySelector<HTMLElement>('#topbar');
-    const tb = toolbar?.getBoundingClientRect(), hb = topbar?.getBoundingClientRect();
+    const toolbar = this.root.querySelector<HTMLElement>('#toolbar'),
+      topbar = this.root.querySelector<HTMLElement>('#topbar');
+    const tb = toolbar?.getBoundingClientRect(),
+      hb = topbar?.getBoundingClientRect();
     // the toolbar sits along the left edge on desktop, along the bottom on phones
     const left = tb && tb.width > 0 && tb.top < window.innerHeight / 2 && tb.right < window.innerWidth / 2 ? tb.right : 0;
     const top = hb && hb.height > 0 ? hb.bottom : 0;
@@ -256,20 +432,39 @@ export class UI {
       drawTile(g, this.sheet, t.icon, 0, 0, 32, 32);
       if (t.custom) {
         const img = this.renderer.customs.images.get(t.custom);
-        const paint = () => { if (img && img.naturalWidth) { g.clearRect(0, 0, 32, 32); drawCustomFit(g, img, t.custom!, 32); } };
-        if (img?.complete) paint(); else img?.addEventListener('load', paint, { once: true });
+        const paint = () => {
+          if (img && img.naturalWidth) {
+            g.clearRect(0, 0, 32, 32);
+            drawCustomFit(g, img, t.custom!, 32);
+          }
+        };
+        if (img?.complete) paint();
+        else img?.addEventListener('load', paint, { once: true });
       }
       const cost = t.cost ? priceLabel(id) : 'free';
-      const btn = el('button', { class: 'tool', 'data-tool': id, title: `${t.name} — ${cost} (${t.hotkey.toUpperCase()})${t.tradeoff ? `. ${t.tradeoff}` : ''}`, 'aria-label': t.name },
+      const btn = el(
+        'button',
+        {
+          class: 'tool',
+          'data-tool': id,
+          title: `${t.name} — ${cost} (${t.hotkey.toUpperCase()})${t.tradeoff ? `. ${t.tradeoff}` : ''}`,
+          'aria-label': t.name,
+        },
         icon,
         el('span', { class: 'key', text: t.hotkey.toUpperCase() }),
         el('span', { class: 'label', text: t.name }),
         el('span', { class: 'cost', text: t.cost ? priceLabel(id) : '' }),
       );
-      btn.onclick = () => { this.state.setTool(id); this.closeToolGroup(); };
+      btn.onclick = () => {
+        this.state.setTool(id);
+        this.closeToolGroup();
+      };
       this.toolButtons.set(id, btn);
       const def = TOOL_GROUPS.find((g) => g.members.includes(id));
-      if (!def) { bar.append(btn); continue; }
+      if (!def) {
+        bar.append(btn);
+        continue;
+      }
       const grp = this.toolGroups.find((x) => x.def === def) ?? this.buildToolGroup(def, bar);
       grp.flyout.append(btn); // layoutToolGroups() moves it into the bar while the group is not needed
     }
@@ -278,7 +473,9 @@ export class UI {
       const g = this.openGroup;
       if (g && !g.flyout.contains(e.target as Node) && !g.head.contains(e.target as Node)) this.closeToolGroup();
     });
-    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') this.closeToolGroup(); });
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') this.closeToolGroup();
+    });
     window.addEventListener('resize', () => this.closeToolGroup());
     this.root.append(bar);
     this.layoutToolGroups();
@@ -288,8 +485,14 @@ export class UI {
     const icon = el('canvas', { class: 'icon', width: '32', height: '32' });
     const label = el('span', { class: 'label', text: def.name });
     const cost = el('span', { class: 'cost' });
-    const head = el('button', { class: 'tool group-head', 'data-group': def.id, 'aria-haspopup': 'true', 'aria-expanded': 'false', 'aria-label': def.name },
-      icon, label, cost, el('span', { class: 'caret', text: '▸' }));
+    const head = el(
+      'button',
+      { class: 'tool group-head', 'data-group': def.id, 'aria-haspopup': 'true', 'aria-expanded': 'false', 'aria-label': def.name },
+      icon,
+      label,
+      cost,
+      el('span', { class: 'caret', text: '▸' }),
+    );
     const flyout = el('div', { class: 'tool-flyout panel hidden', role: 'menu', 'aria-label': def.name });
     const wrap = el('div', { class: 'tool-group', 'data-group': def.id }, head);
     this.root.append(flyout); // outside the toolbar so it stacks above the minimap and RCI panel
@@ -305,12 +508,16 @@ export class UI {
     this.openGroup = g;
     g.flyout.classList.remove('hidden');
     g.head.setAttribute('aria-expanded', 'true');
-    const r = g.head.getBoundingClientRect(), f = g.flyout.getBoundingClientRect();
-    const vw = window.innerWidth, vh = window.innerHeight;
-    if (r.right < vw / 2 && r.top < vh - 120) { // toolbar down the left edge: open to the right
+    const r = g.head.getBoundingClientRect(),
+      f = g.flyout.getBoundingClientRect();
+    const vw = window.innerWidth,
+      vh = window.innerHeight;
+    if (r.right < vw / 2 && r.top < vh - 120) {
+      // toolbar down the left edge: open to the right
       g.flyout.style.left = `${Math.round(r.right + 6)}px`;
       g.flyout.style.top = `${Math.round(Math.max(8, Math.min(r.top, vh - f.height - 8)))}px`;
-    } else { // toolbar along the bottom (phones): open upwards
+    } else {
+      // toolbar along the bottom (phones): open upwards
       g.flyout.style.left = `${Math.round(Math.max(8, Math.min(r.left, vw - f.width - 8)))}px`;
       g.flyout.style.top = `${Math.round(Math.max(8, r.top - f.height - 6))}px`;
     }
@@ -337,7 +544,8 @@ export class UI {
         g.grouped = grouped;
         for (const id of g.def.members) {
           const btn = this.toolButtons.get(id)!;
-          if (grouped) g.flyout.append(btn); else g.wrap.before(btn);
+          if (grouped) g.flyout.append(btn);
+          else g.wrap.before(btn);
         }
         g.wrap.classList.toggle('hidden', !grouped);
         if (!grouped && this.openGroup === g) this.closeToolGroup();
@@ -369,26 +577,42 @@ export class UI {
       const bar = el('div', { class: `bar ${cls}` }, el('div', { class: 'mid' }), fill, boost);
       return { fill, boost, wrap: el('div', { class: 'rci-col' }, bar, el('span', { class: 'lbl', text: label })) };
     };
-    const r = mk('r', 'R'), c = mk('c', 'C'), i = mk('i', 'I');
+    const r = mk('r', 'R'),
+      c = mk('c', 'C'),
+      i = mk('i', 'I');
     this.rciBars = { r: r.fill, c: c.fill, i: i.fill };
     this.rciBoost = { r: r.boost, c: c.boost, i: i.boost };
     this.powerText = el('span', { class: 'power', text: '⚡ 0 / 0' });
     this.crimeText = el('span', { class: 'crime bad hidden', id: 'crime', title: `Crime is high and no police station is powered. ${POLICE_HELP}` }, '⚠ crime');
     this.trafficWord = el('span', { class: 'word' });
     this.trafficFill = el('span', { class: 'fill' });
-    this.trafficText = el('div', { class: 'traffic hidden', id: 'traffic', title: TRAFFIC_HELP }, el('span', { text: '🚗 ' }), this.trafficWord, el('span', { class: 'meter' }, this.trafficFill));
+    this.trafficText = el(
+      'div',
+      { class: 'traffic hidden', id: 'traffic', title: TRAFFIC_HELP },
+      el('span', { text: '🚗 ' }),
+      this.trafficWord,
+      el('span', { class: 'meter' }, this.trafficFill),
+    );
     this.tradeText = el('div', { class: 'trade hidden', id: 'powerTrade', title: POWER_TRADE_HELP });
     this.neighbourText = el('div', { class: 'neighbours hidden', id: 'neighbours', title: NEIGHBOUR_HELP });
-    this.budgetText = el('div', { class: 'budget', id: 'budget', title: 'Net budget over the last game year: taxes on your population minus upkeep for roads, rail, stations and power plants. Click for the budget screen.' });
+    this.budgetText = el('div', {
+      class: 'budget',
+      id: 'budget',
+      title:
+        'Net budget over the last game year: taxes on your population minus upkeep for roads, rail, stations and power plants. Click for the budget screen.',
+    });
     this.budgetText.onclick = () => this.toggleBudget();
-    const box = el('div', { id: 'rci', class: 'panel', title: 'Residential / Commercial / Industrial demand' },
+    const box = el(
+      'div',
+      { id: 'rci', class: 'panel', title: 'Residential / Commercial / Industrial demand' },
       el('div', { class: 'rci-bars' }, r.wrap, c.wrap, i.wrap),
       el('div', { class: 'power-line' }, this.powerText),
       el('div', { class: 'power-line', id: 'safety' }, this.crimeText),
       this.trafficText,
       this.tradeText,
       this.neighbourText,
-      this.budgetText);
+      this.budgetText,
+    );
     // phones show only the bars, power and budget; a tap on the panel opens or closes the rest
     box.addEventListener('click', (e) => {
       if (this.budgetText.contains(e.target as Node) || !window.matchMedia('(max-width: 760px)').matches) return;
@@ -406,11 +630,18 @@ export class UI {
     const freeBtn = el('button', { class: 'btn' }, '✨ Find nearest free plot');
     freeBtn.onclick = () => this.findFree();
     const close = el('button', { class: 'btn ghost round close', title: 'Close' }, '×');
-    close.onclick = () => { this.welcomeDismissed = true; this.hide(this.welcome); };
-    this.welcome = el('div', { id: 'welcome', class: 'panel card hidden' },
+    close.onclick = () => {
+      this.welcomeDismissed = true;
+      this.hide(this.welcome);
+    };
+    this.welcome = el(
+      'div',
+      { id: 'welcome', class: 'panel card hidden' },
       close,
       el('h2', { text: 'Welcome to GlobalCity' }),
-      el('p', { text: 'The whole Earth is one giant SimCity map shared by everyone online. Claim a 64×64 plot (your first one is free), then zone, wire and pave it to grow a city — neighbours can build right next to you. Zoom in to build, zoom out to see every city on the planet.' }),
+      el('p', {
+        text: 'The whole Earth is one giant SimCity map shared by everyone online. Claim a 64×64 plot (your first one is free), then zone, wire and pave it to grow a city — neighbours can build right next to you. Zoom in to build, zoom out to see every city on the planet.',
+      }),
       el('div', { class: 'row' }, locBtn, pickBtn, freeBtn),
       this.welcomeStatus,
       el('p', { class: 'muted community' }, 'Meet your neighbours, find trading partners and suggest features on ', discordLink('our Discord'), '.'),
@@ -421,19 +652,32 @@ export class UI {
   private buildAbout(): void {
     const close = el('button', { class: 'btn ghost round close', title: 'Close' }, '×');
     close.onclick = () => this.hide(this.about);
-    const link = (href: string, text: string) => { const a = el('a', { href, target: '_blank', rel: 'noopener' }, text); return a; };
-    this.about = el('div', { id: 'about', class: 'panel card hidden' },
+    const link = (href: string, text: string) => {
+      const a = el('a', { href, target: '_blank', rel: 'noopener' }, text);
+      return a;
+    };
+    this.about = el(
+      'div',
+      { id: 'about', class: 'panel card hidden' },
       close,
       el('h2', { text: 'About GlobalCity' }),
       el('p', {}, 'A massively multiplayer SimCity-classic style game on a tile map of the whole Earth.'),
-      el('p', {}, 'Tile artwork is the original SimCity Classic art by Will Wright and Maxis (1989), used via ',
+      el(
+        'p',
+        {},
+        'Tile artwork is the original SimCity Classic art by Will Wright and Maxis (1989), used via ',
         link('https://github.com/SimHacker/micropolis', 'Micropolis'),
-        ', the GPLv3 release of SimCity that Electronic Arts open-sourced in 2008 through the work of Don Hopkins.'),
+        ', the GPLv3 release of SimCity that Electronic Arts open-sourced in 2008 through the work of Don Hopkins.',
+      ),
       el('p', {}, 'Map data is derived from ', link('https://www.naturalearthdata.com/', 'Natural Earth'), ' (public domain).'),
       el('p', {}, 'SimCity is a trademark of Electronic Arts. This project is not affiliated with or endorsed by EA or Maxis.'),
       el('p', {}, 'Community, bug reports and feature ideas: ', discordLink('join the GlobalCity Discord'), '.'),
       el('p', {}, 'GlobalCity is free software, licensed GPL-3.0-or-later. See ', el('a', { href: '/ATTRIBUTION.md' }, 'ATTRIBUTION.md'), ' for details.'),
-      el('p', { class: 'muted' }, 'Controls: drag to pan (query tool, middle/right button or hold Space) or use WASD / the arrow keys, wheel or +/- to zoom, H shows the whole world, G goes to your city, double-click a plot in the world view to zoom in, hotkeys select tools, drag roads, rail, power lines, parks and zones to lay several at once (Shift for a freeform line), Esc returns to query.'),
+      el(
+        'p',
+        { class: 'muted' },
+        'Controls: drag to pan (query tool, middle/right button or hold Space) or use WASD / the arrow keys, wheel or +/- to zoom, H shows the whole world, G goes to your city, double-click a plot in the world view to zoom in, hotkeys select tools, drag roads, rail, power lines, parks and zones to lay several at once (Shift for a freeform line), Esc returns to query.',
+      ),
     );
     this.root.append(this.about);
   }
@@ -447,23 +691,49 @@ export class UI {
     this.lbTitle = el('h2', { text: '🏆 Top cities' });
     this.lbPageBtn = el('button', { class: 'btn lb-page', type: 'button' });
     this.lbPageBtn.onclick = () => this.setLeaderboardPage(this.monView.classList.contains('hidden') ? 'monuments' : 'top');
-    this.lbView = el('div', { class: 'lb-view' },
-      el('div', { class: 'lb-head' },
-        el('span', { class: 'rank', text: '#' }), el('span', { class: 'sw' }), el('span', { class: 'name', text: 'City' }),
-        el('span', { class: 'pop', text: 'Population' }), el('span', { class: 'ms', text: 'Milestones', title: 'Share of milestone buildings unlocked (see 🏛 Milestones)' }), el('span', { class: 'chunks', text: 'Plots' }), el('span', { class: 'fires' }), el('span', { class: 'visit' })),
+    this.lbView = el(
+      'div',
+      { class: 'lb-view' },
+      el(
+        'div',
+        { class: 'lb-head' },
+        el('span', { class: 'rank', text: '#' }),
+        el('span', { class: 'sw' }),
+        el('span', { class: 'name', text: 'City' }),
+        el('span', { class: 'pop', text: 'Population' }),
+        el('span', { class: 'ms', text: 'Milestones', title: 'Share of milestone buildings unlocked (see 🏛 Milestones)' }),
+        el('span', { class: 'chunks', text: 'Plots' }),
+        el('span', { class: 'fires' }),
+        el('span', { class: 'visit' }),
+      ),
       this.lbRows,
       this.lbMe,
       this.lbWorld,
     );
     this.monRows = el('div', { class: 'lb-rows' });
-    this.monView = el('div', { class: 'lb-view mon-view hidden' },
-      el('p', { class: 'muted mon-intro', text: `Cities whose mayors retired them as monuments after passing ${MONUMENT_MIN_POP.toLocaleString('en-US')} people. They stand forever, frozen as they were left.` }),
-      el('div', { class: 'lb-head' },
-        el('span', { class: 'rank', text: '#' }), el('span', { class: 'sw' }), el('span', { class: 'name', text: 'City' }),
-        el('span', { class: 'pop', text: 'Population' }), el('span', { class: 'chunks', text: 'Plots' }), el('span', { class: 'date', text: 'Retired' }), el('span', { class: 'visit' })),
+    this.monView = el(
+      'div',
+      { class: 'lb-view mon-view hidden' },
+      el('p', {
+        class: 'muted mon-intro',
+        text: `Cities whose mayors retired them as monuments after passing ${MONUMENT_MIN_POP.toLocaleString('en-US')} people. They stand forever, frozen as they were left.`,
+      }),
+      el(
+        'div',
+        { class: 'lb-head' },
+        el('span', { class: 'rank', text: '#' }),
+        el('span', { class: 'sw' }),
+        el('span', { class: 'name', text: 'City' }),
+        el('span', { class: 'pop', text: 'Population' }),
+        el('span', { class: 'chunks', text: 'Plots' }),
+        el('span', { class: 'date', text: 'Retired' }),
+        el('span', { class: 'visit' }),
+      ),
       this.monRows,
     );
-    this.leaderboard = el('div', { id: 'leaderboard', class: 'panel card hidden' },
+    this.leaderboard = el(
+      'div',
+      { id: 'leaderboard', class: 'panel card hidden' },
       close,
       el('div', { class: 'lb-title' }, this.lbTitle, this.lbPageBtn),
       this.lbView,
@@ -488,7 +758,12 @@ export class UI {
     this.root.append(this.worldStats);
     const open = () => this.openWorldStats();
     this.worldPopStat.onclick = open;
-    this.worldPopStat.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } };
+    this.worldPopStat.onkeydown = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        open();
+      }
+    };
   }
 
   openWorldStats(): void {
@@ -496,21 +771,31 @@ export class UI {
     this.show(this.worldStats);
     this.net.send({ t: 'worldStats' });
     // fresh numbers while it's open (the server counts them at most every 30 s)
-    if (!this.wsTimer) this.wsTimer = setInterval(() => { if (!this.worldStats.classList.contains('hidden')) this.net.send({ t: 'worldStats' }); else this.closeWorldStats(); }, 30_000);
+    if (!this.wsTimer)
+      this.wsTimer = setInterval(() => {
+        if (!this.worldStats.classList.contains('hidden')) this.net.send({ t: 'worldStats' });
+        else this.closeWorldStats();
+      }, 30_000);
   }
 
   private closeWorldStats(): void {
     this.hide(this.worldStats);
-    if (this.wsTimer) { clearInterval(this.wsTimer); this.wsTimer = null; }
+    if (this.wsTimer) {
+      clearInterval(this.wsTimer);
+      this.wsTimer = null;
+    }
   }
 
   /** Fill the world stats dialog (a 'worldStats' message). */
   showWorldStats(s: WorldStats): void {
     const n = (v: number) => v.toLocaleString('en-US');
     this.wsTitle.textContent = `🌍 The world in ${s.year}`;
-    const tile = (value: string, label: string, title?: string) => el('div', { class: 'ws-tile', title: title ?? '' }, el('div', { class: 'ws-val', text: value }), el('div', { class: 'ws-label', text: label }));
+    const tile = (value: string, label: string, title?: string) =>
+      el('div', { class: 'ws-tile', title: title ?? '' }, el('div', { class: 'ws-val', text: value }), el('div', { class: 'ws-label', text: label }));
     const share = s.landPlots ? Math.round((s.plots / s.landPlots) * 1000) / 10 : 0;
-    const top = el('div', { class: 'ws-grid' },
+    const top = el(
+      'div',
+      { class: 'ws-grid' },
       tile(fmtCompact(s.population), 'people', `${n(s.population)} people in every city combined`),
       tile(n(s.cities), s.cities === 1 ? 'city' : 'cities'),
       tile(n(s.online), 'mayors online'),
@@ -518,45 +803,112 @@ export class UI {
     );
     const visit = (cx: number, cy: number, name: string) => {
       const b = el('button', { class: 'btn visit', title: `Fly to ${name}` }, 'Visit');
-      b.onclick = () => { this.actions.flyToChunk(cx, cy, 1, 900); this.closeWorldStats(); };
+      b.onclick = () => {
+        this.actions.flyToChunk(cx, cy, 1, 900);
+        this.closeWorldStats();
+      };
       return b;
     };
     const cityRow = (label: string, c: { name: string; cx: number; cy: number } | null, extra: string) =>
-      c ? el('div', { class: 'ws-row' }, el('span', { class: 'ws-k', text: label }), el('span', { class: 'ws-v', text: `${c.name}${extra}` }), visit(c.cx, c.cy, c.name)) : null;
+      c
+        ? el(
+            'div',
+            { class: 'ws-row' },
+            el('span', { class: 'ws-k', text: label }),
+            el('span', { class: 'ws-v', text: `${c.name}${extra}` }),
+            visit(c.cx, c.cy, c.name),
+          )
+        : null;
     const present = (...xs: (HTMLElement | null)[]): HTMLElement[] => xs.filter((x): x is HTMLElement => x !== null);
-    const cities = el('div', { class: 'ws-section' }, ...present(
-      cityRow('Biggest city', s.biggest, s.biggest ? ` · ${n(s.biggest.population)} people` : ''),
-      cityRow('Newest city', s.newest, ''),
-      el('div', { class: 'ws-row' }, el('span', { class: 'ws-k', text: 'Monuments' }), el('span', { class: 'ws-v', text: `${n(s.monuments)} retired cities, standing forever` })),
-      el('div', { class: 'ws-row' }, el('span', { class: 'ws-k', text: 'Abandoned' }), el('span', { class: 'ws-v', text: `${n(s.abandoned)} cities whose mayor has been away a month` })),
-    ));
-    const built = el('div', { class: 'ws-grid small' },
-      tile(n(s.zones.res), 'homes', 'residential zones'), tile(n(s.zones.com), 'shops & offices', 'commercial zones'), tile(n(s.zones.ind), 'factories', 'industrial zones'),
-      tile(n(s.roads), 'road tiles'), tile(n(s.rail), 'rail tiles'), tile(n(s.powerLines), 'power line tiles'),
-      tile(n(s.plants), 'power plants'), tile(n(s.powerSupply), 'power supplied', 'zones the world\'s plants can power'),
-      tile(n(s.airports), 'airports'), tile(n(s.seaports), 'seaports'), tile(n(s.seaRoutes), 'sea routes'),
+    const cities = el(
+      'div',
+      { class: 'ws-section' },
+      ...present(
+        cityRow('Biggest city', s.biggest, s.biggest ? ` · ${n(s.biggest.population)} people` : ''),
+        cityRow('Newest city', s.newest, ''),
+        el(
+          'div',
+          { class: 'ws-row' },
+          el('span', { class: 'ws-k', text: 'Monuments' }),
+          el('span', { class: 'ws-v', text: `${n(s.monuments)} retired cities, standing forever` }),
+        ),
+        el(
+          'div',
+          { class: 'ws-row' },
+          el('span', { class: 'ws-k', text: 'Abandoned' }),
+          el('span', { class: 'ws-v', text: `${n(s.abandoned)} cities whose mayor has been away a month` }),
+        ),
+      ),
     );
-    const quakes = s.disasters.map((c: number, k: number) => (c ? `${DISASTERS[k as Disaster].emoji} ${n(c)} ${DISASTERS[k as Disaster].name.toLowerCase()}${c === 1 ? '' : 's'}` : null)).filter(Boolean) as string[];
-    const disasters = el('div', { class: 'ws-section' }, ...present(
-      el('div', { class: 'ws-row' }, el('span', { class: 'ws-k', text: 'Last 24 hours' }),
-        el('span', { class: 'ws-v', text: quakes.length ? quakes.join(' · ') : 'No disasters: a quiet day on Earth' })),
-      s.activeDisasters ? el('div', { class: 'ws-row' }, el('span', { class: 'ws-k', text: 'Right now' }), el('span', { class: 'ws-v', text: `${n(s.activeDisasters)} on the go` })) : null,
-    ));
+    const built = el(
+      'div',
+      { class: 'ws-grid small' },
+      tile(n(s.zones.res), 'homes', 'residential zones'),
+      tile(n(s.zones.com), 'shops & offices', 'commercial zones'),
+      tile(n(s.zones.ind), 'factories', 'industrial zones'),
+      tile(n(s.roads), 'road tiles'),
+      tile(n(s.rail), 'rail tiles'),
+      tile(n(s.powerLines), 'power line tiles'),
+      tile(n(s.plants), 'power plants'),
+      tile(n(s.powerSupply), 'power supplied', "zones the world's plants can power"),
+      tile(n(s.airports), 'airports'),
+      tile(n(s.seaports), 'seaports'),
+      tile(n(s.seaRoutes), 'sea routes'),
+    );
+    const quakes = s.disasters
+      .map((c: number, k: number) =>
+        c ? `${DISASTERS[k as Disaster].emoji} ${n(c)} ${DISASTERS[k as Disaster].name.toLowerCase()}${c === 1 ? '' : 's'}` : null,
+      )
+      .filter(Boolean) as string[];
+    const disasters = el(
+      'div',
+      { class: 'ws-section' },
+      ...present(
+        el(
+          'div',
+          { class: 'ws-row' },
+          el('span', { class: 'ws-k', text: 'Last 24 hours' }),
+          el('span', { class: 'ws-v', text: quakes.length ? quakes.join(' · ') : 'No disasters: a quiet day on Earth' }),
+        ),
+        s.activeDisasters
+          ? el(
+              'div',
+              { class: 'ws-row' },
+              el('span', { class: 'ws-k', text: 'Right now' }),
+              el('span', { class: 'ws-v', text: `${n(s.activeDisasters)} on the go` }),
+            )
+          : null,
+      ),
+    );
     const totalBiome = s.biomes.reduce((a: number, b: number) => a + b, 0) || 1;
     const biomeLabels = ['Temperate', 'Desert', 'Steppe', 'Tundra', 'Boreal', 'Ice sheet'];
     const biomeColours = ['#cc7f66', '#e6c68a', '#b8b47c', '#a8a48c', '#dde4ec', '#f6f9fc'];
-    const biomes = el('div', { class: 'ws-bars' }, ...s.biomes.map((c: number, b: number) => {
-      const bar = el('div', { class: 'ws-bar-fill' });
-      bar.style.width = `${(c / totalBiome) * 100}%`;
-      bar.style.background = biomeColours[b] ?? '#888';
-      return el('div', { class: 'ws-bar', title: `${n(c)} plots` }, el('span', { class: 'ws-k', text: biomeLabels[b] ?? `Biome ${b}` }), el('div', { class: 'ws-bar-track' }, bar), el('span', { class: 'ws-pct', text: `${Math.round((c / totalBiome) * 100)}%` }));
-    }));
+    const biomes = el(
+      'div',
+      { class: 'ws-bars' },
+      ...s.biomes.map((c: number, b: number) => {
+        const bar = el('div', { class: 'ws-bar-fill' });
+        bar.style.width = `${(c / totalBiome) * 100}%`;
+        bar.style.background = biomeColours[b] ?? '#888';
+        return el(
+          'div',
+          { class: 'ws-bar', title: `${n(c)} plots` },
+          el('span', { class: 'ws-k', text: biomeLabels[b] ?? `Biome ${b}` }),
+          el('div', { class: 'ws-bar-track' }, bar),
+          el('span', { class: 'ws-pct', text: `${Math.round((c / totalBiome) * 100)}%` }),
+        );
+      }),
+    );
     this.wsBody.replaceChildren(
       top,
-      el('h3', { text: 'Cities' }), cities,
-      el('h3', { text: 'Built' }), built,
-      el('h3', { text: 'Where cities are' }), biomes,
-      el('h3', { text: 'Disasters' }), disasters,
+      el('h3', { text: 'Cities' }),
+      cities,
+      el('h3', { text: 'Built' }),
+      built,
+      el('h3', { text: 'Where cities are' }),
+      biomes,
+      el('h3', { text: 'Disasters' }),
+      disasters,
     );
   }
 
@@ -573,18 +925,54 @@ export class UI {
 
   // ---------- binding ----------
   private bind(): void {
-    this.state.on('stats', () => { this.refreshStats(); this.refreshTools(); this.refreshClaimButtons(); this.refreshWelcome(); this.refreshMilestones(); });
-    this.state.on('me', () => { this.refreshName(); this.refreshClaimButtons(); this.refreshLeaderboard(); this.miniDirty = true; this.scheduleMini(); });
-    this.state.on('city', () => { this.refreshName(); this.refreshWelcome(); });
+    this.state.on('stats', () => {
+      this.refreshStats();
+      this.refreshTools();
+      this.refreshClaimButtons();
+      this.refreshWelcome();
+      this.refreshMilestones();
+    });
+    this.state.on('me', () => {
+      this.refreshName();
+      this.refreshClaimButtons();
+      this.refreshLeaderboard();
+      this.miniDirty = true;
+      this.scheduleMini();
+    });
+    this.state.on('city', () => {
+      this.refreshName();
+      this.refreshWelcome();
+    });
     this.state.on('leaderboard', () => this.refreshLeaderboard());
-    setInterval(() => { this.miniDirty = true; this.scheduleMini(); }, NIGHT_REFRESH_MS); // the corner map's night shade moves with the sun
+    setInterval(() => {
+      this.miniDirty = true;
+      this.scheduleMini();
+    }, NIGHT_REFRESH_MS); // the corner map's night shade moves with the sun
     this.state.on('time', () => this.refreshTime());
     this.state.on('tool', () => this.refreshTools());
-    this.state.on('claims', () => { this.refreshClaimButtons(); this.refreshWelcome(); this.miniDirty = true; this.scheduleMini(); this.refreshWorldPop(); this.refreshLeaderboard(); });
+    this.state.on('claims', () => {
+      this.refreshClaimButtons();
+      this.refreshWelcome();
+      this.miniDirty = true;
+      this.scheduleMini();
+      this.refreshWorldPop();
+      this.refreshLeaderboard();
+    });
     // The status label only shows while not connected ("Connecting…", "Reconnecting…"): online is the normal state.
-    this.state.on('connection', (v) => { this.offline.classList.toggle('hidden', v); this.status.classList.toggle('hidden', v); this.status.classList.toggle('bad', !v); });
-    this.net.on('status', (s) => { this.status.textContent = s; this.offline.textContent = s; });
-    this.renderer.on('camera', () => { this.hideQuery(); this.miniDirty = true; this.scheduleMini(); });
+    this.state.on('connection', (v) => {
+      this.offline.classList.toggle('hidden', v);
+      this.status.classList.toggle('hidden', v);
+      this.status.classList.toggle('bad', !v);
+    });
+    this.net.on('status', (s) => {
+      this.status.textContent = s;
+      this.offline.textContent = s;
+    });
+    this.renderer.on('camera', () => {
+      this.hideQuery();
+      this.miniDirty = true;
+      this.scheduleMini();
+    });
     this.renderer.on('settle', () => this.refreshClaimButtons());
     // the land check needs the centre chunk's tiles, which may arrive after the camera settled
     this.renderer.map.on('chunk', ({ cx, cy }) => {
@@ -595,7 +983,13 @@ export class UI {
   }
 
   private refreshAll(): void {
-    this.refreshStats(); this.refreshTime(); this.refreshName(); this.refreshTools(); this.refreshClaimButtons(); this.refreshWelcome(); this.drawMini();
+    this.refreshStats();
+    this.refreshTime();
+    this.refreshName();
+    this.refreshTools();
+    this.refreshClaimButtons();
+    this.refreshWelcome();
+    this.drawMini();
   }
 
   private refreshStats(): void {
@@ -636,10 +1030,12 @@ export class UI {
     this.budgetBtn.classList.toggle('hidden', this.state.ownedChunkCount() === 0);
     if (this.state.ownedChunkCount() === 0) this.budgetPanel?.classList.add('hidden');
     this.refreshBudget();
-    const neighbours = s?.neighbours ?? 0, railLinks = s?.railLinks ?? 0;
+    const neighbours = s?.neighbours ?? 0,
+      railLinks = s?.railLinks ?? 0;
     this.neighbourText.textContent = `🤝 ${neighbours} ${neighbours === 1 ? 'neighbour' : 'neighbours'} · 🚆 ${railLinks} ${railLinks === 1 ? 'rail link' : 'rail links'}`;
     this.neighbourText.classList.toggle('hidden', neighbours <= 0 && railLinks <= 0);
-    const sup = s?.powerSupply ?? 0, dem = s?.powerDemand ?? 0;
+    const sup = s?.powerSupply ?? 0,
+      dem = s?.powerDemand ?? 0;
     this.powerText.textContent = `⚡ ${dem} / ${sup}`;
     this.powerText.title = `Power: ${dem} zones in use of ${sup} capacity. ${POWER_TRADE_HELP}`;
     this.powerText.classList.toggle('bad', dem > sup);
@@ -648,7 +1044,8 @@ export class UI {
     this.fireBtn.textContent = `🔥 ${fires} ${fires === 1 ? 'fire' : 'fires'}`;
     this.fireBtn.classList.toggle('hidden', fires <= 0);
     // crime warning (old servers omit these: treat as no police, no crime)
-    const police = s?.policeStations ?? 0, crime = s?.crime ?? 0;
+    const police = s?.policeStations ?? 0,
+      crime = s?.crime ?? 0;
     this.crimeText.classList.toggle('hidden', !(crime >= 0.5 && police === 0));
     // traffic
     const traffic = Math.max(0, Math.min(1, s?.traffic ?? 0));
@@ -682,7 +1079,7 @@ export class UI {
   }
 
   private refreshName(): void {
-    this.nameBtn.textContent = this.state.me?.name ?? (this.net.identity.name ?? '…');
+    this.nameBtn.textContent = this.state.me?.name ?? this.net.identity.name ?? '…';
     if (this.state.me) this.nameBtn.style.color = this.state.me.color;
     const city = this.state.cityName;
     this.cityNameBtn.textContent = city ? `🏙 ${city}` : '';
@@ -696,12 +1093,14 @@ export class UI {
       btn.classList.toggle('poor', this.state.funds < TOOLS[id].cost);
       if (id === 'grandcentral') {
         // unlocked by a rail link to another mayor's city rather than by population; hidden until then
-        const unlocked = st?.unlocked?.includes(id) ?? false, built = (st?.built?.grandcentral ?? 0) >= 1;
+        const unlocked = st?.unlocked?.includes(id) ?? false,
+          built = (st?.built?.grandcentral ?? 0) >= 1;
         btn.classList.toggle('hidden', !unlocked);
         btn.classList.toggle('built', built);
         const cost = btn.querySelector('.cost');
         if (cost) cost.textContent = built ? 'Built' : priceLabel(id);
-        btn.title = built ? 'Grand Central: your city already has one (one per city). It can be rebuilt if it is destroyed.'
+        btn.title = built
+          ? 'Grand Central: your city already has one (one per city). It can be rebuilt if it is destroyed.'
           : `Grand Central — ${priceLabel(id)} (${TOOLS[id].hotkey.toUpperCase()}). Click your east-west rail line: the track runs through the station. ${GRAND_CENTRAL.benefits.slice(0, 2).join('. ')}.`;
         continue;
       }
@@ -719,10 +1118,13 @@ export class UI {
       btn.classList.toggle('built', atMax);
       const cost = btn.querySelector('.cost');
       if (cost) cost.textContent = !unlocked ? `🔒 ${fmtCompact(m.pop)} pop` : offSeason ? `🔒 ${m.seasonName}` : atMax ? 'Built' : priceLabel(id);
-      btn.title = !unlocked ? `${m.name}: unlocks at ${m.pop.toLocaleString('en-US')} people. ${m.benefits.join('. ')}.`
-        : offSeason ? `${m.name}: can only be built in ${m.seasonName}. ${m.benefits.join('. ')}.`
-        : atMax ? `${m.name}: your city already has one (one per city). It can be rebuilt if it is destroyed.`
-        : `${m.name} — ${priceLabel(id)} (${TOOLS[id].hotkey.toUpperCase()}). ${TOOLS[id].tradeoff ?? `${m.benefits.join('. ')}.`}`;
+      btn.title = !unlocked
+        ? `${m.name}: unlocks at ${m.pop.toLocaleString('en-US')} people. ${m.benefits.join('. ')}.`
+        : offSeason
+          ? `${m.name}: can only be built in ${m.seasonName}. ${m.benefits.join('. ')}.`
+          : atMax
+            ? `${m.name}: your city already has one (one per city). It can be rebuilt if it is destroyed.`
+            : `${m.name} — ${priceLabel(id)} (${TOOLS[id].hotkey.toUpperCase()}). ${TOOLS[id].tradeoff ?? `${m.benefits.join('. ')}.`}`;
     }
     this.layoutToolGroups();
   }
@@ -732,31 +1134,50 @@ export class UI {
   private buildDiscordInvite(): void {
     const close = el('button', { class: 'btn ghost round close', title: 'Close' }, '×');
     close.onclick = () => this.hide(this.discordInvite);
-    const join = el('a', { class: 'btn primary', href: DISCORD_URL, target: '_blank', rel: 'noopener noreferrer' }, discordIcon(), el('span', {}, 'Join the Discord'));
+    const join = el(
+      'a',
+      { class: 'btn primary', href: DISCORD_URL, target: '_blank', rel: 'noopener noreferrer' },
+      discordIcon(),
+      el('span', {}, 'Join the Discord'),
+    );
     join.addEventListener('click', () => this.hide(this.discordInvite));
     const later = el('button', { class: 'btn', type: 'button' }, 'Maybe later');
     later.onclick = () => this.hide(this.discordInvite);
-    this.discordInvite = el('div', { id: 'discordInvite', class: 'panel card hidden' },
+    this.discordInvite = el(
+      'div',
+      { id: 'discordInvite', class: 'panel card hidden' },
       close,
       el('h2', { text: 'Welcome back, mayor!' }),
-      el('p', { text: 'Join the GlobalCity Discord to get notified of game updates and to hear when the next world reset is coming, so you can plan your next city.' }),
+      el('p', {
+        text: 'Join the GlobalCity Discord to get notified of game updates and to hear when the next world reset is coming, so you can plan your next city.',
+      }),
       el('p', { text: "It's also where neighbours meet, find trading partners, and suggest what to build next." }),
       el('div', { class: 'row' }, join, later),
     );
     this.root.append(this.discordInvite);
-    let visits = 0, asked = false;
+    let visits = 0,
+      asked = false;
     try {
       visits = (Number(localStorage.getItem(VISITS_KEY)) || 0) + 1;
       localStorage.setItem(VISITS_KEY, String(visits));
       asked = localStorage.getItem(DISCORD_ASKED_KEY) === '1';
-    } catch { return; } // no storage: we can't tell a second visit from the first
+    } catch {
+      return;
+    } // no storage: we can't tell a second visit from the first
     if (!DISCORD_INVITE_ENABLED || visits < 2 || asked) return;
     // a few seconds in, once nothing else (the welcome, a budget screen, ...) is open; give up after a minute
     let tries = 0;
     const attempt = (): void => {
       const busy = !this.state.me || [...this.root.querySelectorAll('.card')].some((c) => c !== this.discordInvite && !c.classList.contains('hidden'));
-      if (busy) { if (++tries < 12) setTimeout(attempt, 5000); return; }
-      try { localStorage.setItem(DISCORD_ASKED_KEY, '1'); } catch { /* ignore */ }
+      if (busy) {
+        if (++tries < 12) setTimeout(attempt, 5000);
+        return;
+      }
+      try {
+        localStorage.setItem(DISCORD_ASKED_KEY, '1');
+      } catch {
+        /* ignore */
+      }
       this.show(this.discordInvite);
     };
     setTimeout(attempt, 4000);
@@ -768,9 +1189,12 @@ export class UI {
   enableTestDisasters(): void {
     if (this.testDisasters) return;
     const close = el('button', { class: 'btn ghost round close', title: 'Close', type: 'button' }, '×');
-    const where = el('select', { class: 'td-where' },
+    const where = el(
+      'select',
+      { class: 'td-where' },
       el('option', { value: 'here' }, 'The city in the middle of the screen'),
-      el('option', { value: 'random' }, 'A random city'));
+      el('option', { value: 'random' }, 'A random city'),
+    );
     const kinds = Array.from({ length: DISASTER_COUNT }, (_, kind) => {
       const d = DISASTERS[kind as Disaster];
       const b = el('button', { class: 'btn td-kind', type: 'button' }, el('span', { class: 'td-emoji', text: d.emoji }), el('span', { text: d.name }));
@@ -780,12 +1204,18 @@ export class UI {
       };
       return b;
     });
-    const panel = el('div', { id: 'testDisasters', class: 'panel card hidden', role: 'dialog', 'aria-label': 'Start a disaster' },
+    const panel = el(
+      'div',
+      { id: 'testDisasters', class: 'panel card hidden', role: 'dialog', 'aria-label': 'Start a disaster' },
       close,
       el('h2', { text: '🧪 Start a disaster' }),
-      el('p', { class: 'muted', text: 'Test server only. It strikes right away, wherever you send it: the usual rules about where each disaster can happen and how often are skipped.' }),
+      el('p', {
+        class: 'muted',
+        text: 'Test server only. It strikes right away, wherever you send it: the usual rules about where each disaster can happen and how often are skipped.',
+      }),
       el('label', { class: 'mp-field' }, el('span', { text: 'Where' }), where),
-      el('div', { class: 'td-kinds' }, ...kinds));
+      el('div', { class: 'td-kinds' }, ...kinds),
+    );
     close.onclick = () => this.hide(panel);
     this.testDisasters = panel;
     this.root.append(panel);
@@ -799,19 +1229,31 @@ export class UI {
     const close = el('button', { class: 'btn ghost round close', title: 'Close' }, '×');
     close.onclick = () => this.hide(this.lifelinePanel);
     const take = el('button', { class: 'btn primary', type: 'button' }, `Take the ${fmtMoney(LIFELINE_AMOUNT)} lifeline`);
-    take.onclick = () => { this.actions.lifeline(); this.hide(this.lifelinePanel); };
+    take.onclick = () => {
+      this.actions.lifeline();
+      this.hide(this.lifelinePanel);
+    };
     const later = el('button', { class: 'btn', type: 'button' }, 'Not now');
     later.onclick = () => this.hide(this.lifelinePanel);
-    this.lifelinePanel = el('div', { id: 'lifeline', class: 'panel card hidden' },
+    this.lifelinePanel = el(
+      'div',
+      { id: 'lifeline', class: 'panel card hidden' },
       close,
       el('h2', { text: '🛟 Lifeline' }),
-      el('p', { text: `Your city has less than ${fmtMoney(LIFELINE_MAX_FUNDS)}. Take an emergency loan of ${fmtMoney(LIFELINE_AMOUNT)} to get it running again: enough for a power plant and repairs.` }),
-      el('ul', { class: 'ms-benefits' },
+      el('p', {
+        text: `Your city has less than ${fmtMoney(LIFELINE_MAX_FUNDS)}. Take an emergency loan of ${fmtMoney(LIFELINE_AMOUNT)} to get it running again: enough for a power plant and repairs.`,
+      }),
+      el(
+        'ul',
+        { class: 'ms-benefits' },
         el('li', { text: 'No interest' }),
         el('li', { text: `Repaid automatically from ${Math.round(LIFELINE_REPAY_SHARE * 100)}% of each month's surplus` }),
         el('li', { text: 'Nothing is taken in months that run at a loss' }),
-        el('li', { text: `New cities (under ${LIFELINE_EARLY_PEAK_POP.toLocaleString('en-US')} people) may take another while still repaying, up to ${fmtMoney(LIFELINE_MAX_DEBT)} owed` }),
-        el('li', { text: 'Bigger cities: one lifeline at a time' })),
+        el('li', {
+          text: `New cities (under ${LIFELINE_EARLY_PEAK_POP.toLocaleString('en-US')} people) may take another while still repaying, up to ${fmtMoney(LIFELINE_MAX_DEBT)} owed`,
+        }),
+        el('li', { text: 'Bigger cities: one lifeline at a time' }),
+      ),
       el('div', { class: 'row' }, take, later),
     );
     this.root.append(this.lifelinePanel);
@@ -820,20 +1262,28 @@ export class UI {
     const close = el('button', { class: 'btn ghost round close', title: 'Close' }, '×');
     close.onclick = () => this.hide(this.monumentPanel);
     const go = el('button', { class: 'btn primary', type: 'button' }, 'Make it a monument and start over');
-    go.onclick = () => { this.actions.monument(); this.hide(this.monumentPanel); };
+    go.onclick = () => {
+      this.actions.monument();
+      this.hide(this.monumentPanel);
+    };
     const later = el('button', { class: 'btn', type: 'button' }, 'Keep playing');
     later.onclick = () => this.hide(this.monumentPanel);
     this.monumentCity = el('p');
-    this.monumentPanel = el('div', { id: 'monument', class: 'panel card hidden' },
+    this.monumentPanel = el(
+      'div',
+      { id: 'monument', class: 'panel card hidden' },
       close,
       el('h2', { text: '🏛 Make your city a monument' }),
       this.monumentCity,
-      el('ul', { class: 'ms-benefits' },
+      el(
+        'ul',
+        { class: 'ms-benefits' },
         el('li', { text: 'The city stays on the map forever under your name, exactly as it is now' }),
         el('li', { text: 'It is frozen: no growth, no decline, no fires, no costs, and it is never released' }),
         el('li', { text: 'It leaves the leaderboard; its airports and seaports stay on the world routes' }),
         el('li', { text: `You start over with ${fmtMoney(STARTING_FUNDS)} and claim a new first plot anywhere; milestones start again from zero` }),
-        el('li', { text: 'This cannot be undone' })),
+        el('li', { text: 'This cannot be undone' }),
+      ),
       el('div', { class: 'row' }, go, later),
     );
     this.root.append(this.monumentPanel);
@@ -847,11 +1297,17 @@ export class UI {
     const save = el('button', { class: 'btn primary', type: 'submit' }, 'Save');
     const cancel = el('button', { class: 'btn', type: 'button' }, 'Close');
     cancel.onclick = () => this.hide(this.mayorPanel);
-    const form = el('form', { class: 'mp-form' },
+    const form = el(
+      'form',
+      { class: 'mp-form' },
       el('label', { class: 'mp-field' }, el('span', { text: 'Mayor name' }), this.mayorName),
       this.mayorCityRow,
-      el('div', { class: 'row' }, save, cancel));
-    form.onsubmit = (e) => { e.preventDefault(); this.saveMayor(); };
+      el('div', { class: 'row' }, save, cancel),
+    );
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      this.saveMayor();
+    };
 
     this.mayorStartText = el('p');
     this.mayorAbandonBtn = el('button', { class: 'btn danger', type: 'button' }, '🏳 Abandon my city…');
@@ -859,35 +1315,58 @@ export class UI {
     this.mayorConfirmList = el('ul', { class: 'ms-benefits' });
     this.mayorConfirmBtn = el('button', { class: 'btn danger', type: 'button' }, 'Yes, abandon it');
     this.mayorConfirmBtn.onclick = () => {
-      if (!this.actions.abandon()) { this.toast('Not connected — try again in a moment.', 'error'); return; }
+      if (!this.actions.abandon()) {
+        this.toast('Not connected — try again in a moment.', 'error');
+        return;
+      }
       this.abandonedAt = Date.now();
       this.hide(this.mayorPanel);
     };
     const keep = el('button', { class: 'btn', type: 'button' }, 'Keep my city');
     keep.onclick = () => this.showAbandonConfirm(false);
     this.mayorMonumentBtn = el('button', { class: 'btn hidden', type: 'button' }, '🏛 Retire it as a monument instead');
-    this.mayorMonumentBtn.onclick = () => { this.hide(this.mayorPanel); this.toggleMonument(); };
-    this.mayorConfirm = el('div', { class: 'mp-confirm hidden' },
+    this.mayorMonumentBtn.onclick = () => {
+      this.hide(this.mayorPanel);
+      this.toggleMonument();
+    };
+    this.mayorConfirm = el(
+      'div',
+      { class: 'mp-confirm hidden' },
       this.mayorConfirmList,
-      el('div', { class: 'row' }, this.mayorConfirmBtn, keep, this.mayorMonumentBtn));
-    this.mayorStart = el('div', { class: 'mp-start' },
+      el('div', { class: 'row' }, this.mayorConfirmBtn, keep, this.mayorMonumentBtn),
+    );
+    this.mayorStart = el(
+      'div',
+      { class: 'mp-start' },
       el('h3', { text: 'Start over' }),
       this.mayorStartText,
       el('div', { class: 'row' }, this.mayorAbandonBtn),
-      this.mayorConfirm);
+      this.mayorConfirm,
+    );
 
-    this.mayorPanel = el('div', { id: 'mayorPanel', class: 'panel card hidden', role: 'dialog', 'aria-label': 'Mayor' },
+    this.mayorPanel = el(
+      'div',
+      { id: 'mayorPanel', class: 'panel card hidden', role: 'dialog', 'aria-label': 'Mayor' },
       close,
       el('h2', { text: '🎩 Mayor' }),
       form,
-      this.mayorStart);
+      this.mayorStart,
+    );
     this.root.append(this.mayorPanel);
   }
 
   /** Open (or close) the mayor dialog, focused on the mayor name, the city name, or the abandon confirmation. */
   private toggleMayor(focus: 'mayor' | 'city' | 'abandon'): void {
-    if (!this.mayorPanel.classList.contains('hidden') && focus !== 'abandon') { this.hide(this.mayorPanel); return; }
-    this.hide(this.milestones); this.hide(this.leaderboard); this.hide(this.about); this.hide(this.lifelinePanel); this.hide(this.monumentPanel); this.hide(this.budgetPanel);
+    if (!this.mayorPanel.classList.contains('hidden') && focus !== 'abandon') {
+      this.hide(this.mayorPanel);
+      return;
+    }
+    this.hide(this.milestones);
+    this.hide(this.leaderboard);
+    this.hide(this.about);
+    this.hide(this.lifelinePanel);
+    this.hide(this.monumentPanel);
+    this.hide(this.budgetPanel);
     this.mayorName.value = this.state.me?.name ?? this.net.identity.name ?? '';
     this.mayorCity.value = this.state.cityName;
     this.mayorCityRow.classList.toggle('hidden', !this.state.cityName);
@@ -898,13 +1377,22 @@ export class UI {
   }
 
   private saveMayor(): void {
-    const name = this.mayorName.value.trim(), city = this.mayorCity.value.trim();
-    const curName = this.state.me?.name ?? this.net.identity.name ?? '', curCity = this.state.cityName;
-    if (!name) { this.toast('Your mayor needs a name', 'error'); this.mayorName.focus(); return; }
+    const name = this.mayorName.value.trim(),
+      city = this.mayorCity.value.trim();
+    const curName = this.state.me?.name ?? this.net.identity.name ?? '',
+      curCity = this.state.cityName;
+    if (!name) {
+      this.toast('Your mayor needs a name', 'error');
+      this.mayorName.focus();
+      return;
+    }
     let ok = true;
     if (name !== curName) ok = this.actions.rename(name) && ok;
     if (curCity && city && city !== curCity) ok = this.actions.renameCity(city) && ok;
-    if (!ok) { this.toast('Not connected — try again in a moment.', 'error'); return; }
+    if (!ok) {
+      this.toast('Not connected — try again in a moment.', 'error');
+      return;
+    }
     this.refreshName();
     this.hide(this.mayorPanel);
   }
@@ -917,20 +1405,26 @@ export class UI {
 
   /** The "Start over" part of the mayor dialog: only with a city, and worded for a broke city or a healthy one. */
   private refreshMayorStart(): void {
-    const owned = this.state.ownedChunkCount(), s = this.state.stats, city = this.state.cityName || 'your city';
+    const owned = this.state.ownedChunkCount(),
+      s = this.state.stats,
+      city = this.state.cityName || 'your city';
     this.mayorStart.classList.toggle('hidden', owned === 0);
     if (owned === 0) return;
-    const funds = s?.funds ?? 0, debt = s?.debt ?? 0;
-    this.mayorStartText.textContent = funds < ABANDON_MAX_FUNDS && debt > 0
-      ? `${city} has run out of money and still owes ${fmtMoney(debt)} on its lifeline. If it can't recover, you can leave it behind and found a new city.`
-      : `Stuck, or want to build somewhere else? You can leave ${city} behind and found a new city anywhere in the world.`;
+    const funds = s?.funds ?? 0,
+      debt = s?.debt ?? 0;
+    this.mayorStartText.textContent =
+      funds < ABANDON_MAX_FUNDS && debt > 0
+        ? `${city} has run out of money and still owes ${fmtMoney(debt)} on its lifeline. If it can't recover, you can leave it behind and found a new city.`
+        : `Stuck, or want to build somewhere else? You can leave ${city} behind and found a new city anywhere in the world.`;
     this.mayorConfirmBtn.textContent = `Yes, abandon ${this.state.cityName || 'my city'}`;
     const canRetire = (s?.population ?? 0) >= MONUMENT_MIN_POP;
     this.mayorMonumentBtn.classList.toggle('hidden', !canRetire);
     const plots = owned === 1 ? 'Your plot is released: anyone can claim it' : `All ${owned} of your plots are released: anyone can claim them`;
     this.mayorConfirmList.replaceChildren(
       el('li', { text: `${plots}, with everything you built still standing` }),
-      el('li', { text: `You start over with ${fmtMoney(STARTING_FUNDS)}${funds > STARTING_FUNDS ? ` (you have ${fmtMoney(funds)} now)` : ''} and claim a new first plot for free${debt > 0 ? '; your lifeline debt is written off' : ''}` }),
+      el('li', {
+        text: `You start over with ${fmtMoney(STARTING_FUNDS)}${funds > STARTING_FUNDS ? ` (you have ${fmtMoney(funds)} now)` : ''} and claim a new first plot for free${debt > 0 ? '; your lifeline debt is written off' : ''}`,
+      }),
       el('li', { text: `You can't claim your old plots back for ${ABANDON_RECLAIM_DAYS} days` }),
       el('li', { text: 'Milestones start again from zero' }),
       el('li', { text: 'This cannot be undone' }),
@@ -938,16 +1432,30 @@ export class UI {
   }
 
   private toggleMonument(): void {
-    if (!this.monumentPanel.classList.contains('hidden')) { this.hide(this.monumentPanel); return; }
-    this.hide(this.milestones); this.hide(this.leaderboard); this.hide(this.about); this.hide(this.lifelinePanel); this.hide(this.budgetPanel);
-    const s = this.state.stats, city = this.state.cityName || 'Your city';
+    if (!this.monumentPanel.classList.contains('hidden')) {
+      this.hide(this.monumentPanel);
+      return;
+    }
+    this.hide(this.milestones);
+    this.hide(this.leaderboard);
+    this.hide(this.about);
+    this.hide(this.lifelinePanel);
+    this.hide(this.budgetPanel);
+    const s = this.state.stats,
+      city = this.state.cityName || 'Your city';
     this.monumentCity.textContent = `${city} has ${(s?.population ?? 0).toLocaleString('en-US')} people. You can retire it as a monument: a lasting record of what you built, while you start a new city somewhere else.`;
     this.monumentPanel.classList.remove('hidden');
   }
 
   private toggleLifeline(): void {
-    if (!this.lifelinePanel.classList.contains('hidden')) { this.hide(this.lifelinePanel); return; }
-    this.hide(this.milestones); this.hide(this.leaderboard); this.hide(this.about); this.hide(this.budgetPanel);
+    if (!this.lifelinePanel.classList.contains('hidden')) {
+      this.hide(this.lifelinePanel);
+      return;
+    }
+    this.hide(this.milestones);
+    this.hide(this.leaderboard);
+    this.hide(this.about);
+    this.hide(this.budgetPanel);
     this.lifelinePanel.classList.remove('hidden');
   }
 
@@ -959,35 +1467,67 @@ export class UI {
   private buildOverlayBar(): void {
     const btns = OVERLAY_MODES.map((m) => {
       const info = OVERLAY_INFO[m];
-      const b = el('button', { class: 'btn ov-btn', type: 'button', 'data-mode': m, title: `Map view: ${info.name}`, 'aria-pressed': String(m === 'none') }, `${info.icon} ${m === 'none' ? 'Normal' : info.name}`);
-      b.onclick = () => { this.autoOverlay = null; this.setOverlay(m); };
+      const b = el(
+        'button',
+        { class: 'btn ov-btn', type: 'button', 'data-mode': m, title: `Map view: ${info.name}`, 'aria-pressed': String(m === 'none') },
+        `${info.icon} ${m === 'none' ? 'Normal' : info.name}`,
+      );
+      b.onclick = () => {
+        this.autoOverlay = null;
+        this.setOverlay(m);
+      };
       return b;
     });
     this.overlayLegend = el('div', { class: 'ov-legend hidden' });
-    this.overlayBody = el('div', { class: 'ov-body hidden', id: 'ovBody' }, el('div', { class: 'ov-buttons', role: 'group', 'aria-label': 'Map view' }, ...btns), this.overlayLegend);
+    this.overlayBody = el(
+      'div',
+      { class: 'ov-body hidden', id: 'ovBody' },
+      el('div', { class: 'ov-buttons', role: 'group', 'aria-label': 'Map view' }, ...btns),
+      this.overlayLegend,
+    );
     // Collapsed by default to a single small button; remembers the viewer's choice.
-    this.overlayToggle = el('button', { class: 'btn ov-toggle', type: 'button', 'aria-expanded': 'false', 'aria-controls': 'ovBody', title: 'Map views: power, fire hazard, crime, traffic, pollution, land value, density (V)' }, '🗺 Map view');
+    this.overlayToggle = el(
+      'button',
+      {
+        class: 'btn ov-toggle',
+        type: 'button',
+        'aria-expanded': 'false',
+        'aria-controls': 'ovBody',
+        title: 'Map views: power, fire hazard, crime, traffic, pollution, land value, density (V)',
+      },
+      '🗺 Map view',
+    );
     this.overlayToggle.onclick = () => this.setOverlayOpen(this.overlayBody.classList.contains('hidden'));
     this.overlayBar = el('div', { id: 'overlays', class: 'panel' }, this.overlayToggle, this.overlayBody);
     this.root.append(this.overlayBar);
     let open = false;
-    try { open = localStorage.getItem('globalcity.mapViewOpen') === '1'; } catch { /* ignore */ }
+    try {
+      open = localStorage.getItem('globalcity.mapViewOpen') === '1';
+    } catch {
+      /* ignore */
+    }
     this.setOverlayOpen(open);
     window.addEventListener('keydown', (e) => {
       if (e.key.toLowerCase() !== 'v' || e.ctrlKey || e.metaKey || e.altKey || (e.target as HTMLElement)?.tagName === 'INPUT') return;
       const i = OVERLAY_MODES.indexOf(this.renderer.overlay.mode);
-      this.autoOverlay = null; this.setOverlay(OVERLAY_MODES[(i + 1) % OVERLAY_MODES.length]);
+      this.autoOverlay = null;
+      this.setOverlay(OVERLAY_MODES[(i + 1) % OVERLAY_MODES.length]);
     });
   }
   private setOverlayOpen(open: boolean): void {
     this.overlayBody.classList.toggle('hidden', !open);
     this.overlayToggle.setAttribute('aria-expanded', String(open));
     this.overlayBar.classList.toggle('open', open);
-    try { localStorage.setItem('globalcity.mapViewOpen', open ? '1' : '0'); } catch { /* ignore */ }
+    try {
+      localStorage.setItem('globalcity.mapViewOpen', open ? '1' : '0');
+    } catch {
+      /* ignore */
+    }
     this.refreshOverlayToggle();
   }
   private refreshOverlayToggle(): void {
-    const m = this.renderer.overlay.mode, info = OVERLAY_INFO[m];
+    const m = this.renderer.overlay.mode,
+      info = OVERLAY_INFO[m];
     const open = !this.overlayBody.classList.contains('hidden');
     this.overlayToggle.textContent = `${m === 'none' ? '🗺 Map view' : `${info.icon} ${info.name}`} ${open ? '▴' : '▾'}`;
     this.overlayToggle.classList.toggle('active', m !== 'none');
@@ -1004,7 +1544,8 @@ export class UI {
     this.renderer.overlay.setMode(m);
     for (const b of this.overlayBar.querySelectorAll<HTMLButtonElement>('.ov-btn')) {
       const on = b.dataset.mode === m;
-      b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on));
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', String(on));
     }
     const info = OVERLAY_INFO[m];
     this.overlayLegend.replaceChildren(
@@ -1022,16 +1563,20 @@ export class UI {
     const close = el('button', { class: 'btn ghost round close', title: 'Close' }, '×');
     close.onclick = () => this.hide(this.budgetPanel);
     this.budgetTable = el('table', { class: 'budget-table' });
-    this.budgetPanel = el('div', { id: 'budgetPanel', class: 'panel card hidden' },
-      close,
-      el('h2', { text: '💰 Budget' }),
-      this.budgetTable,
-    );
+    this.budgetPanel = el('div', { id: 'budgetPanel', class: 'panel card hidden' }, close, el('h2', { text: '💰 Budget' }), this.budgetTable);
     this.root.append(this.budgetPanel);
   }
   toggleBudget(): void {
-    if (!this.budgetPanel.classList.contains('hidden')) { this.hide(this.budgetPanel); return; }
-    this.hide(this.about); this.hide(this.leaderboard); this.hide(this.milestones); this.hide(this.lifelinePanel); this.hide(this.monumentPanel); this.hide(this.mayorPanel);
+    if (!this.budgetPanel.classList.contains('hidden')) {
+      this.hide(this.budgetPanel);
+      return;
+    }
+    this.hide(this.about);
+    this.hide(this.leaderboard);
+    this.hide(this.milestones);
+    this.hide(this.lifelinePanel);
+    this.hide(this.monumentPanel);
+    this.hide(this.mayorPanel);
     this.budgetPanel.classList.remove('hidden');
     this.refreshBudget();
   }
@@ -1039,10 +1584,16 @@ export class UI {
     if (!this.budgetPanel || this.budgetPanel.classList.contains('hidden')) return;
     const s = this.state.stats;
     const b = s?.budget;
-    if (!b) { this.budgetTable.replaceChildren(); return; }
+    if (!b) {
+      this.budgetTable.replaceChildren();
+      return;
+    }
     // columns: the last completed years, then the year so far (3 on a desktop, 2 on a phone)
     const past = window.matchMedia('(max-width: 760px)').matches ? 1 : 2;
-    const cols: { y: BudgetYear; head: string }[] = [...b.years.slice(-past).map((y) => ({ y, head: String(y.year) })), { y: b.current, head: `${this.state.time.year} so far` }]; // the clock's year: a city without land never gets its book stamped
+    const cols: { y: BudgetYear; head: string }[] = [
+      ...b.years.slice(-past).map((y) => ({ y, head: String(y.year) })),
+      { y: b.current, head: `${this.state.time.year} so far` },
+    ]; // the clock's year: a city without land never gets its book stamped
     const money = (n: number, sign: 1 | -1 = 1): HTMLElement => {
       const v = n * sign;
       return el('td', { class: `num ${v < 0 ? 'bad' : v > 0 ? 'good' : 'muted'}`, text: n === 0 ? '—' : `${v < 0 ? '−' : '+'}${fmtMoney(Math.abs(v))}` });
@@ -1062,13 +1613,19 @@ export class UI {
     if (any((y) => budgetTotals(y).trade)) rows.push(row('income', 'Power trade', (y) => budgetTotals(y).trade));
     if (any((y) => y.repaid) || (s?.debt ?? 0) > 0) rows.push(row('sub', 'Lifeline repayment', (y) => y.repaid, -1));
     // below the operating result: one-off money (building, land, loans, gifts), each row only when it happened
-    const extras: [string, (y: BudgetYear) => number, 1 | -1][] = [['Construction', (y) => y.construction, -1], ['New plots', (y) => y.plots, -1], ['Lifeline taken', (y) => y.lifeline, 1], ['Gifts', (y) => y.gifts, 1]];
+    const extras: [string, (y: BudgetYear) => number, 1 | -1][] = [
+      ['Construction', (y) => y.construction, -1],
+      ['New plots', (y) => y.plots, -1],
+      ['Lifeline taken', (y) => y.lifeline, 1],
+      ['Gifts', (y) => y.gifts, 1],
+    ];
     const shown = extras.filter(([, get]) => any(get));
     rows.push(row(shown.length ? 'subtotal' : 'total', shown.length ? 'Operating result' : 'Net', (y) => budgetTotals(y).operating));
     for (const [label, get, sign] of shown) rows.push(row(sign < 0 ? 'sub' : 'income', label, get, sign));
     if (shown.length) rows.push(row('total', 'Net', (y) => budgetTotals(y).net));
     this.budgetTable.replaceChildren(...rows);
-    this.budgetTable.title = 'Services: fire and police stations, schools, the university, city hall and Grand Central. Construction: building and bulldozing. Net: how your funds changed.';
+    this.budgetTable.title =
+      'Services: fire and police stations, schools, the university, city hall and Grand Central. Construction: building and bulldozing. Net: how your funds changed.';
   }
 
   // ---------- milestones ----------
@@ -1076,7 +1633,9 @@ export class UI {
     const close = el('button', { class: 'btn ghost round close', title: 'Close' }, '×');
     close.onclick = () => this.hide(this.milestones);
     this.msRows = el('div', { class: 'ms-rows' });
-    this.milestones = el('div', { id: 'milestones', class: 'panel card hidden' },
+    this.milestones = el(
+      'div',
+      { id: 'milestones', class: 'panel card hidden' },
       close,
       el('h2', { text: '🏛 Milestones' }),
       el('p', { class: 'muted', text: 'As your city grows it unlocks special buildings. Here is what you have unlocked, and the next one to work towards.' }),
@@ -1085,21 +1644,30 @@ export class UI {
     this.root.append(this.milestones);
   }
   toggleMilestones(): void {
-    if (!this.milestones.classList.contains('hidden')) { this.hide(this.milestones); return; }
-    this.hide(this.about); this.hide(this.leaderboard); this.hide(this.budgetPanel);
+    if (!this.milestones.classList.contains('hidden')) {
+      this.hide(this.milestones);
+      return;
+    }
+    this.hide(this.about);
+    this.hide(this.leaderboard);
+    this.hide(this.budgetPanel);
     this.milestones.classList.remove('hidden');
     this.refreshMilestones();
   }
   private msIcon(b: MilestoneBuilding): HTMLCanvasElement {
     const t = TOOLS[MILESTONE_BUILDINGS[b].tool];
-    const n = t.size, px = 72;
+    const n = t.size,
+      px = 72;
     const c = el('canvas', { class: 'ms-icon', width: String(px), height: String(px) });
     const g = c.getContext('2d')!;
     g.imageSmoothingEnabled = false;
     if (t.custom) {
       const img = this.renderer.customs.images.get(t.custom);
-      const paint = () => { if (img && img.naturalWidth) drawCustomFit(g, img, t.custom!, px); };
-      if (img?.complete) paint(); else img?.addEventListener('load', paint, { once: true });
+      const paint = () => {
+        if (img && img.naturalWidth) drawCustomFit(g, img, t.custom!, px);
+      };
+      if (img?.complete) paint();
+      else img?.addEventListener('load', paint, { once: true });
       return c;
     }
     const cell = px / n;
@@ -1117,20 +1685,35 @@ export class UI {
       const unlocked = st?.unlocked?.includes(b) ?? false;
       const built = m.max !== undefined && (st?.built?.[b] ?? 0) >= m.max;
       const offSeason = unlocked && m.months !== undefined && !(st?.inSeason?.includes(b) ?? false);
-      const status = built ? { cls: 'done', text: 'Built (one per city)' } : offSeason ? { cls: 'ready', text: `Unlocked: build it in ${m.seasonName}` }
-        : unlocked ? { cls: 'ready', text: 'Unlocked: build it from the toolbar' }
-        : { cls: 'locked', text: `${(m.pop - peak).toLocaleString('en-US')} more people` };
+      const status = built
+        ? { cls: 'done', text: 'Built (one per city)' }
+        : offSeason
+          ? { cls: 'ready', text: `Unlocked: build it in ${m.seasonName}` }
+          : unlocked
+            ? { cls: 'ready', text: 'Unlocked: build it from the toolbar' }
+            : { cls: 'locked', text: `${(m.pop - peak).toLocaleString('en-US')} more people` };
       const pct = Math.max(0, Math.min(100, (peak / m.pop) * 100));
       const t = TOOLS[m.tool];
-      return el('div', { class: `ms-row ${status.cls}` },
+      return el(
+        'div',
+        { class: `ms-row ${status.cls}` },
         this.msIcon(b),
-        el('div', { class: 'ms-body' },
+        el(
+          'div',
+          { class: 'ms-body' },
           el('div', { class: 'ms-head' }, el('strong', { text: m.name }), el('span', { class: 'chip', text: `${m.pop.toLocaleString('en-US')} people` })),
           el('ul', { class: 'ms-benefits' }, ...m.benefits.map((x) => el('li', { text: x }))),
           el('div', { class: 'ms-meta muted', text: `${fmtMoney(t.cost)} · ${t.w ?? t.size}×${t.h ?? t.size} tiles` }),
-          unlocked ? el('div', { class: `ms-status ${status.cls}`, text: status.text })
-            : el('div', { class: 'ms-progress' }, el('div', { class: 'ms-bar' }, el('div', { class: 'ms-fill', style: `width:${pct.toFixed(1)}%` })), el('span', { class: 'ms-status locked', text: status.text })),
-        ));
+          unlocked
+            ? el('div', { class: `ms-status ${status.cls}`, text: status.text })
+            : el(
+                'div',
+                { class: 'ms-progress' },
+                el('div', { class: 'ms-bar' }, el('div', { class: 'ms-fill', style: `width:${pct.toFixed(1)}%` })),
+                el('span', { class: 'ms-status locked', text: status.text }),
+              ),
+        ),
+      );
     });
     rows.unshift(this.grandCentralRow());
     this.msRows.replaceChildren(...rows);
@@ -1140,21 +1723,35 @@ export class UI {
   private grandCentralRow(): HTMLDivElement {
     const st = this.state.stats;
     const t = TOOLS.grandcentral;
-    const unlocked = st?.unlocked?.includes('grandcentral') ?? false, built = (st?.built?.grandcentral ?? 0) >= 1;
-    const status = built ? { cls: 'done', text: 'Built (one per city)' } : unlocked ? { cls: 'ready', text: 'Unlocked: click your east-west rail line with it' }
-      : { cls: 'locked', text: GRAND_CENTRAL.unlock };
+    const unlocked = st?.unlocked?.includes('grandcentral') ?? false,
+      built = (st?.built?.grandcentral ?? 0) >= 1;
+    const status = built
+      ? { cls: 'done', text: 'Built (one per city)' }
+      : unlocked
+        ? { cls: 'ready', text: 'Unlocked: click your east-west rail line with it' }
+        : { cls: 'locked', text: GRAND_CENTRAL.unlock };
     const c = el('canvas', { class: 'ms-icon', width: '72', height: '72' });
     const g = c.getContext('2d')!;
     g.imageSmoothingEnabled = false;
     const img = this.renderer.customs.images.get('grandcentral');
-    const paint = () => { if (img && img.naturalWidth) drawCustomFit(g, img, 'grandcentral', 72); };
-    if (img?.complete) paint(); else img?.addEventListener('load', paint, { once: true });
-    return el('div', { class: `ms-row ${status.cls}` }, c,
-      el('div', { class: 'ms-body' },
+    const paint = () => {
+      if (img && img.naturalWidth) drawCustomFit(g, img, 'grandcentral', 72);
+    };
+    if (img?.complete) paint();
+    else img?.addEventListener('load', paint, { once: true });
+    return el(
+      'div',
+      { class: `ms-row ${status.cls}` },
+      c,
+      el(
+        'div',
+        { class: 'ms-body' },
         el('div', { class: 'ms-head' }, el('strong', { text: 'Grand Central' }), el('span', { class: 'chip', text: '🚆 rail link' })),
         el('ul', { class: 'ms-benefits' }, ...GRAND_CENTRAL.benefits.map((x) => el('li', { text: x }))),
         el('div', { class: 'ms-meta muted', text: `${fmtMoney(t.cost)} · ${t.w}×${t.h} tiles` }),
-        el('div', { class: `ms-status ${status.cls}`, text: status.text })));
+        el('div', { class: `ms-status ${status.cls}`, text: status.text }),
+      ),
+    );
   }
 
   private refreshClaimButtons(): void {
@@ -1163,11 +1760,13 @@ export class UI {
     this.plots.textContent = `${owned}/${MAX_CHUNKS_PER_PLAYER}`;
     this.plots.classList.toggle('bad', owned >= MAX_CHUNKS_PER_PLAYER);
     this.plotsStat.classList.toggle('hidden', !this.state.me);
-    this.plotsStat.title = owned >= MAX_CHUNKS_PER_PLAYER
-      ? `Your city has reached the maximum of ${MAX_CHUNKS_PER_PLAYER} plots`
-      : `Plots claimed (a city is at most ${MAX_CHUNKS_PER_PLAYER} plots)`;
+    this.plotsStat.title =
+      owned >= MAX_CHUNKS_PER_PLAYER
+        ? `Your city has reached the maximum of ${MAX_CHUNKS_PER_PLAYER} plots`
+        : `Plots claimed (a city is at most ${MAX_CHUNKS_PER_PLAYER} plots)`;
     const tileMode = this.renderer.isTileMode();
-    let showClaim = false, showFind = false;
+    let showClaim = false,
+      showFind = false;
     let findTitle = 'Ask the server for the nearest free plot';
     if (tileMode && this.state.me) {
       const { cx, cy } = this.renderer.centerChunk();
@@ -1186,7 +1785,9 @@ export class UI {
         const cost = claimCost(owned);
         this.claimBtn.textContent = owned === 0 ? 'Claim this plot (free)' : `Claim plot #${owned + 1} (${fmtMoney(cost)})`;
         this.claimBtn.disabled = this.state.funds < cost;
-        this.claimBtn.title = this.claimBtn.disabled ? `Not enough funds: plot #${owned + 1} costs ${fmtMoney(cost)}` : `Claim chunk ${cx},${cy}. Each extra plot costs more than the last.`;
+        this.claimBtn.title = this.claimBtn.disabled
+          ? `Not enough funds: plot #${owned + 1} costs ${fmtMoney(cost)}`
+          : `Claim chunk ${cx},${cy}. Each extra plot costs more than the last.`;
       } else if (owned === 0) {
         showFind = true;
       }
@@ -1199,9 +1800,17 @@ export class UI {
   private refreshWelcome(): void {
     const owned = this.state.ownedChunkCount();
     let welcomed = false;
-    try { welcomed = localStorage.getItem(WELCOMED_KEY) === '1'; } catch { /* ignore */ }
+    try {
+      welcomed = localStorage.getItem(WELCOMED_KEY) === '1';
+    } catch {
+      /* ignore */
+    }
     if (owned > 0) {
-      try { localStorage.setItem(WELCOMED_KEY, '1'); } catch { /* ignore */ }
+      try {
+        localStorage.setItem(WELCOMED_KEY, '1');
+      } catch {
+        /* ignore */
+      }
       if (this.sawNoPlots && !this.foundedToastShown) {
         // first plot of this session's new city: the server names it after the nearest town (cityName rides on the claim)
         const city = this.state.cityName;
@@ -1250,7 +1859,9 @@ export class UI {
         if (claim) {
           this.setWelcomeStatus(`The plot at your location belongs to ${claim.ownerName}. Try "Find nearest free plot".`, true);
         } else {
-          this.setWelcomeStatus('Found you! Use "Claim this plot" in the top bar once the map has loaded. If there is too little land there (a first plot needs plenty), try "Find nearest free plot".');
+          this.setWelcomeStatus(
+            'Found you! Use "Claim this plot" in the top bar once the map has loaded. If there is too little land there (a first plot needs plenty), try "Find nearest free plot".',
+          );
           this.welcomeDismissed = true;
           setTimeout(() => this.hide(this.welcome), 1500);
         }
@@ -1291,7 +1902,9 @@ export class UI {
   }
 
   // ---------- leaderboard ----------
-  isLeaderboardOpen(): boolean { return !this.leaderboard.classList.contains('hidden'); }
+  isLeaderboardOpen(): boolean {
+    return !this.leaderboard.classList.contains('hidden');
+  }
 
   openLeaderboard(): void {
     this.hide(this.about);
@@ -1301,7 +1914,10 @@ export class UI {
     this.net.send({ t: 'leaderboard' }); // the server also pushes it periodically; this just freshens it
   }
 
-  toggleLeaderboard(): void { if (this.isLeaderboardOpen()) this.hide(this.leaderboard); else this.openLeaderboard(); }
+  toggleLeaderboard(): void {
+    if (this.isLeaderboardOpen()) this.hide(this.leaderboard);
+    else this.openLeaderboard();
+  }
 
   private refreshWorldPop(): void {
     const { total, cities } = this.state.worldPopulation();
@@ -1327,9 +1943,16 @@ export class UI {
     this.lbPageBtn.textContent = onMon ? '← Top cities' : `🏛 Monuments${mons?.length ? ` (${mons.length})` : ''}`;
     this.lbPageBtn.title = onMon ? 'Back to the most populous cities' : 'Cities retired as monuments';
     if (onMon) {
-      this.monRows.replaceChildren(...(mons?.length
-        ? mons.map((m, i) => this.monumentRow(m, i + 1))
-        : [el('div', { class: 'lb-empty muted', text: `No monuments yet. Grow a city past ${MONUMENT_MIN_POP.toLocaleString('en-US')} people and you can retire it as the first.` })]));
+      this.monRows.replaceChildren(
+        ...(mons?.length
+          ? mons.map((m, i) => this.monumentRow(m, i + 1))
+          : [
+              el('div', {
+                class: 'lb-empty muted',
+                text: `No monuments yet. Grow a city past ${MONUMENT_MIN_POP.toLocaleString('en-US')} people and you can retire it as the first.`,
+              }),
+            ]),
+      );
       return;
     }
     const me = this.state.me;
@@ -1354,18 +1977,28 @@ export class UI {
   private monumentRow(m: MonumentEntry, rank: number): HTMLElement {
     const city = m.cityName || `${m.name}'s city`;
     const visit = el('button', { class: 'btn visit', title: `Fly to ${city} (plot ${m.cx},${m.cy})` }, 'Visit');
-    visit.onclick = () => { this.actions.flyToChunk(m.cx, m.cy, 1, 900); this.hide(this.leaderboard); };
+    visit.onclick = () => {
+      this.actions.flyToChunk(m.cx, m.cy, 1, 900);
+      this.hide(this.leaderboard);
+    };
     const sw = el('span', { class: 'sw' });
     sw.style.background = m.color;
     const name = el('span', { class: 'name' }, el('span', { class: 'city', text: city }), el('span', { class: 'mayor muted', text: `by ${m.name}` }));
     name.style.color = m.color;
     const when = new Date(m.at);
-    return el('div', { class: 'lb-row', 'data-id': m.id },
+    return el(
+      'div',
+      { class: 'lb-row', 'data-id': m.id },
       el('span', { class: 'rank', text: `${rank}` }),
-      sw, name,
+      sw,
+      name,
       el('span', { class: 'pop', text: m.population.toLocaleString('en-US') }),
       el('span', { class: 'chunks', text: `${m.chunks}` }),
-      el('span', { class: 'date muted', text: when.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }), title: when.toLocaleString() }),
+      el('span', {
+        class: 'date muted',
+        text: when.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }),
+        title: when.toLocaleString(),
+      }),
       visit,
     );
   }
@@ -1373,7 +2006,10 @@ export class UI {
   private leaderboardRow(e: LeaderboardEntry, rank: number, mine: boolean): HTMLElement {
     const city = e.cityName ?? '';
     const visit = el('button', { class: 'btn visit', title: `Fly to ${city || `${e.name}'s city`} (plot ${e.cx},${e.cy})` }, 'Visit');
-    visit.onclick = () => { this.actions.flyToChunk(e.cx, e.cy, 1, 900); this.hide(this.leaderboard); };
+    visit.onclick = () => {
+      this.actions.flyToChunk(e.cx, e.cy, 1, 900);
+      this.hide(this.leaderboard);
+    };
     const sw = el('span', { class: 'sw' });
     sw.style.background = e.color;
     // city first (bold), mayor beneath (muted); without a city name the mayor takes the bold slot
@@ -1382,9 +2018,12 @@ export class UI {
       ? el('span', { class: 'name' }, el('span', { class: 'city', text: city }), el('span', { class: 'mayor muted', text: mayor }))
       : el('span', { class: 'name' }, el('span', { class: 'city', text: mayor }));
     name.style.color = e.color;
-    return el('div', { class: `lb-row${mine ? ' me' : ''}`, 'data-id': e.id },
+    return el(
+      'div',
+      { class: `lb-row${mine ? ' me' : ''}`, 'data-id': e.id },
       el('span', { class: 'rank', text: `${rank}` }),
-      sw, name,
+      sw,
+      name,
       el('span', { class: 'pop', text: e.population.toLocaleString('en-US') }),
       milestoneCell(e.milestones),
       el('span', { class: 'chunks', text: `${e.chunks}` }),
@@ -1441,17 +2080,29 @@ export class UI {
     this.annText = el('span', { class: 'banner-text' });
     const annClose = el('button', { class: 'btn ghost round', title: 'Dismiss', type: 'button' }, '×');
     annClose.onclick = () => {
-      try { localStorage.setItem('globalcity.annDismissed', this.annId); } catch { /* ignore */ }
+      try {
+        localStorage.setItem('globalcity.annDismissed', this.annId);
+      } catch {
+        /* ignore */
+      }
       this.annBanner.classList.add('hidden');
     };
     this.annBanner = el('div', { class: 'banner announce hidden', role: 'status' }, el('span', { class: 'banner-ico' }, '📣'), this.annText, annClose);
-    this.updBanner = el('div', { class: 'banner update hidden', role: 'status' }, el('span', { class: 'banner-text' }, '✨ A new version of GlobalCity is available.'));
+    this.updBanner = el(
+      'div',
+      { class: 'banner update hidden', role: 'status' },
+      el('span', { class: 'banner-text' }, '✨ A new version of GlobalCity is available.'),
+    );
     this.banners = el('div', { id: 'banners' }, this.annBanner, this.updBanner);
   }
   showAnnouncement(id: string, msg: string, level: 'info' | 'warn', until: number): void {
     this.annId = id;
     let dismissed = false;
-    try { dismissed = localStorage.getItem('globalcity.annDismissed') === id; } catch { /* ignore */ }
+    try {
+      dismissed = localStorage.getItem('globalcity.annDismissed') === id;
+    } catch {
+      /* ignore */
+    }
     this.annText.textContent = msg;
     this.annBanner.classList.toggle('warn', level === 'warn');
     this.annBanner.classList.toggle('hidden', dismissed);
@@ -1459,7 +2110,10 @@ export class UI {
     const left = until - Date.now();
     if (left > 0 && left < 2 ** 31) this.annTimer = setTimeout(() => this.clearAnnouncement(), left);
   }
-  clearAnnouncement(): void { this.annBanner.classList.add('hidden'); this.annId = ''; }
+  clearAnnouncement(): void {
+    this.annBanner.classList.add('hidden');
+    this.annId = '';
+  }
   showUpdateBanner(reload: () => void): void {
     if (!this.updBanner.querySelector('button')) {
       const btn = el('button', { class: 'btn primary', type: 'button' }, 'Reload');
@@ -1479,7 +2133,7 @@ export class UI {
   onTouchCancel: () => void = () => {};
   private buildTouchBar(): void {
     this.touchWhat = el('span', { class: 'what' });
-    const build = this.touchBuild = el('button', { class: 'primary', type: 'button' }, 'Build');
+    const build = (this.touchBuild = el('button', { class: 'primary', type: 'button' }, 'Build'));
     const cancel = el('button', { type: 'button' }, 'Cancel');
     build.addEventListener('click', () => this.onTouchBuild());
     cancel.addEventListener('click', () => this.onTouchCancel());
@@ -1488,7 +2142,10 @@ export class UI {
   /** Touch aimed a build tool at a tile (null = hide). Tap the same tile again or press Build. */
   setTouchTarget(tile: { x: number; y: number } | null): void {
     this.touchTile = tile;
-    if (!tile) { if (!this.touchPlan) this.touchBar.classList.add('hidden'); return; }
+    if (!tile) {
+      if (!this.touchPlan) this.touchBar.classList.add('hidden');
+      return;
+    }
     const t = TOOLS[this.state.tool];
     this.touchWhat.textContent = `${t.name} here${t.cost ? ` · ${fmtMoney(t.cost)}` : ''} — tap again or`;
     this.touchBuild.disabled = false;
@@ -1497,8 +2154,12 @@ export class UI {
   /** A touch drawing waits for confirmation (null = hide): how many tiles it builds and roughly what it costs. */
   setTouchPlan(plan: TouchPlan | null): void {
     this.touchPlan = plan;
-    if (!plan) { if (!this.touchTile) this.touchBar.classList.add('hidden'); return; }
-    const t = TOOLS[plan.tool], zone = ZONE_TOOLS.has(plan.tool);
+    if (!plan) {
+      if (!this.touchTile) this.touchBar.classList.add('hidden');
+      return;
+    }
+    const t = TOOLS[plan.tool],
+      zone = ZONE_TOOLS.has(plan.tool);
     const what = zone ? `${plan.count} zone${plan.count === 1 ? '' : 's'}` : `${plan.count} tile${plan.count === 1 ? '' : 's'}`;
     // the server can charge more (bridges, clearing trees), so the cost is an estimate
     this.touchWhat.textContent = plan.count ? `${t.name} · ${what}${plan.cost ? ` · about ${fmtMoney(plan.cost)}` : ''}` : 'Only on your own plots';
@@ -1513,7 +2174,9 @@ export class UI {
       clearTimeout(last.timer);
       last.at = now;
       last.el.classList.remove('out');
-      last.el.classList.remove('bump'); void last.el.offsetWidth; last.el.classList.add('bump');
+      last.el.classList.remove('bump');
+      void last.el.offsetWidth;
+      last.el.classList.add('bump');
       last.timer = setTimeout(() => this.dismissToast(last.el), ms);
       return last.el;
     }
@@ -1522,7 +2185,10 @@ export class UI {
       t.classList.add('clickable');
       t.setAttribute('role', 'button');
       t.title = `Click to go to tile ${at.x}, ${at.y}`;
-      t.onclick = () => { this.goToTile(at.x, at.y); this.dismissToast(t); };
+      t.onclick = () => {
+        this.goToTile(at.x, at.y);
+        this.dismissToast(t);
+      };
     }
     this.toasts.append(t);
     while (this.toasts.children.length > 5) this.toasts.firstElementChild?.remove();
@@ -1547,21 +2213,45 @@ export class UI {
     // Clicking a fire or police station shows its coverage map; clicking elsewhere drops a map view opened that way.
     const id = info.tile & LOMASK;
     const auto: OverlayMode | null = id >= FIRESTBASE && id < FIRESTBASE + 9 ? 'fire' : id >= POLICESTBASE && id < POLICESTBASE + 9 ? 'crime' : null;
-    if (auto) { if (this.renderer.overlay.mode !== auto) { this.setOverlay(auto); this.autoOverlay = auto; } }
-    else if (this.autoOverlay && this.renderer.overlay.mode === this.autoOverlay) { this.setOverlay('none'); this.autoOverlay = null; }
+    if (auto) {
+      if (this.renderer.overlay.mode !== auto) {
+        this.setOverlay(auto);
+        this.autoOverlay = auto;
+      }
+    } else if (this.autoOverlay && this.renderer.overlay.mode === this.autoOverlay) {
+      this.setOverlay('none');
+      this.autoOverlay = null;
+    }
     const q = this.query;
     q.replaceChildren(
       el('div', { class: 'qname', text: info.name }),
       el('div', { class: 'qrow', text: `Tile ${info.x}, ${info.y}  #${info.tile}` }),
       el('div', { class: `qrow ${info.powered ? 'good' : 'bad'}`, text: info.powered ? '⚡ Powered' : '⚡ Unpowered' }),
       el('div', { class: 'qrow', text: info.owner ? `Owner: ${info.owner.cityName ? `${info.owner.cityName} — ` : ''}${info.owner.name}` : 'Unclaimed land' }),
-      ...(info.zonePop !== undefined ? [el('div', { class: 'qrow', text: `${info.zoneKind === 'com' || info.zoneKind === 'ind' ? 'Jobs' : 'Residents'}: ${info.zonePop.toLocaleString('en-US')}` })] : []),
-      ...(info.elev !== undefined ? [el('div', { class: 'qrow', text: info.elev < 0 ? `🌊 ${(-info.elev).toLocaleString('en-US')} m below sea level` : `⛰ Elevation: ${info.elev.toLocaleString('en-US')} m` })] : []),
+      ...(info.zonePop !== undefined
+        ? [
+            el('div', {
+              class: 'qrow',
+              text: `${info.zoneKind === 'com' || info.zoneKind === 'ind' ? 'Jobs' : 'Residents'}: ${info.zonePop.toLocaleString('en-US')}`,
+            }),
+          ]
+        : []),
+      ...(info.elev !== undefined
+        ? [
+            el('div', {
+              class: 'qrow',
+              text: info.elev < 0 ? `🌊 ${(-info.elev).toLocaleString('en-US')} m below sea level` : `⛰ Elevation: ${info.elev.toLocaleString('en-US')} m`,
+            }),
+          ]
+        : []),
     );
     if (info.owner) (q.firstElementChild as HTMLElement).style.color = info.owner.color;
     if (id >= CITYHALLBASE && id <= LASTCITYHALL && info.owner && info.owner.id === this.state.me?.id) {
       const rename = el('button', { class: 'btn', type: 'button' }, '✎ Rename city');
-      rename.onclick = () => { this.hideQuery(); this.toggleMayor('city'); };
+      rename.onclick = () => {
+        this.hideQuery();
+        this.toggleMayor('city');
+      };
       q.append(el('div', { class: 'qrow qactions' }, rename));
     }
     this.placeQuery();
@@ -1582,12 +2272,13 @@ export class UI {
       return r;
     };
     const eta = (progress: number, duration: number): string => {
-      const s = Math.max(0, Math.round((1 - progress) * duration / 1000));
+      const s = Math.max(0, Math.round(((1 - progress) * duration) / 1000));
       return s < 60 ? `${s} s` : `${Math.round(s / 60)} min`;
     };
     const q = this.query;
     if (v.kind === 'plane') {
-      const f = v.flight, load = flightLoad(f.key);
+      const f = v.flight,
+        load = flightLoad(f.key);
       q.replaceChildren(
         el('div', { class: 'qname', text: `✈ Flight ${load.flight}` }),
         row('From', city(f.fromX, f.fromY)),
@@ -1596,7 +2287,8 @@ export class UI {
         el('div', { class: 'qrow muted', text: `Lands in ${eta(f.progress, f.duration)}` }),
       );
     } else {
-      const s = v.voyage, cargo = shipCargo(s.key);
+      const s = v.voyage,
+        cargo = shipCargo(s.key);
       q.replaceChildren(
         el('div', { class: 'qname', text: `🚢 ${cargo.kind}` }),
         row('From', city(s.from.x, s.from.y)),
@@ -1612,7 +2304,8 @@ export class UI {
     const q = this.query;
     q.classList.remove('hidden');
     const pad = 12;
-    const w = q.offsetWidth, h = q.offsetHeight;
+    const w = q.offsetWidth,
+      h = q.offsetHeight;
     const x = Math.min(window.innerWidth - w - pad, this.queryPos.x + 14);
     const y = Math.min(window.innerHeight - h - pad, this.queryPos.y + 14);
     q.style.left = `${Math.max(pad, x)}px`;
@@ -1623,27 +2316,45 @@ export class UI {
 
   hideQuery(): void {
     this.query.classList.add('hidden');
-    if (this.queryTimer) { clearTimeout(this.queryTimer); this.queryTimer = null; }
+    if (this.queryTimer) {
+      clearTimeout(this.queryTimer);
+      this.queryTimer = null;
+    }
   }
 
-  closePanels(): void { this.hide(this.about); this.hide(this.leaderboard); this.hide(this.worldStats); this.hideQuery(); }
+  closePanels(): void {
+    this.hide(this.about);
+    this.hide(this.leaderboard);
+    this.hide(this.worldStats);
+    this.hideQuery();
+  }
 
   // ---------- minimap ----------
   /** Redraw the corner map (its image changed). */
-  refreshMinimap(): void { this.miniDirty = true; this.scheduleMini(); }
+  refreshMinimap(): void {
+    this.miniDirty = true;
+    this.scheduleMini();
+  }
   private miniScheduled = false;
   private scheduleMini(): void {
     if (this.miniScheduled) return;
     this.miniScheduled = true;
-    requestAnimationFrame(() => { this.miniScheduled = false; if (this.miniDirty) this.drawMini(); });
+    requestAnimationFrame(() => {
+      this.miniScheduled = false;
+      if (this.miniDirty) this.drawMini();
+    });
   }
 
   private drawMini(): void {
     this.miniDirty = false;
     const c = this.mini;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const cssW = 256, cssH = 128;
-    if (c.width !== cssW * dpr) { c.width = cssW * dpr; c.height = cssH * dpr; }
+    const cssW = 256,
+      cssH = 128;
+    if (c.width !== cssW * dpr) {
+      c.width = cssW * dpr;
+      c.height = cssH * dpr;
+    }
     const g = c.getContext('2d')!;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.imageSmoothingEnabled = true;
@@ -1653,7 +2364,8 @@ export class UI {
     g.imageSmoothingEnabled = true;
     g.drawImage(this.renderer.night.canvas, 0, 0, cssW, cssH);
     g.imageSmoothingEnabled = false;
-    const sx = cssW / WORLD_W, sy = cssH / WORLD_H;
+    const sx = cssW / WORLD_W,
+      sy = cssH / WORLD_H;
     // claimed chunks as tiny dots
     for (const cl of this.state.claims.values()) {
       g.fillStyle = withAlpha(cl.color, 0.9);
@@ -1662,21 +2374,35 @@ export class UI {
     // own city
     const mine = this.state.myCentroid();
     if (mine) {
-      g.fillStyle = '#fff'; g.strokeStyle = '#000'; g.lineWidth = 1;
-      g.beginPath(); g.arc(mine.cx * CHUNK * sx, mine.cy * CHUNK * sy, 3, 0, Math.PI * 2); g.fill(); g.stroke();
+      g.fillStyle = '#fff';
+      g.strokeStyle = '#000';
+      g.lineWidth = 1;
+      g.beginPath();
+      g.arc(mine.cx * CHUNK * sx, mine.cy * CHUNK * sy, 3, 0, Math.PI * 2);
+      g.fill();
+      g.stroke();
     }
     // viewport
     const v = this.renderer.viewRect();
-    const x0 = Math.max(0, v.x0 * sx), y0 = Math.max(0, v.y0 * sy);
-    const x1 = Math.min(cssW, v.x1 * sx), y1 = Math.min(cssH, v.y1 * sy);
-    g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 1;
+    const x0 = Math.max(0, v.x0 * sx),
+      y0 = Math.max(0, v.y0 * sy);
+    const x1 = Math.min(cssW, v.x1 * sx),
+      y1 = Math.min(cssH, v.y1 * sy);
+    g.strokeStyle = 'rgba(255,255,255,0.9)';
+    g.lineWidth = 1;
     g.strokeRect(Math.round(x0) + 0.5, Math.round(y0) + 0.5, Math.max(2, Math.round(x1 - x0) - 1), Math.max(2, Math.round(y1 - y0) - 1));
   }
 
   // ---------- helpers ----------
-  private show(e: HTMLElement): void { e.classList.remove('hidden'); }
-  private hide(e: HTMLElement): void { e.classList.add('hidden'); }
-  private toggle(e: HTMLElement): void { e.classList.toggle('hidden'); }
+  private show(e: HTMLElement): void {
+    e.classList.remove('hidden');
+  }
+  private hide(e: HTMLElement): void {
+    e.classList.add('hidden');
+  }
+  private toggle(e: HTMLElement): void {
+    e.classList.toggle('hidden');
+  }
 
   /** For claims arriving as a single update: notify when it's ours. */
   onClaimChanged(c: ClaimInfo): void {
@@ -1686,7 +2412,10 @@ export class UI {
   /** A chunk was released after its owner went idle (state already dropped it; its buildings stay on the map). */
   onUnclaim(prev: ClaimInfo): void {
     if (this.state.me && prev.ownerId === this.state.me.id && Date.now() - this.abandonedAt > 30_000) {
-      this.toast(`Your plot ${prev.cx},${prev.cy} was released after inactivity. Anyone can now claim it with what you built there.`, 'error', 8000, { x: prev.cx * CHUNK + CHUNK / 2, y: prev.cy * CHUNK + CHUNK / 2 });
+      this.toast(`Your plot ${prev.cx},${prev.cy} was released after inactivity. Anyone can now claim it with what you built there.`, 'error', 8000, {
+        x: prev.cx * CHUNK + CHUNK / 2,
+        y: prev.cy * CHUNK + CHUNK / 2,
+      });
     }
   }
 }

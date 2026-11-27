@@ -14,13 +14,19 @@ export class Elevation {
     else if (file) warn(`${file} not found: elevation is 0 everywhere (regenerate the world for real elevation)`);
   }
 
-  get available(): boolean { return this.fd !== null; }
+  get available(): boolean {
+    return this.fd !== null;
+  }
 
   /** The chunk's elevations, row-major CHUNK*CHUNK (all 0 without the file). */
   chunk(cx: number, cy: number): Int16Array {
     const key = cy * 65536 + cx;
     const hit = this.cache.get(key);
-    if (hit) { this.cache.delete(key); this.cache.set(key, hit); return hit; }
+    if (hit) {
+      this.cache.delete(key);
+      this.cache.set(key, hit);
+      return hit;
+    }
     const out = new Int16Array(CHUNK * CHUNK);
     if (this.fd !== null) {
       const row = Buffer.alloc(CHUNK * 2);
@@ -36,7 +42,8 @@ export class Elevation {
 
   /** Elevation of one tile in metres. */
   at(x: number, y: number): number {
-    const cx = Math.floor(x / CHUNK), cy = Math.floor(y / CHUNK);
+    const cx = Math.floor(x / CHUNK),
+      cy = Math.floor(y / CHUNK);
     return this.chunk(cx, cy)[(y - cy * CHUNK) * CHUNK + (x - cx * CHUNK)];
   }
 }

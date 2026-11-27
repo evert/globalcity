@@ -4,9 +4,35 @@
 // told; a disaster only ever touches the plots of the city it strikes. Damage is Micropolis-style: buildings hit become rubble (or catch fire),
 // floods cover low land next to water and then recede, a tornado tears a path across town.
 import {
-  WORLD_W, WORLD_H, CHUNK, LOMASK, BULLBIT, BURNBIT, RUBBLE, FLOOD, DIRT, WATER_LOW, WATER_HIGH,
-  Disaster, DISASTERS, DISASTER_COUNT, DISASTER_MIN_GAP_MS, DISASTER_CITY_GAP_MS, DISASTER_STEP_P, DISASTER_MIN_POP, hazardBit,
-  isWater, isTree, isWire, isRoad, isRail, isOverWater, isOffshoreTile, chunkKey, parseChunkKey, type ActiveDisaster,
+  WORLD_W,
+  WORLD_H,
+  CHUNK,
+  LOMASK,
+  BULLBIT,
+  BURNBIT,
+  RUBBLE,
+  FLOOD,
+  DIRT,
+  WATER_LOW,
+  WATER_HIGH,
+  Disaster,
+  DISASTERS,
+  DISASTER_COUNT,
+  DISASTER_MIN_GAP_MS,
+  DISASTER_CITY_GAP_MS,
+  DISASTER_STEP_P,
+  DISASTER_MIN_POP,
+  hazardBit,
+  isWater,
+  isTree,
+  isWire,
+  isRoad,
+  isRail,
+  isOverWater,
+  isOffshoreTile,
+  chunkKey,
+  parseChunkKey,
+  type ActiveDisaster,
 } from '@globalcity/shared';
 import type { World } from './world.ts';
 import type { Players, PlayerRecord } from './players.ts';
@@ -16,26 +42,41 @@ import { findZoneCenter, clearFootprint, isBuildingTile } from './zones.ts';
 /** DISASTER_EVERY_MS (testing): a disaster exactly this often, instead of the usual gap (DISASTER_MIN_GAP_MS) and the random wait after
  *  it, and no rest for a city that was just struck (DISASTER_CITY_GAP_MS) */
 const EVERY_MS = Number(process.env.DISASTER_EVERY_MS) || 0;
-const MIN_GAP_MS = EVERY_MS || DISASTER_MIN_GAP_MS, STEP_P = EVERY_MS ? 1 : DISASTER_STEP_P;
+const MIN_GAP_MS = EVERY_MS || DISASTER_MIN_GAP_MS,
+  STEP_P = EVERY_MS ? 1 : DISASTER_STEP_P;
 const CITY_GAP_MS = EVERY_MS ? 0 : DISASTER_CITY_GAP_MS;
 
 /** Land no higher than this (metres) next to water floods. */
 const FLOOD_MAX_ELEV = 10;
-const FLOOD_RISE_STEPS = 8, FLOOD_SPREAD_P = 0.35, FLOOD_RECEDE_P = 0.12, FLOOD_STRETCH = 12;
-const TORNADO_STEPS = 36, TORNADO_SPEED = 1.6, TORNADO_HIT_P = 0.7;
+const FLOOD_RISE_STEPS = 8,
+  FLOOD_SPREAD_P = 0.35,
+  FLOOD_RECEDE_P = 0.12,
+  FLOOD_STRETCH = 12;
+const TORNADO_STEPS = 36,
+  TORNADO_SPEED = 1.6,
+  TORNADO_HIT_P = 0.7;
 const QUAKE_SHAKE_MS = 12_000;
 
 const rand = Math.random;
 const randInt = (n: number): number => Math.floor(rand() * n);
 const rubble = (): number => (RUBBLE + randInt(4)) | BULLBIT;
 const floodTile = (): number => (FLOOD + randInt(4)) | BULLBIT;
-const isFlood = (v: number): boolean => { const id = v & LOMASK; return id >= FLOOD && id < FLOOD + 4; };
+const isFlood = (v: number): boolean => {
+  const id = v & LOMASK;
+  return id >= FLOOD && id < FLOOD + 4;
+};
 
 interface Run {
-  id: number; kind: Disaster; p: PlayerRecord; x: number; y: number; until: number;
+  id: number;
+  kind: Disaster;
+  p: PlayerRecord;
+  x: number;
+  y: number;
+  until: number;
   steps: number;
   /** tornado heading */
-  dx?: number; dy?: number;
+  dx?: number;
+  dy?: number;
   /** flood: the water's edge it spreads from, and the tiles it has covered */
   flooded?: Set<number>;
   /** flood rising (spreads) for this many more steps, then recedes */
@@ -50,7 +91,14 @@ export interface DisasterHooks {
 }
 
 /** `playerId` '*': for everyone else playing (the stricken city's mayor gets their own message). */
-export interface DisasterToast { playerId: string; kind: 'error' | 'info'; msg: string; at: { x: number; y: number }; except?: string; big: true }
+export interface DisasterToast {
+  playerId: string;
+  kind: 'error' | 'info';
+  msg: string;
+  at: { x: number; y: number };
+  except?: string;
+  big: true;
+}
 
 export class Disasters {
   private runs: Run[] = [];
@@ -74,16 +122,25 @@ export class Disasters {
   }
 
   /** Disasters started since `since` (ms epoch), for the world stats; a day of them is kept. */
-  history(since: number): { kind: Disaster; at: number }[] { return this.past.filter((e) => e.at >= since); }
+  history(since: number): { kind: Disaster; at: number }[] {
+    return this.past.filter((e) => e.at >= since);
+  }
   private past: { kind: Disaster; at: number }[] = [];
 
   /** Take the announcements made since the last call. */
-  takeToasts(): DisasterToast[] { const t = this.toasts; this.toasts = []; return t; }
+  takeToasts(): DisasterToast[] {
+    const t = this.toasts;
+    this.toasts = [];
+    return t;
+  }
 
   /** Disasters possible somewhere in a city (HAZARD bits over its plots). */
   hazardsOf(p: PlayerRecord): number {
     let h = 0;
-    for (const key of p.chunks) { const { cx, cy } = parseChunkKey(key); h |= this.hazards[cy * (WORLD_W / CHUNK) + cx] ?? 0; }
+    for (const key of p.chunks) {
+      const { cx, cy } = parseChunkKey(key);
+      h |= this.hazards[cy * (WORLD_W / CHUNK) + cx] ?? 0;
+    }
     return h;
   }
 
@@ -149,7 +206,9 @@ export class Disasters {
         // floods rise along one stretch of shore (about 25 tiles), not the whole waterline at once
         const shore = tiles.filter((i) => isWater(this.world.tiles[i]) && this.landBeside(i, p));
         if (kind === Disaster.Flood && !shore.length) return false;
-        const e0 = shore.length ? shore[randInt(shore.length)] : 0, ex = e0 % WORLD_W, ey = Math.floor(e0 / WORLD_W);
+        const e0 = shore.length ? shore[randInt(shore.length)] : 0,
+          ex = e0 % WORLD_W,
+          ey = Math.floor(e0 / WORLD_W);
         const edge = shore.filter((i) => Math.max(Math.abs((i % WORLD_W) - ex), Math.abs(Math.floor(i / WORLD_W) - ey)) <= FLOOD_STRETCH);
         run.flooded = new Set();
         run.rise = kind === Disaster.Flood ? FLOOD_RISE_STEPS : 5;
@@ -166,9 +225,13 @@ export class Disasters {
         const side = randInt(4);
         const x = side === 0 ? b.x0 : side === 1 ? b.x1 : b.x0 + randInt(b.x1 - b.x0 + 1);
         const y = side === 2 ? b.y0 : side === 3 ? b.y1 : b.y0 + randInt(b.y1 - b.y0 + 1);
-        const tx = (b.x0 + b.x1) / 2 + (rand() - 0.5) * (b.x1 - b.x0) * 0.6, ty = (b.y0 + b.y1) / 2 + (rand() - 0.5) * (b.y1 - b.y0) * 0.6;
+        const tx = (b.x0 + b.x1) / 2 + (rand() - 0.5) * (b.x1 - b.x0) * 0.6,
+          ty = (b.y0 + b.y1) / 2 + (rand() - 0.5) * (b.y1 - b.y0) * 0.6;
         const len = Math.hypot(tx - x, ty - y) || 1;
-        run.x = x; run.y = y; run.dx = ((tx - x) / len) * TORNADO_SPEED; run.dy = ((ty - y) / len) * TORNADO_SPEED;
+        run.x = x;
+        run.y = y;
+        run.dx = ((tx - x) / len) * TORNADO_SPEED;
+        run.dy = ((ty - y) / len) * TORNADO_SPEED;
         run.until = now + 5 * 60_000;
         at = y * WORLD_W + x;
         break;
@@ -179,7 +242,10 @@ export class Disasters {
         for (let k = 0; k < 40 && lit < 5; k++) {
           const i = pick((v) => isTree(v)) ?? pick((v) => (v & BURNBIT) !== 0);
           if (i === null) break;
-          if (this.hooks.ignite(i % WORLD_W, Math.floor(i / WORLD_W))) { lit++; at ??= i; }
+          if (this.hooks.ignite(i % WORLD_W, Math.floor(i / WORLD_W))) {
+            lit++;
+            at ??= i;
+          }
         }
         if (!lit || at === null) return false;
         run.until = now + 30_000;
@@ -194,7 +260,8 @@ export class Disasters {
         break;
       }
     }
-    run.x ||= at % WORLD_W; run.y ||= Math.floor(at / WORLD_W);
+    run.x ||= at % WORLD_W;
+    run.y ||= Math.floor(at / WORLD_W);
     p.lastDisaster = now;
     this.lastStrike = now;
     this.past = this.past.filter((e) => now - e.at < 86_400_000);
@@ -205,16 +272,28 @@ export class Disasters {
     const where = { x: run.x, y: run.y };
     this.toasts.push({ playerId: p.id, kind: 'error', msg: `${info.emoji} ${info.verb} ${city}!`, at: where, big: true });
     // the news for everyone else playing (click to fly there and watch)
-    this.toasts.push({ playerId: '*', except: p.id, kind: 'info', msg: `${info.emoji} ${info.verb} ${p.cityName || `${p.name}'s city`}.`, at: where, big: true });
+    this.toasts.push({
+      playerId: '*',
+      except: p.id,
+      kind: 'info',
+      msg: `${info.emoji} ${info.verb} ${p.cityName || `${p.name}'s city`}.`,
+      at: where,
+      big: true,
+    });
     return true;
   }
 
   private done(r: Run, now: number): boolean {
     switch (r.kind) {
-      case Disaster.Flood: case Disaster.Storm: return (r.rise ?? 0) <= 0 && (r.hits ?? 0) <= 0 && !this.anyFlood(r);
-      case Disaster.Tornado: return r.steps >= TORNADO_STEPS || !this.inCity(r.p, Math.round(r.x), Math.round(r.y)) && r.steps > 3;
-      case Disaster.Blizzard: return now >= r.until; // snows for its whole time, bringing lines down while there are any
-      default: return now >= r.until;
+      case Disaster.Flood:
+      case Disaster.Storm:
+        return (r.rise ?? 0) <= 0 && (r.hits ?? 0) <= 0 && !this.anyFlood(r);
+      case Disaster.Tornado:
+        return r.steps >= TORNADO_STEPS || (!this.inCity(r.p, Math.round(r.x), Math.round(r.y)) && r.steps > 3);
+      case Disaster.Blizzard:
+        return now >= r.until; // snows for its whole time, bringing lines down while there are any
+      default:
+        return now >= r.until;
     }
   }
 
@@ -222,10 +301,14 @@ export class Disasters {
     r.steps++;
     if (r.kind === Disaster.Tornado) {
       // wander a little, smash what's under the funnel
-      const a = (rand() - 0.5) * 0.5, c = Math.cos(a), s = Math.sin(a);
+      const a = (rand() - 0.5) * 0.5,
+        c = Math.cos(a),
+        s = Math.sin(a);
       [r.dx, r.dy] = [r.dx! * c - r.dy! * s, r.dx! * s + r.dy! * c];
-      r.x += r.dx!; r.y += r.dy!;
-      const x = Math.round(r.x), y = Math.round(r.y);
+      r.x += r.dx!;
+      r.y += r.dy!;
+      const x = Math.round(r.x),
+        y = Math.round(r.y);
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (rand() < TORNADO_HIT_P) this.smash(r.p, x + dx, y + dy);
       return;
     }
@@ -233,19 +316,28 @@ export class Disasters {
       if (r.kind === Disaster.Storm && (r.hits ?? 0) > 0) {
         // wind: a few things torn apart every step, mostly near the coast
         for (let k = 0; k < 4 && r.hits! > 0; k++, r.hits!--) {
-          const x = r.x + randInt(41) - 20, y = r.y + randInt(41) - 20;
+          const x = r.x + randInt(41) - 20,
+            y = r.y + randInt(41) - 20;
           this.smash(r.p, x, y);
         }
       }
-      if ((r.rise ?? 0) > 0) { r.rise!--; this.spreadFlood(r); }
-      else this.recede(r);
+      if ((r.rise ?? 0) > 0) {
+        r.rise!--;
+        this.spreadFlood(r);
+      } else this.recede(r);
       return;
     }
     if (r.kind === Disaster.Blizzard && (r.hits ?? 0) > 0) {
       // power lines (and sometimes rail) come down
-      const tiles = this.cityTiles(r.p).filter((i) => { const v = this.world.tiles[i]; return isWire(v) && !isOverWater(v); });
+      const tiles = this.cityTiles(r.p).filter((i) => {
+        const v = this.world.tiles[i];
+        return isWire(v) && !isOverWater(v);
+      });
       for (let k = 0; k < 3 && r.hits! > 0; k++, r.hits!--) {
-        if (!tiles.length) { r.hits = 0; break; }
+        if (!tiles.length) {
+          r.hits = 0;
+          break;
+        }
         const i = tiles.splice(randInt(tiles.length), 1)[0];
         this.world.set(i % WORLD_W, Math.floor(i / WORLD_W), rubble());
       }
@@ -255,47 +347,69 @@ export class Disasters {
 
   /** An earthquake: rubble and fires among what stands around the epicentre (bare ground and water just shake). */
   private quake(p: PlayerRecord, x0: number, y0: number): void {
-    const r = 10 + randInt(8), w = this.world;
+    const r = 10 + randInt(8),
+      w = this.world;
     const standing: number[] = [];
-    for (let y = y0 - r; y <= y0 + r; y++) for (let x = x0 - r; x <= x0 + r; x++) {
-      if ((x - x0) ** 2 + (y - y0) ** 2 > r * r || !this.inCity(p, x, y)) continue;
-      const v = w.get(x, y);
-      if ((v & BULLBIT) && !isWater(v) && !isOverWater(v) && (v & LOMASK) !== DIRT && !((v & LOMASK) >= RUBBLE && (v & LOMASK) < RUBBLE + 4)) standing.push(y * WORLD_W + x);
-    }
+    for (let y = y0 - r; y <= y0 + r; y++)
+      for (let x = x0 - r; x <= x0 + r; x++) {
+        if ((x - x0) ** 2 + (y - y0) ** 2 > r * r || !this.inCity(p, x, y)) continue;
+        const v = w.get(x, y);
+        if (v & BULLBIT && !isWater(v) && !isOverWater(v) && (v & LOMASK) !== DIRT && !((v & LOMASK) >= RUBBLE && (v & LOMASK) < RUBBLE + 4))
+          standing.push(y * WORLD_W + x);
+      }
     const hits = Math.min(standing.length, 30 + Math.min(120, Math.floor(this.cityTiles(p).length / 150)));
     for (let k = 0; k < hits; k++) {
-      const i = standing.splice(randInt(standing.length), 1)[0], x = i % WORLD_W, y = (i - x) / WORLD_W;
-      if (rand() < 0.15) this.hooks.ignite(x, y); else this.smash(p, x, y);
+      const i = standing.splice(randInt(standing.length), 1)[0],
+        x = i % WORLD_W,
+        y = (i - x) / WORLD_W;
+      if (rand() < 0.15) this.hooks.ignite(x, y);
+      else this.smash(p, x, y);
     }
   }
 
   /** Destroy what stands on (x, y) if it belongs to city p: a building's whole footprint, or the tile. */
   private smash(p: PlayerRecord, x: number, y: number): void {
     if (!this.inCity(p, x, y)) return;
-    const w = this.world, v = w.get(x, y);
+    const w = this.world,
+      v = w.get(x, y);
     if (!(v & BULLBIT) || isWater(v) || isOverWater(v) || isOffshoreTile(v) || (v & LOMASK) === DIRT) return;
     if ((v & LOMASK) >= RUBBLE && (v & LOMASK) < RUBBLE + 4) return;
     if (isBuildingTile(v)) {
       const z = findZoneCenter(w, x, y);
-      if (z && this.inCity(p, z.cx, z.cy)) { clearFootprint(w, z, () => rubble()); return; }
+      if (z && this.inCity(p, z.cx, z.cy)) {
+        clearFootprint(w, z, () => rubble());
+        return;
+      }
     }
-    if (isTree(v) || isRoad(v) || isRail(v) || isWire(v) || (v & BURNBIT)) w.set(x, y, rubble());
+    if (isTree(v) || isRoad(v) || isRail(v) || isWire(v) || v & BURNBIT) w.set(x, y, rubble());
   }
 
   private spreadFlood(r: Run): void {
-    const w = this.world, next: number[] = [];
+    const w = this.world,
+      next: number[] = [];
     for (const i of r.flooded!) {
-      const x = i % WORLD_W, y = (i - x) / WORLD_W;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const xx = x + dx, yy = y + dy;
+      const x = i % WORLD_W,
+        y = (i - x) / WORLD_W;
+      for (const [dx, dy] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ]) {
+        const xx = x + dx,
+          yy = y + dy;
         if (xx < 0 || yy < 0 || xx >= WORLD_W || yy >= WORLD_H || !this.inCity(r.p, xx, yy)) continue;
         const j = yy * WORLD_W + xx;
         if (r.flooded!.has(j) || rand() >= FLOOD_SPREAD_P) continue;
-        const v = w.tiles[j], id = v & LOMASK;
+        const v = w.tiles[j],
+          id = v & LOMASK;
         if (id >= WATER_LOW && id <= WATER_HIGH) continue;
         if (!(v & BULLBIT) && id !== DIRT) continue; // what can't be bulldozed can't be flooded either
         if (this.elevation.at(xx, yy) > FLOOD_MAX_ELEV) continue; // the water stays below the high ground
-        if (isBuildingTile(v)) { const z = findZoneCenter(w, xx, yy); if (z && this.inCity(r.p, z.cx, z.cy)) clearFootprint(w, z, () => rubble()); }
+        if (isBuildingTile(v)) {
+          const z = findZoneCenter(w, xx, yy);
+          if (z && this.inCity(r.p, z.cx, z.cy)) clearFootprint(w, z, () => rubble());
+        }
         w.set(xx, yy, floodTile());
         next.push(j);
       }
@@ -306,9 +420,18 @@ export class Disasters {
   private recede(r: Run): void {
     for (const i of [...r.flooded!]) {
       const v = this.world.tiles[i];
-      if (isWater(v)) { r.flooded!.delete(i); continue; } // the edge it rose from
-      if (!isFlood(v)) { r.flooded!.delete(i); continue; } // bulldozed or rebuilt meanwhile
-      if (rand() < FLOOD_RECEDE_P) { this.world.set(i % WORLD_W, Math.floor(i / WORLD_W), DIRT); r.flooded!.delete(i); }
+      if (isWater(v)) {
+        r.flooded!.delete(i);
+        continue;
+      } // the edge it rose from
+      if (!isFlood(v)) {
+        r.flooded!.delete(i);
+        continue;
+      } // bulldozed or rebuilt meanwhile
+      if (rand() < FLOOD_RECEDE_P) {
+        this.world.set(i % WORLD_W, Math.floor(i / WORLD_W), DIRT);
+        r.flooded!.delete(i);
+      }
     }
   }
 
@@ -318,9 +441,16 @@ export class Disasters {
   }
 
   private landBeside(i: number, p: PlayerRecord): boolean {
-    const x = i % WORLD_W, y = (i - x) / WORLD_W;
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const xx = x + dx, yy = y + dy;
+    const x = i % WORLD_W,
+      y = (i - x) / WORLD_W;
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ]) {
+      const xx = x + dx,
+        yy = y + dy;
       if (!this.inCity(p, xx, yy)) continue;
       if (!isWater(this.world.get(xx, yy)) && this.elevation.at(xx, yy) <= FLOOD_MAX_ELEV) return true;
     }
@@ -342,11 +472,16 @@ export class Disasters {
   }
 
   private bounds(p: PlayerRecord): { x0: number; y0: number; x1: number; y1: number } {
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    let x0 = Infinity,
+      y0 = Infinity,
+      x1 = -Infinity,
+      y1 = -Infinity;
     for (const key of p.chunks) {
       const { cx, cy } = parseChunkKey(key);
-      x0 = Math.min(x0, cx * CHUNK); y0 = Math.min(y0, cy * CHUNK);
-      x1 = Math.max(x1, cx * CHUNK + CHUNK - 1); y1 = Math.max(y1, cy * CHUNK + CHUNK - 1);
+      x0 = Math.min(x0, cx * CHUNK);
+      y0 = Math.min(y0, cy * CHUNK);
+      x1 = Math.max(x1, cx * CHUNK + CHUNK - 1);
+      y1 = Math.max(y1, cy * CHUNK + CHUNK - 1);
     }
     return { x0, y0, x1, y1 };
   }

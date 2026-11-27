@@ -1,7 +1,15 @@
 // Central client state shared by net, renderer, input and ui.
 import type { ClaimInfo, GameTime, LeaderboardEntry, MonumentEntry, PlayerPublic, PlayerStats, Presence, ToolId } from '@globalcity/shared';
 import {
-  ABANDON_IDLE_DAYS, ABANDON_FREE_DAYS, CHUNKS_X, CHUNKS_Y, MAX_CHUNKS_PER_PLAYER, chunkKey, parseChunkKey, STARTING_FUNDS, START_YEAR,
+  ABANDON_IDLE_DAYS,
+  ABANDON_FREE_DAYS,
+  CHUNKS_X,
+  CHUNKS_Y,
+  MAX_CHUNKS_PER_PLAYER,
+  chunkKey,
+  parseChunkKey,
+  STARTING_FUNDS,
+  START_YEAR,
 } from '@globalcity/shared';
 import { Emitter } from './emitter.ts';
 
@@ -18,7 +26,10 @@ export type StateEvents = {
   presence: void;
 };
 
-export interface LeaderboardMe { rank: number; population: number }
+export interface LeaderboardMe {
+  rank: number;
+  population: number;
+}
 
 /** Days of inactivity after which a claim gets the subtle "idle" suffix. */
 export const IDLE_HINT_DAYS = 7;
@@ -26,8 +37,12 @@ export const IDLE_HINT_DAYS = 7;
 export type ClaimIdle = 'active' | 'idle' | 'abandoned';
 
 /** Old servers omit these fields; treat them as "no city name / seen today". */
-export function claimCity(c: ClaimInfo): string { return c.cityName ?? ''; }
-export function claimIdleDays(c: ClaimInfo): number { return Math.max(0, Math.floor(c.idleDays ?? 0)); }
+export function claimCity(c: ClaimInfo): string {
+  return c.cityName ?? '';
+}
+export function claimIdleDays(c: ClaimInfo): number {
+  return Math.max(0, Math.floor(c.idleDays ?? 0));
+}
 
 export function claimIdleState(c: ClaimInfo): ClaimIdle {
   if (c.monument) return 'active'; // monuments are never abandoned
@@ -38,7 +53,9 @@ export function claimIdleState(c: ClaimInfo): ClaimIdle {
 }
 
 /** Short label: the city name if the mayor has one, else the mayor. */
-export function claimShortLabel(c: ClaimInfo): string { return claimCity(c) || c.ownerName; }
+export function claimShortLabel(c: ClaimInfo): string {
+  return claimCity(c) || c.ownerName;
+}
 
 /** Full label for the tile view: "Tilburg — Evert (you) (abandoned, up for grabs in 19 days)". */
 export function claimLabel(c: ClaimInfo, own: boolean): string {
@@ -70,8 +87,12 @@ export class AppState extends Emitter<StateEvents> {
   presence: Presence[] = [];
   presenceAt = 0; // performance.now() of the last frame, 0 = never
 
-  get funds(): number { return this.stats?.funds ?? STARTING_FUNDS; }
-  get cityName(): string { return this.me?.cityName ?? ''; }
+  get funds(): number {
+    return this.stats?.funds ?? STARTING_FUNDS;
+  }
+  get cityName(): string {
+    return this.me?.cityName ?? '';
+  }
 
   setMe(me: PlayerPublic | null): void {
     this.me = me ? { ...me, cityName: me.cityName ?? '' } : null;
@@ -84,10 +105,27 @@ export class AppState extends Emitter<StateEvents> {
     this.me = { ...this.me, cityName: name };
     this.emit('city', name);
   }
-  setStats(stats: PlayerStats): void { this.stats = stats; this.emit('stats', stats); }
-  setTime(time: GameTime, online: number): void { this.time = time; this.online = online; this.emit('time', undefined); }
-  setConnected(v: boolean): void { if (this.connected !== v) { this.connected = v; this.emit('connection', v); } }
-  setTool(t: ToolId): void { if (this.tool !== t) { this.tool = t; this.emit('tool', t); } }
+  setStats(stats: PlayerStats): void {
+    this.stats = stats;
+    this.emit('stats', stats);
+  }
+  setTime(time: GameTime, online: number): void {
+    this.time = time;
+    this.online = online;
+    this.emit('time', undefined);
+  }
+  setConnected(v: boolean): void {
+    if (this.connected !== v) {
+      this.connected = v;
+      this.emit('connection', v);
+    }
+  }
+  setTool(t: ToolId): void {
+    if (this.tool !== t) {
+      this.tool = t;
+      this.emit('tool', t);
+    }
+  }
   setLeaderboard(entries: LeaderboardEntry[], me?: LeaderboardMe, monuments?: MonumentEntry[]): void {
     this.leaderboard = entries;
     this.leaderboardMe = me ?? null;
@@ -114,8 +152,13 @@ export class AppState extends Emitter<StateEvents> {
   worldPopulation(): { total: number; cities: number } {
     const perCity = new Map<string, number>();
     for (const c of this.claims.values()) perCity.set(c.ownerId, c.pop ?? 0);
-    let total = 0, cities = 0;
-    for (const pop of perCity.values()) if (pop > 0) { total += pop; cities++; }
+    let total = 0,
+      cities = 0;
+    for (const pop of perCity.values())
+      if (pop > 0) {
+        total += pop;
+        cities++;
+      }
     return { total, cities };
   }
 
@@ -145,11 +188,16 @@ export class AppState extends Emitter<StateEvents> {
     for (const c of this.claims.values()) {
       if (c.ownerId !== this.me.id) continue;
       const city = claimCity(c);
-      if (city) { this.setCityName(city); return; }
+      if (city) {
+        this.setCityName(city);
+        return;
+      }
     }
   }
 
-  claimAt(cx: number, cy: number): ClaimInfo | undefined { return this.claims.get(chunkKey(cx, cy)); }
+  claimAt(cx: number, cy: number): ClaimInfo | undefined {
+    return this.claims.get(chunkKey(cx, cy));
+  }
   ownsChunk(cx: number, cy: number): boolean {
     const c = this.claims.get(chunkKey(cx, cy));
     return !!c && !!this.me && c.ownerId === this.me.id;
@@ -164,14 +212,20 @@ export class AppState extends Emitter<StateEvents> {
   myCentroid(): { cx: number; cy: number } | null {
     const mine = this.myChunks();
     if (!mine.length) return null;
-    let sx = 0, sy = 0;
-    for (const c of mine) { sx += c.cx + 0.5; sy += c.cy + 0.5; }
+    let sx = 0,
+      sy = 0;
+    for (const c of mine) {
+      sx += c.cx + 0.5;
+      sy += c.cy + 0.5;
+    }
     return { cx: sx / mine.length, cy: sy / mine.length };
   }
   isAdjacentToMine(cx: number, cy: number): boolean {
     return this.ownsChunk(cx - 1, cy) || this.ownsChunk(cx + 1, cy) || this.ownsChunk(cx, cy - 1) || this.ownsChunk(cx, cy + 1);
   }
-  atClaimCap(): boolean { return this.ownedChunkCount() >= MAX_CHUNKS_PER_PLAYER; }
+  atClaimCap(): boolean {
+    return this.ownedChunkCount() >= MAX_CHUNKS_PER_PLAYER;
+  }
   /** Client-side hint only; the server is authoritative. Released plots, buildings and all, are plain unclaimed chunks. */
   canClaim(cx: number, cy: number): boolean {
     if (cx < 0 || cy < 0 || cx >= CHUNKS_X || cy >= CHUNKS_Y) return false;
@@ -181,7 +235,9 @@ export class AppState extends Emitter<StateEvents> {
     if (owned === 0) return true;
     return this.isAdjacentToMine(cx, cy);
   }
-  ownedChunkCount(): number { return this.myChunks().length; }
+  ownedChunkCount(): number {
+    return this.myChunks().length;
+  }
 }
 
 export { parseChunkKey };

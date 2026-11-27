@@ -5,63 +5,119 @@
 import WebSocket from 'ws';
 import { decodeChunk, Disaster } from '@globalcity/shared';
 const URL = `ws://127.0.0.1:${process.env.PORT}/ws`;
-const CHUNK = 64, LOMASK = 0x3ff, TICK = Number(process.env.TICK_MS) || 500;
-const isWater = (t) => t >= 2 && t <= 20, isRubble = (t) => t >= 44 && t <= 47, isFlood = (t) => t >= 48 && t <= 51, isFire = (t) => t >= 56 && t <= 63;
+const CHUNK = 64,
+  LOMASK = 0x3ff,
+  TICK = Number(process.env.TICK_MS) || 500;
+const isWater = (t) => t >= 2 && t <= 20,
+  isRubble = (t) => t >= 44 && t <= 47,
+  isFlood = (t) => t >= 48 && t <= 51,
+  isFire = (t) => t >= 56 && t <= 63;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const fail = (m) => { console.log('FAIL:', m); process.exit(1); };
+const fail = (m) => {
+  console.log('FAIL:', m);
+  process.exit(1);
+};
 
 class C {
-  constructor(name) { this.name = name; this.toasts = []; this.chunks = new Map(); this.disasters = []; this.seen = []; }
+  constructor(name) {
+    this.name = name;
+    this.toasts = [];
+    this.chunks = new Map();
+    this.disasters = [];
+    this.seen = [];
+  }
   async connect() {
-    this.ws = new WebSocket(URL); this.ws.binaryType = 'arraybuffer';
+    this.ws = new WebSocket(URL);
+    this.ws.binaryType = 'arraybuffer';
     this.ws.on('message', (d, bin) => {
-      if (bin) { const f = decodeChunk(d instanceof ArrayBuffer ? d : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength)); this.chunks.set(`${f.cx},${f.cy}`, f.tiles); return; }
+      if (bin) {
+        const f = decodeChunk(d instanceof ArrayBuffer ? d : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength));
+        this.chunks.set(`${f.cx},${f.cy}`, f.tiles);
+        return;
+      }
       const m = JSON.parse(d.toString());
       if (m.t === 'welcome') this.me = m.player;
       else if (m.t === 'freeSpot') this.spot = m;
       else if (m.t === 'toast') this.toasts.push(`${m.kind}: ${m.msg}`);
-      else if (m.t === 'disasters') { this.disasters = m.list; this.seen.push(...m.list); }
-      else if (m.t === 'tiles') for (let i = 0; i < m.u.length; i += 3) {
-        const x = m.u[i], y = m.u[i + 1], a = this.chunks.get(`${Math.floor(x / CHUNK)},${Math.floor(y / CHUNK)}`);
-        if (a) a[(y % CHUNK) * CHUNK + (x % CHUNK)] = m.u[i + 2];
-      }
+      else if (m.t === 'disasters') {
+        this.disasters = m.list;
+        this.seen.push(...m.list);
+      } else if (m.t === 'tiles')
+        for (let i = 0; i < m.u.length; i += 3) {
+          const x = m.u[i],
+            y = m.u[i + 1],
+            a = this.chunks.get(`${Math.floor(x / CHUNK)},${Math.floor(y / CHUNK)}`);
+          if (a) a[(y % CHUNK) * CHUNK + (x % CHUNK)] = m.u[i + 2];
+        }
     });
     await new Promise((r) => this.ws.on('open', r));
-    this.send({ t: 'hello', name: this.name, v: 'test' }); while (!this.me) await sleep(20);
+    this.send({ t: 'hello', name: this.name, v: 'test' });
+    while (!this.me) await sleep(20);
   }
-  send(m) { this.ws.send(JSON.stringify(m)); }
-  async findFree(cx, cy) { this.spot = null; this.send({ t: 'findFree', cx, cy }); while (!this.spot) await sleep(20); return this.spot; }
-  count(cx, cy, pred) { const a = this.chunks.get(`${cx},${cy}`); let n = 0; for (let i = 0; i < a.length; i++) if (pred(a[i] & LOMASK)) n++; return n; }
+  send(m) {
+    this.ws.send(JSON.stringify(m));
+  }
+  async findFree(cx, cy) {
+    this.spot = null;
+    this.send({ t: 'findFree', cx, cy });
+    while (!this.spot) await sleep(20);
+    return this.spot;
+  }
+  count(cx, cy, pred) {
+    const a = this.chunks.get(`${cx},${cy}`);
+    let n = 0;
+    for (let i = 0; i < a.length; i++) if (pred(a[i] & LOMASK)) n++;
+    return n;
+  }
 }
 
-const A = new C('Stricken'), B = new C('Neighbour');
-await A.connect(); await B.connect();
+const A = new C('Stricken'),
+  B = new C('Neighbour');
+await A.connect();
+await B.connect();
 // a coastal plot west of Amsterdam: low land by the sea, for the flood
 const s = await A.findFree(131, 26); // Zandvoort, on the Dutch coast
-A.send({ t: 'sub', chunks: [[s.cx, s.cy], [s.cx + 1, s.cy]] });
+A.send({
+  t: 'sub',
+  chunks: [
+    [s.cx, s.cy],
+    [s.cx + 1, s.cy],
+  ],
+});
 while (!A.chunks.has(`${s.cx},${s.cy}`)) await sleep(20);
-A.send({ t: 'claim', cx: s.cx, cy: s.cy }); await sleep(300);
+A.send({ t: 'claim', cx: s.cx, cy: s.cy });
+await sleep(300);
 const sb = await B.findFree(s.cx + 1, s.cy);
-B.send({ t: 'claim', cx: sb.cx, cy: sb.cy }); await sleep(300);
-B.send({ t: 'sub', chunks: [[sb.cx, sb.cy]] }); while (!B.chunks.has(`${sb.cx},${sb.cy}`)) await sleep(20);
-A.send({ t: 'devFunds', amount: 200000 }); await sleep(200);
+B.send({ t: 'claim', cx: sb.cx, cy: sb.cy });
+await sleep(300);
+B.send({ t: 'sub', chunks: [[sb.cx, sb.cy]] });
+while (!B.chunks.has(`${sb.cx},${sb.cy}`)) await sleep(20);
+A.send({ t: 'devFunds', amount: 200000 });
+await sleep(200);
 // a town on A's plot: a power line grid and residential zones on dry land
 const a = A.chunks.get(`${s.cx},${s.cy}`);
 const dry = (x, y) => !isWater(a[y * CHUNK + x] & LOMASK);
 let built = 0;
 // (builds are rate-limited per socket, so pace them like a player painting)
-for (let y = 2; y < 62; y += 5) for (let x = 2; x < 62; x += 5) {
-  if (!dry(x, y) || !dry(x - 1, y - 1) || !dry(x + 1, y + 1)) continue;
-  A.send({ t: 'build', tool: 'residential', x: s.cx * CHUNK + x, y: s.cy * CHUNK + y }); built++;
-  await sleep(30);
-}
-for (let x = 1; x < 63; x++) if (dry(x, 0)) { A.send({ t: 'build', tool: 'wire', x: s.cx * CHUNK + x, y: s.cy * CHUNK }); await sleep(30); }
+for (let y = 2; y < 62; y += 5)
+  for (let x = 2; x < 62; x += 5) {
+    if (!dry(x, y) || !dry(x - 1, y - 1) || !dry(x + 1, y + 1)) continue;
+    A.send({ t: 'build', tool: 'residential', x: s.cx * CHUNK + x, y: s.cy * CHUNK + y });
+    built++;
+    await sleep(30);
+  }
+for (let x = 1; x < 63; x++)
+  if (dry(x, 0)) {
+    A.send({ t: 'build', tool: 'wire', x: s.cx * CHUNK + x, y: s.cy * CHUNK });
+    await sleep(30);
+  }
 await sleep(1000);
 console.log(`town: ${built} zones, ${A.count(s.cx, s.cy, (t) => t >= 210 && t <= 220)} power line tiles`);
 const bBefore = Array.from(B.chunks.get(`${sb.cx},${sb.cy}`)).join(',');
 
 async function strike(kind, name, waitTicks) {
-  const n = A.toasts.length, seenBefore = A.seen.length;
+  const n = A.toasts.length,
+    seenBefore = A.seen.length;
   A.send({ t: 'devDisaster', kind });
   await sleep(400);
   const toasts = A.toasts.slice(n);
@@ -109,6 +165,7 @@ if (Array.from(B.chunks.get(`${sb.cx},${sb.cy}`)).join(',') !== bBefore) fail("d
 const news = B.toasts.filter((t) => t.startsWith('info: ') && /earthquake|tornado|blizzard|flood|storm|wildfire/i.test(t));
 console.log(`B heard: ${news.length} disasters (${news[0]})`);
 if (news.length < 6) fail(`B should have heard about all 6 disasters, heard ${news.length}`);
-if (A.toasts.some((t) => t.startsWith('info: ') && /shook|touched down|buried|spreading|rising|hit/.test(t) && !/devDisaster/.test(t))) fail("A got the bystanders' news as well as its own");
+if (A.toasts.some((t) => t.startsWith('info: ') && /shook|touched down|buried|spreading|rising|hit/.test(t) && !/devDisaster/.test(t)))
+  fail("A got the bystanders' news as well as its own");
 console.log('disasters OK');
 process.exit(0);

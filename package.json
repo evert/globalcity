@@ -5,7 +5,12 @@
   "description": "GlobalCity - a massively multiplayer SimCity-classic style game played on a tile map of the whole Earth. Uses Micropolis (GPLv3) artwork.",
   "license": "GPL-3.0-or-later",
   "type": "module",
-  "workspaces": ["shared", "server", "client", "tools"],
+  "workspaces": [
+    "shared",
+    "server",
+    "client",
+    "tools"
+  ],
   "scripts": {
     "gen:world": "npm run gen -w tools",
     "dev": "concurrently -n server,client -c blue,green \"npm run dev -w server\" \"npm run dev -w client\"",
@@ -23,5 +28,7 @@
     "oxlint": "^1.95.0",
     "typescript": "^5.6.0"
   },
-  "engines": { "node": ">=22" }
+  "engines": {
+    "node": ">=22"
+  }
 }

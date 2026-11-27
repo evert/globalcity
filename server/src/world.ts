@@ -5,10 +5,33 @@
 import fs from 'node:fs';
 import { Buildings } from './buildings.ts';
 import {
-  WORLD_W, WORLD_H, CHUNK, CHUNKS_X, CHUNKS_Y, MIN_LAND_TILES_TO_CLAIM,
-  RIVER, DIRT, WOODS, BLBNBIT, LOMASK, WATER_LOW, WATER_HIGH, WOODS_LOW, WOODS_HIGH,
-  RIVER_EDGE_TABLE, TREE_EDGE_TABLE, isRail, isZoneTile, isHouse,
-  BASE_WATER, BASE_TREES, Biome, baseIsFrozen, baseIsForest, lookAt, LOOK_SHIFT,
+  WORLD_W,
+  WORLD_H,
+  CHUNK,
+  CHUNKS_X,
+  CHUNKS_Y,
+  MIN_LAND_TILES_TO_CLAIM,
+  RIVER,
+  DIRT,
+  WOODS,
+  BLBNBIT,
+  LOMASK,
+  WATER_LOW,
+  WATER_HIGH,
+  WOODS_LOW,
+  WOODS_HIGH,
+  RIVER_EDGE_TABLE,
+  TREE_EDGE_TABLE,
+  isRail,
+  isZoneTile,
+  isHouse,
+  BASE_WATER,
+  BASE_TREES,
+  Biome,
+  baseIsFrozen,
+  baseIsForest,
+  lookAt,
+  LOOK_SHIFT,
 } from '@globalcity/shared';
 import { log, warn, timed } from './util.ts';
 
@@ -69,7 +92,8 @@ export class World {
     v = this.withLook(x, y, v);
     const old = this.tiles[i];
     if (old === v) return;
-    const cx = Math.floor(x / CHUNK), cy = Math.floor(y / CHUNK);
+    const cx = Math.floor(x / CHUNK),
+      cy = Math.floor(y / CHUNK);
     if (!this.pristine.has(chunkIndex(cx, cy))) this.pristine.set(chunkIndex(cx, cy), this.chunkView(cx, cy));
     this.tiles[i] = v;
     // Rail networks only care about rail tiles and the zones that touch them: a zone/house change only
@@ -79,7 +103,10 @@ export class World {
     this.dirty.add(ci);
     this.mapDirty.add(ci);
     let arr = this.pending.get(ci);
-    if (!arr) { arr = []; this.pending.set(ci, arr); }
+    if (!arr) {
+      arr = [];
+      this.pending.set(ci, arr);
+    }
     arr.push(x, y, v);
     this.landCache[ci] = -1;
   }
@@ -114,10 +141,11 @@ export class World {
   /** Stamp the right look on every tile of a rectangle (boot: after building the landscape, and on loaded chunks). */
   stampLooks(x0: number, y0: number, w: number, h: number): void {
     const t = this.tiles;
-    for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) {
-      const i = y * WORLD_W + x;
-      t[i] = this.withLook(x, y, t[i]);
-    }
+    for (let y = y0; y < y0 + h; y++)
+      for (let x = x0; x < x0 + w; x++) {
+        const i = y * WORLD_W + x;
+        t[i] = this.withLook(x, y, t[i]);
+      }
   }
 
   /** Number of non-water tiles in a chunk (lazily cached). */
@@ -152,7 +180,8 @@ export class World {
 export function loadBaseOrFallback(file: string): Uint8Array {
   if (fs.existsSync(file)) {
     const buf = fs.readFileSync(file);
-    if (buf.length !== WORLD_W * WORLD_H) throw new Error(`${file} has ${buf.length} bytes, expected ${WORLD_W * WORLD_H}: regenerate it with \`npm run gen:world\``);
+    if (buf.length !== WORLD_W * WORLD_H)
+      throw new Error(`${file} has ${buf.length} bytes, expected ${WORLD_W * WORLD_H}: regenerate it with \`npm run gen:world\``);
     log(`Loaded base world ${file} (${(buf.length / 1e6).toFixed(1)} MB)`);
     return new Uint8Array(buf.buffer, buf.byteOffset, buf.length);
   } else {
@@ -171,10 +200,16 @@ export function generateFallbackBase(): Uint8Array {
   };
   const smooth = (t: number): number => t * t * (3 - 2 * t);
   const noise = (x: number, y: number, cell: number, seed: number): number => {
-    const gx = x / cell, gy = y / cell;
-    const ix = Math.floor(gx), iy = Math.floor(gy);
-    const fx = smooth(gx - ix), fy = smooth(gy - iy);
-    const a = hash(ix, iy, seed), b = hash(ix + 1, iy, seed), c = hash(ix, iy + 1, seed), d = hash(ix + 1, iy + 1, seed);
+    const gx = x / cell,
+      gy = y / cell;
+    const ix = Math.floor(gx),
+      iy = Math.floor(gy);
+    const fx = smooth(gx - ix),
+      fy = smooth(gy - iy);
+    const a = hash(ix, iy, seed),
+      b = hash(ix + 1, iy, seed),
+      c = hash(ix, iy + 1, seed),
+      d = hash(ix + 1, iy + 1, seed);
     return (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy;
   };
   for (let y = 0; y < WORLD_H; y++) {
@@ -183,7 +218,10 @@ export function generateFallbackBase(): Uint8Array {
       const i = y * WORLD_W + x;
       const n = noise(x, y, 96, 1) * 0.6 + noise(x, y, 24, 2) * 0.3 + noise(x, y, 6, 3) * 0.1;
       const biome = polar > 0.85 ? Biome.Snow : polar > 0.7 ? Biome.Boreal : Biome.Temperate;
-      if (n + (polar > 0.9 ? 0.2 : 0) <= 0.52) { out[i] = BASE_WATER | biome; continue; }
+      if (n + (polar > 0.9 ? 0.2 : 0) <= 0.52) {
+        out[i] = BASE_WATER | biome;
+        continue;
+      }
       const f = noise(x, y, 20, 4);
       out[i] = biome | (f > 0.58 && biome !== Biome.Snow ? BASE_TREES : 0);
     }
@@ -209,8 +247,12 @@ export function buildFromBase(world: World, base: Uint8Array): void {
  */
 export function smoothRivers(world: World): void {
   const t = world.tiles;
-  const W = WORLD_W, H = WORLD_H;
-  const isWaterV = (v: number): boolean => { const id = v & LOMASK; return id >= WATER_LOW && id <= WATER_HIGH; };
+  const W = WORLD_W,
+    H = WORLD_H;
+  const isWaterV = (v: number): boolean => {
+    const id = v & LOMASK;
+    return id >= WATER_LOW && id <= WATER_HIGH;
+  };
   for (let y = 0; y < H; y++) {
     const row = y * W;
     for (let x = 0; x < W; x++) {
@@ -222,7 +264,7 @@ export function smoothRivers(world: World): void {
       if (y === H - 1 || isWaterV(t[i + W])) idx |= 4;
       if (x === 0 || isWaterV(t[i - 1])) idx |= 8;
       let v = RIVER_EDGE_TABLE[idx];
-      if ((v & LOMASK) !== RIVER && ((x ^ y) & 1)) v += 1;
+      if ((v & LOMASK) !== RIVER && (x ^ y) & 1) v += 1;
       t[i] = v;
     }
   }
@@ -235,8 +277,12 @@ export function smoothRivers(world: World): void {
  */
 export function smoothTrees(world: World): void {
   const t = world.tiles;
-  const W = WORLD_W, H = WORLD_H;
-  const isTreeV = (v: number): boolean => { const id = v & LOMASK; return id >= WOODS_LOW && id <= WOODS_HIGH; };
+  const W = WORLD_W,
+    H = WORLD_H;
+  const isTreeV = (v: number): boolean => {
+    const id = v & LOMASK;
+    return id >= WOODS_LOW && id <= WOODS_HIGH;
+  };
   for (let y = 0; y < H; y++) {
     const row = y * W;
     for (let x = 0; x < W; x++) {
@@ -248,8 +294,11 @@ export function smoothTrees(world: World): void {
       if (y < H - 1 && isTreeV(t[i + W])) idx |= 4;
       if (x > 0 && isTreeV(t[i - 1])) idx |= 8;
       let v = TREE_EDGE_TABLE[idx];
-      if (v === 0) { t[i] = DIRT; continue; }
-      if (v !== WOODS && ((x + y) & 1)) v -= 8;
+      if (v === 0) {
+        t[i] = DIRT;
+        continue;
+      }
+      if (v !== WOODS && (x + y) & 1) v -= 8;
       t[i] = v | BLBNBIT;
     }
   }

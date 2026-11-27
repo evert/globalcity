@@ -3,7 +3,11 @@ import type { ClientMsg, ServerMsg } from '@globalcity/shared';
 import { decodeChunk, type ChunkFrame } from '@globalcity/shared';
 import { Emitter } from './emitter.ts';
 
-export interface Identity { id?: string; token?: string; name?: string }
+export interface Identity {
+  id?: string;
+  token?: string;
+  name?: string;
+}
 
 const ID_KEY = 'globalcity.identity';
 const PING_MS = 20_000;
@@ -23,12 +27,18 @@ export function loadIdentity(): Identity {
       const v = JSON.parse(raw);
       if (v && typeof v === 'object') return v as Identity;
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return {};
 }
 
 export function saveIdentity(id: Identity): void {
-  try { localStorage.setItem(ID_KEY, JSON.stringify(id)); } catch { /* ignore */ }
+  try {
+    localStorage.setItem(ID_KEY, JSON.stringify(id));
+  } catch {
+    /* ignore */
+  }
 }
 
 export class Net extends Emitter<NetEvents> {
@@ -81,7 +91,12 @@ export class Net extends Emitter<NetEvents> {
       }
       if (typeof ev.data !== 'string') return;
       let msg: ServerMsg;
-      try { msg = JSON.parse(ev.data) as ServerMsg; } catch { console.warn('[net] bad json'); return; }
+      try {
+        msg = JSON.parse(ev.data) as ServerMsg;
+      } catch {
+        console.warn('[net] bad json');
+        return;
+      }
       if (!msg || typeof msg !== 'object' || typeof (msg as { t?: unknown }).t !== 'string') return;
       if (msg.t === 'welcome') {
         this.identity = { id: msg.player.id, token: msg.player.token, name: msg.player.name };
@@ -98,12 +113,17 @@ export class Net extends Emitter<NetEvents> {
       if (was) this.emit('close', undefined);
       if (!this.closedByUser) this.scheduleReconnect();
     };
-    ws.onerror = () => { /* onclose follows */ };
+    ws.onerror = () => {
+      /* onclose follows */
+    };
   }
 
   close(): void {
     this.closedByUser = true;
-    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     this.stopPing();
     this.ws?.close();
     this.ws = null;
@@ -115,7 +135,10 @@ export class Net extends Emitter<NetEvents> {
     const delay = base + Math.random() * base * 0.3;
     this.attempt++;
     this.emit('status', `Disconnected — retrying in ${Math.round(delay / 1000)}s`);
-    this.reconnectTimer = setTimeout(() => { this.reconnectTimer = null; this.connect(); }, delay);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect();
+    }, delay);
   }
 
   private startPing(): void {
@@ -123,7 +146,10 @@ export class Net extends Emitter<NetEvents> {
     this.pingTimer = setInterval(() => this.send({ t: 'ping' }), PING_MS);
   }
   private stopPing(): void {
-    if (this.pingTimer) { clearInterval(this.pingTimer); this.pingTimer = null; }
+    if (this.pingTimer) {
+      clearInterval(this.pingTimer);
+      this.pingTimer = null;
+    }
   }
 
   /** Send if connected; returns false when offline (message is dropped, except subscriptions which are remembered). */
@@ -134,7 +160,12 @@ export class Net extends Emitter<NetEvents> {
 
   private sendRaw(msg: ClientMsg): boolean {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
-    try { this.ws.send(JSON.stringify(msg)); return true; } catch { return false; }
+    try {
+      this.ws.send(JSON.stringify(msg));
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /** Replace the subscription set (sent immediately when connected, otherwise on reconnect). */

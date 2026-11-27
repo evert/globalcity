@@ -7,32 +7,166 @@
 // (coal/industrial smoke, stadium games, airport radar, nuclear swirl; the client cycles ANIMBIT tiles).
 
 import {
-  WORLD_W, WORLD_H, CHUNK, DEMAND_SMOOTHING, TAX_RATE, TAX_MULT, COAL_POWER, NUCLEAR_POWER, POWER_PRICE_PER_UNIT,
-  UPKEEP_ROAD, UPKEEP_RAIL, UPKEEP_STATION, UPKEEP_COAL, UPKEEP_NUCLEAR, CITY_FREEZE_MS, STEPS_PER_MONTH,
+  WORLD_W,
+  WORLD_H,
+  CHUNK,
+  DEMAND_SMOOTHING,
+  TAX_RATE,
+  TAX_MULT,
+  COAL_POWER,
+  NUCLEAR_POWER,
+  POWER_PRICE_PER_UNIT,
+  UPKEEP_ROAD,
+  UPKEEP_RAIL,
+  UPKEEP_STATION,
+  UPKEEP_COAL,
+  UPKEEP_NUCLEAR,
+  CITY_FREEZE_MS,
+  STEPS_PER_MONTH,
   POLICESTATION,
-  FIRE_SPREAD_P, FIRE_BURNOUT_P, FIRE_BURNOUT_P_COVERED, FIRE_STATION_RANGE, FIRE_OUTBREAK_BASE_P, FIRE_OWNER_ONLINE_MS, FIRE_PREVENTED_P,
-  REGROW_MS, REGROW_P,
-  ABANDON_IDLE_DAYS, ABANDON_FREE_DAYS, SMALL_CITY_MAX_ITEMS, SMALL_CITY_RELEASE_MS, NEIGHBOUR_DEMAND_MAX, RAIL_LINK_BOOST, RAIL_LINK_MAX,
-  TRAFFIC_MAX_STEPS, TRAFFIC_ADD, TRAFFIC_DECAY, TRAFFIC_LIGHT, TRAFFIC_HEAVY, TRAFFIC_RAIL_SHARE, TRAFFIC_RAIL_REACH,
-  STADIUM_RES_BOOST, SEAPORT_IND_BOOST, AIRPORT_COM_BOOST, POLICE_RANGE, CRIME_PER_POP,
-  HBRIDGE, VBRIDGE, HPOWER, VPOWER, HRAIL, VRAIL, ROADBASE, LTRFBASE, HTRFBASE,
-  LOMASK, ZONEBIT, CONDBIT, PWRBIT, ANIMBIT, BULLBIT, BURNBIT, BLBNCNBIT, BNCNBIT,
-  DIRT, RUBBLE, FIRE, LASTFIRE, WOODS2, WOODS5, FOUNTAIN,
-  FREEZ, RZB, HOUSE, RESBASE, COMCLR, CZB, COMBASE, INDCLR, IZB, INDBASE, POWERPLANT, FIRESTATION, HRAILROAD, VRAILROAD,
-  COALBASE, STADIUM, FULLSTADIUM, STADIUMBASE, FULLSTADIUMBASE, PORT, AIRPORT,
-  COAL_SMOKE, IND_SMOKE, STADIUM_GAME, NUKE_SWIRL, AIRPORT_RADAR, roadPiece, trafficTile,
-  resBuildingCenter, comBuildingCenter, indBuildingCenter, resZonePop, comZonePop, indZonePop, displayPopulation,
-  isRoad, isRail, isWire, isTree, isWater, isIndZone, isComZone, isHouse, isRubble, chunkKey, parseChunkKey, inWorld, clamp,
-  HOSPITAL, CHURCH, HOSPITALBASE, CHURCHBASE,
-  type ClaimInfo, type Demand, type GameTime,
-  CITYHALL, CITYHALL_TAX_BONUS, CITYHALL_CRIME_FACTOR, UPKEEP_CITYHALL,
-  MILESTONE_BUILDINGS, milestoneUnlocksFor,
-  lotHash, CRIME_LAND_VALUE_THRESHOLD,
-  WINDFARM, OFFSHORE, SCHOOL, WIND_POWER, OFFSHORE_POWER, UPKEEP_WIND, UPKEEP_OFFSHORE, UPKEEP_SCHOOL, SCHOOL_RANGE,
-  milestoneForCentre, pollutionSource, pollutionAt, POLLUTION_HIGH, POLLUTION_SEVERE, POLLUTION_MAX_RADIUS,
+  FIRE_SPREAD_P,
+  FIRE_BURNOUT_P,
+  FIRE_BURNOUT_P_COVERED,
+  FIRE_STATION_RANGE,
+  FIRE_OUTBREAK_BASE_P,
+  FIRE_OWNER_ONLINE_MS,
+  FIRE_PREVENTED_P,
+  REGROW_MS,
+  REGROW_P,
+  ABANDON_IDLE_DAYS,
+  ABANDON_FREE_DAYS,
+  SMALL_CITY_MAX_ITEMS,
+  SMALL_CITY_RELEASE_MS,
+  NEIGHBOUR_DEMAND_MAX,
+  RAIL_LINK_BOOST,
+  RAIL_LINK_MAX,
+  TRAFFIC_MAX_STEPS,
+  TRAFFIC_ADD,
+  TRAFFIC_DECAY,
+  TRAFFIC_LIGHT,
+  TRAFFIC_HEAVY,
+  TRAFFIC_RAIL_SHARE,
+  TRAFFIC_RAIL_REACH,
+  STADIUM_RES_BOOST,
+  SEAPORT_IND_BOOST,
+  AIRPORT_COM_BOOST,
+  POLICE_RANGE,
+  CRIME_PER_POP,
+  HBRIDGE,
+  VBRIDGE,
+  HPOWER,
+  VPOWER,
+  HRAIL,
+  VRAIL,
+  ROADBASE,
+  LTRFBASE,
+  HTRFBASE,
+  LOMASK,
+  ZONEBIT,
+  CONDBIT,
+  PWRBIT,
+  ANIMBIT,
+  BULLBIT,
+  BURNBIT,
+  BLBNCNBIT,
+  BNCNBIT,
+  DIRT,
+  RUBBLE,
+  FIRE,
+  LASTFIRE,
+  WOODS2,
+  WOODS5,
+  FOUNTAIN,
+  FREEZ,
+  RZB,
+  HOUSE,
+  RESBASE,
+  COMCLR,
+  CZB,
+  COMBASE,
+  INDCLR,
+  IZB,
+  INDBASE,
+  POWERPLANT,
+  FIRESTATION,
+  HRAILROAD,
+  VRAILROAD,
+  COALBASE,
+  STADIUM,
+  FULLSTADIUM,
+  STADIUMBASE,
+  FULLSTADIUMBASE,
+  PORT,
+  AIRPORT,
+  COAL_SMOKE,
+  IND_SMOKE,
+  STADIUM_GAME,
+  NUKE_SWIRL,
+  AIRPORT_RADAR,
+  roadPiece,
+  trafficTile,
+  resBuildingCenter,
+  comBuildingCenter,
+  indBuildingCenter,
+  resZonePop,
+  comZonePop,
+  indZonePop,
+  displayPopulation,
+  isRoad,
+  isRail,
+  isWire,
+  isTree,
+  isWater,
+  isIndZone,
+  isComZone,
+  isHouse,
+  isRubble,
+  chunkKey,
+  parseChunkKey,
+  inWorld,
+  clamp,
+  HOSPITAL,
+  CHURCH,
+  HOSPITALBASE,
+  CHURCHBASE,
+  type ClaimInfo,
+  type Demand,
+  type GameTime,
+  CITYHALL,
+  CITYHALL_TAX_BONUS,
+  CITYHALL_CRIME_FACTOR,
+  UPKEEP_CITYHALL,
+  MILESTONE_BUILDINGS,
+  milestoneUnlocksFor,
+  lotHash,
+  CRIME_LAND_VALUE_THRESHOLD,
+  WINDFARM,
+  OFFSHORE,
+  SCHOOL,
+  WIND_POWER,
+  OFFSHORE_POWER,
+  UPKEEP_WIND,
+  UPKEEP_OFFSHORE,
+  UPKEEP_SCHOOL,
+  SCHOOL_RANGE,
+  milestoneForCentre,
+  pollutionSource,
+  pollutionAt,
+  POLLUTION_HIGH,
+  POLLUTION_SEVERE,
+  POLLUTION_MAX_RADIUS,
   NUCLEAR,
-  MILESTONE_ORDER, milestoneLower, CHRISTMAS_TREE_RANGE,
-  CUSTOMCENTRE, UPKEEP_UNIVERSITY, UNIVERSITY_RANGE, UNIVERSITY_POLICE_FACTOR, UNIVERSITY_IND_BOOST, GRAND_CENTRAL_RANGE, GRAND_CENTRAL_RAIL_BOOST, UPKEEP_GRANDCENTRAL,
+  MILESTONE_ORDER,
+  milestoneLower,
+  CHRISTMAS_TREE_RANGE,
+  CUSTOMCENTRE,
+  UPKEEP_UNIVERSITY,
+  UNIVERSITY_RANGE,
+  UNIVERSITY_POLICE_FACTOR,
+  UNIVERSITY_IND_BOOST,
+  GRAND_CENTRAL_RANGE,
+  GRAND_CENTRAL_RAIL_BOOST,
+  UPKEEP_GRANDCENTRAL,
 } from '@globalcity/shared';
 import { type World, chunkIndex, chunkCoords, type ChunkIndex } from './world.ts';
 import type { AirportInfo, PortInfo, ActiveDisaster } from '@globalcity/shared';
@@ -87,16 +221,28 @@ const STADIUM_EMPTY_P = 1 / 8;
  * Road pieces that get traffic variants: the 11 plain shapes plus the two road/wire crossings (pieces 2..14).
  * Bridges (0, 1) never carry traffic (Micropolis doRoad handles them as drawbridges) and piece 15 (BRWH) is not a road.
  */
-const TRAFFIC_PIECE_MIN = 2, TRAFFIC_PIECE_MAX = 14;
+const TRAFFIC_PIECE_MIN = 2,
+  TRAFFIC_PIECE_MAX = 14;
 /** Density -> traffic level 0/1/2. */
 const trafficLevelFor = (d: number): 0 | 1 | 2 => (d >= TRAFFIC_HEAVY ? 2 : d >= TRAFFIC_LIGHT ? 1 : 0);
 /** Current traffic level of a road tile id. */
 const tileTrafficLevel = (id: number): 0 | 1 | 2 => (id < LTRFBASE ? 0 : id < HTRFBASE ? 1 : 2);
 /** Chebyshev distance between tile index i and (x,y). */
-const chebyshev = (i: number, x: number, y: number): number => { const sx = i % WORLD_W, sy = (i - sx) / WORLD_W; return Math.max(Math.abs(sx - x), Math.abs(sy - y)); };
+const chebyshev = (i: number, x: number, y: number): number => {
+  const sx = i % WORLD_W,
+    sy = (i - sx) / WORLD_W;
+  return Math.max(Math.abs(sx - x), Math.abs(sy - y));
+};
 
 /** `playerId` '*': for everyone playing, except `except`. */
-export interface SimToast { playerId: string; msg: string; kind: 'info' | 'error' | 'success'; at?: { x: number; y: number }; except?: string; big?: boolean }
+export interface SimToast {
+  playerId: string;
+  msg: string;
+  kind: 'info' | 'error' | 'success';
+  at?: { x: number; y: number };
+  except?: string;
+  big?: boolean;
+}
 
 export interface TickResult {
   time: GameTime;
@@ -127,7 +273,12 @@ interface PowerScan {
 }
 
 /** One city's share of a connected power grid. */
-interface GridCity { p: PlayerRecord; supply: number; zones: number[]; bought: number }
+interface GridCity {
+  p: PlayerRecord;
+  supply: number;
+  zones: number[];
+  bought: number;
+}
 
 interface TradeBook {
   /** $ net per player this tick (positive = income), fractional */
@@ -139,14 +290,29 @@ interface TradeBook {
 }
 
 interface CityCounters {
-  R: number; C: number; I: number; zones: number; rci: number; plants: number; supply: number; demand: number;
-  stations: number; resZones: number; civic: number;
+  R: number;
+  C: number;
+  I: number;
+  zones: number;
+  rci: number;
+  plants: number;
+  supply: number;
+  demand: number;
+  stations: number;
+  resZones: number;
+  civic: number;
   /** yearly upkeep of what stands, by budget line */
   upkeep: { roads: number; rail: number; power: number; services: number };
-  police: number; stadium: number; seaport: number; airport: number; roads: number;
+  police: number;
+  stadium: number;
+  seaport: number;
+  airport: number;
+  roads: number;
   /** milestone buildings standing (powered or not), and powered city halls */
   /** milestone buildings standing by id (powered or not), and powered city halls */
-  built: Record<string, number>; hall: number; university: number;
+  built: Record<string, number>;
+  hall: number;
+  university: number;
 }
 
 /**
@@ -165,11 +331,20 @@ function maxDensity(kind: 'res' | 'com' | 'ind', x: number, y: number): number {
 const CIVIC_PER_RES_ZONES = 6;
 const CIVIC_P = 0.05;
 
-const roadLike = (v: number): boolean => { const id = v & LOMASK; return isRoad(v) || id === HRAILROAD || id === VRAILROAD; };
+const roadLike = (v: number): boolean => {
+  const id = v & LOMASK;
+  return isRoad(v) || id === HRAILROAD || id === VRAILROAD;
+};
 /** Transport access for zone growth, as in Micropolis' RoadTest: any road or rail tile (power lines don't count). */
 const transportLike = (v: number): boolean => isRoad(v) || isRail(v);
-const isFireTile = (v: number): boolean => { const id = v & LOMASK; return id >= FIRE && id <= LASTFIRE; };
-const isParkTile = (v: number): boolean => { const id = v & LOMASK; return (id >= WOODS2 && id <= WOODS5) || id === FOUNTAIN; };
+const isFireTile = (v: number): boolean => {
+  const id = v & LOMASK;
+  return id >= FIRE && id <= LASTFIRE;
+};
+const isParkTile = (v: number): boolean => {
+  const id = v & LOMASK;
+  return (id >= WOODS2 && id <= WOODS5) || id === FOUNTAIN;
+};
 const rubbleTile = (): number => (RUBBLE + randInt(3)) | BULLBIT;
 /** Tiles a rail network "serves": any multi-tile zone/building tile or a house. */
 const zoneLike = (v: number): boolean => isBuildingTile(v) || isHouse(v);
@@ -252,7 +427,11 @@ export class Sim {
   private railVersion = -1;
   private railComputedAt = -Infinity;
 
-  constructor(private readonly world: World, private readonly players: Players, opts: SimOptions = {}) {
+  constructor(
+    private readonly world: World,
+    private readonly players: Players,
+    opts: SimOptions = {},
+  ) {
     this.randomFires = opts.randomFires ?? true;
     this.elevation = opts.elevation ?? new Elevation(null);
     this.disasters = new Disasters(world, players, opts.hazards ?? new Uint8Array(CHUNKS_X * CHUNKS_Y), this.elevation, {
@@ -261,27 +440,37 @@ export class Sim {
     });
     this.seedFireChunks();
     // Saved chunks may hold traffic tiles from before the restart; density starts at 0, so redraw them plain.
-    for (const ci of world.loaded) { this.applyTrafficLevels(ci, null); this.trafficSeen.add(ci); }
+    for (const ci of world.loaded) {
+      this.applyTrafficLevels(ci, null);
+      this.trafficSeen.add(ci);
+    }
     // Milestones must not depend on a city being simulated (frozen cities skip ticks): derive peak
     // population, standing milestone buildings and grandfathering for every city straight from the save.
     for (const p of players.players.values()) if (p.chunks.length > 0) this.initMilestones(p);
     this.shipping = new ShippingPlanner(world);
     // Seed ports and airports from the save (frozen cities are not scanned until their mayor returns).
     const seed: PortInfo[] = [];
-    for (const p of players.players.values()) for (const key of p.chunks) {
-      const { cx, cy } = parseChunkKey(key);
-      for (let dy = 0; dy < CHUNK; dy++) for (let dx = 0; dx < CHUNK; dx++) {
-        const x = cx * CHUNK + dx, y = cy * CHUNK + dy, v = world.tiles[y * WORLD_W + x];
-        if ((v & ZONEBIT) && (v & LOMASK) === PORT && (v & PWRBIT) && waterNear(world, x - 1, y - 1, 4, SEAPORT_WATER_RANGE)) seed.push({ x, y, ownerId: p.id });
-        if ((v & ZONEBIT) && (v & LOMASK) === AIRPORT && (v & PWRBIT)) this.airports.push({ x, y, ownerId: p.id });
+    for (const p of players.players.values())
+      for (const key of p.chunks) {
+        const { cx, cy } = parseChunkKey(key);
+        for (let dy = 0; dy < CHUNK; dy++)
+          for (let dx = 0; dx < CHUNK; dx++) {
+            const x = cx * CHUNK + dx,
+              y = cy * CHUNK + dy,
+              v = world.tiles[y * WORLD_W + x];
+            if (v & ZONEBIT && (v & LOMASK) === PORT && v & PWRBIT && waterNear(world, x - 1, y - 1, 4, SEAPORT_WATER_RANGE))
+              seed.push({ x, y, ownerId: p.id });
+            if (v & ZONEBIT && (v & LOMASK) === AIRPORT && v & PWRBIT) this.airports.push({ x, y, ownerId: p.id });
+          }
       }
-    }
     this.shipping.setPorts(seed.sort((a, b) => a.y - b.y || a.x - b.x));
     this.shipping.step(Infinity); // the whole route map at boot (a few ms per port, a second or two in all): no re-dealt ships after a restart
     this.airports.sort((a, b) => a.y - b.y || a.x - b.x);
   }
 
-  get time(): GameTime { return this.players.time; }
+  get time(): GameTime {
+    return this.players.time;
+  }
 
   /** Count standing milestone buildings in p's plots, grandfather any that predate unlocking, refresh stats. */
   initMilestones(p: PlayerRecord): void {
@@ -316,7 +505,9 @@ export class Sim {
   readonly frozen = new Set<string>();
   /** wall-clock time of the last regrowth pass (rubble turning back into landscape) */
   private lastRegrow = Date.now();
-  isFrozen(id: string): boolean { return this.frozen.has(id); }
+  isFrozen(id: string): boolean {
+    return this.frozen.has(id);
+  }
   private gridEpoch = 0;
 
   /** PROFILE_TICK=1: per-phase tick timings, logged as averages/max every 30 ticks. */
@@ -325,10 +516,13 @@ export class Sim {
   private profMark = 0;
   private lap(name: string): void {
     if (!this.profile) return;
-    const now = performance.now(), dt = now - this.profMark;
+    const now = performance.now(),
+      dt = now - this.profMark;
     this.profMark = now;
     const e = this.prof.get(name) ?? { sum: 0, max: 0 };
-    e.sum += dt; e.max = Math.max(e.max, dt); this.prof.set(name, e);
+    e.sum += dt;
+    e.max = Math.max(e.max, dt);
+    this.prof.set(name, e);
   }
   private profReport(): void {
     if (!this.profile || this.tickCount % 30 !== 0) return;
@@ -340,12 +534,22 @@ export class Sim {
   tick(): TickResult {
     this.tickCount++;
     this.profMark = performance.now();
-    if (ALL_ONLINE) { const now = Date.now(); for (const p of this.players.players.values()) if (!p.monument && p.chunks.length > 0) p.lastSeen = now; }
+    if (ALL_ONLINE) {
+      const now = Date.now();
+      for (const p of this.players.players.values()) if (!p.monument && p.chunks.length > 0) p.lastSeen = now;
+    }
     const t = this.players.time;
     t.step = (t.step ?? 0) + 1;
     let newMonth = false;
-    if (t.step >= STEPS) { t.step = 0; t.month++; newMonth = true; }
-    if (t.month >= 12) { t.month = 0; t.year++; }
+    if (t.step >= STEPS) {
+      t.step = 0;
+      t.month++;
+      newMonth = true;
+    }
+    if (t.month >= 12) {
+      t.month = 0;
+      t.year++;
+    }
     const newYear = newMonth && t.month === 0;
     this.players.dirty = true;
     this.toasts = [];
@@ -373,7 +577,10 @@ export class Sim {
     const abandoned = new Set<string>();
     const idleChanged = new Set<string>();
     for (const p of this.players.players.values()) {
-      if (p.chunks.length === 0) { this.lastIdle.delete(p.id); continue; }
+      if (p.chunks.length === 0) {
+        this.lastIdle.delete(p.id);
+        continue;
+      }
       if (p.monument) continue; // monuments are never released
       const idle = this.players.idleDays(p, now);
       const small = now - p.lastSeen >= SMALL_RELEASE_MS && this.builtItems(p, SMALL_CITY_MAX_ITEMS) < SMALL_CITY_MAX_ITEMS;
@@ -386,13 +593,18 @@ export class Sim {
         p.notice = small
           ? `Your plot was released because fewer than ${SMALL_CITY_MAX_ITEMS} things were built there and you were away for over an hour. Claim a new plot anywhere to start again (your old one too, if nobody has taken it).`
           : `Your city was released after ${idle} days without a visit: whoever claims its plots gets everything built there. Claim a plot anywhere to start again (your old ones too, if nobody has taken them).`;
-        log(small
-          ? `${p.name}'s city ${p.cityName || '(unnamed)'} had under ${SMALL_CITY_MAX_ITEMS} things built and its mayor was away ${Math.round((now - p.lastSeen) / 60_000)} min: released ${released.length} chunk(s)`
-          : `${p.name}'s city ${p.cityName || '(unnamed)'} abandoned for ${idle} days: released ${released.length} chunk(s)`);
+        log(
+          small
+            ? `${p.name}'s city ${p.cityName || '(unnamed)'} had under ${SMALL_CITY_MAX_ITEMS} things built and its mayor was away ${Math.round((now - p.lastSeen) / 60_000)} min: released ${released.length} chunk(s)`
+            : `${p.name}'s city ${p.cityName || '(unnamed)'} abandoned for ${idle} days: released ${released.length} chunk(s)`,
+        );
         continue;
       }
       if (idle >= ABANDON_IDLE_DAYS) abandoned.add(p.id);
-      if (this.lastIdle.get(p.id) !== idle) { this.lastIdle.set(p.id, idle); idleChanged.add(p.id); }
+      if (this.lastIdle.get(p.id) !== idle) {
+        this.lastIdle.set(p.id, idle);
+        idleChanged.add(p.id);
+      }
     }
     this.lap('abandon');
     // Cities whose mayor is away are frozen: they skip growth, traffic and the budget entirely
@@ -401,7 +613,11 @@ export class Sim {
     for (const p of this.players.players.values()) {
       if (p.chunks.length > 0 && (p.monument || now - p.lastSeen >= FREEZE_MS)) this.frozen.add(p.id); // monuments stay frozen for good
     }
-    if (now - this.lastRegrow >= REGROW_EVERY_MS) { this.lastRegrow = now; this.regrow(); this.lap('regrow'); }
+    if (now - this.lastRegrow >= REGROW_EVERY_MS) {
+      this.lastRegrow = now;
+      this.regrow();
+      this.lap('regrow');
+    }
     // 1. Neighbourhood: rail networks and neighbour/rail demand for every running city with land.
     this.updateRailNetworks();
     this.lap('rail');
@@ -436,7 +652,11 @@ export class Sim {
     this.fireStep();
     this.lap('fire');
     // natural disasters, only in cities whose mayor is playing right now
-    this.disasters.step(cities.filter((p) => now - p.lastSeen < FIRE_OWNER_ONLINE_MS), now, this.randomFires);
+    this.disasters.step(
+      cities.filter((p) => now - p.lastSeen < FIRE_OWNER_ONLINE_MS),
+      now,
+      this.randomFires,
+    );
     this.toasts.push(...this.disasters.takeToasts());
     const disasters = this.disasters.version !== this.disastersVersion ? this.disasters.active() : null;
     this.disastersVersion = this.disasters.version;
@@ -482,8 +702,13 @@ export class Sim {
 
   /** Released plots: drop their traffic maps and redraw their roads plain (shared by idle release and abandon). */
   clearReleased(chunks: { cx: number; cy: number }[]): void {
-    for (const u of chunks) { const ci = chunkIndex(u.cx, u.cy); this.density.delete(ci); this.applyTrafficLevels(ci, null); }
-    this.lastDensityChunk = -1; this.lastDensityArr = null;
+    for (const u of chunks) {
+      const ci = chunkIndex(u.cx, u.cy);
+      this.density.delete(ci);
+      this.applyTrafficLevels(ci, null);
+    }
+    this.lastDensityChunk = -1;
+    this.lastDensityArr = null;
   }
 
   /**
@@ -499,7 +724,9 @@ export class Sim {
         const row = (cy * CHUNK + dy) * WORLD_W + cx * CHUNK;
         for (let dx = 0; dx < CHUNK; dx++) {
           const v = tiles[row + dx];
-          if ((v & ZONEBIT) || isRoad(v) || isRail(v) || isWire(v) || isParkTile(v)) { if (++n >= cap) return n; }
+          if (v & ZONEBIT || isRoad(v) || isRail(v) || isWire(v) || isParkTile(v)) {
+            if (++n >= cap) return n;
+          }
         }
       }
     }
@@ -514,7 +741,8 @@ export class Sim {
   private neighbourhoodStep(p: PlayerRecord, abandoned: Set<string>): void {
     const s = p.stats;
     const nb = this.players.neighboursOf(p);
-    let jobs = 0, R = 0;
+    let jobs = 0,
+      R = 0;
     for (const id of nb) {
       const q = this.players.players.get(id);
       if (!q || abandoned.has(id)) continue;
@@ -542,7 +770,17 @@ export class Sim {
       p.railLinked = true;
       this.players.dirty = true;
       refreshMilestoneStats(p);
-      this.toasts.push({ playerId: p.id, kind: 'success', msg: `Your rail reaches ${[...linked].map((id) => { const q = this.players.players.get(id); return q?.cityName || q?.name || 'a neighbour'; }).sort().join(', ')}! You can now build Grand Central, a landmark station over your line. See 🏛 Milestones.` });
+      this.toasts.push({
+        playerId: p.id,
+        kind: 'success',
+        msg: `Your rail reaches ${[...linked]
+          .map((id) => {
+            const q = this.players.players.get(id);
+            return q?.cityName || q?.name || 'a neighbour';
+          })
+          .sort()
+          .join(', ')}! You can now build Grand Central, a landmark station over your line. See 🏛 Milestones.`,
+      });
     }
   }
 
@@ -570,16 +808,23 @@ export class Sim {
       const comp = this.compCities.length;
       const cities = new Set<string>();
       this.compCities.push(cities);
-      let head = 0, tail = 0;
-      queue[tail++] = start; total++;
+      let head = 0,
+        tail = 0;
+      queue[tail++] = start;
+      total++;
       this.railComp.set(start, comp);
       while (head < tail) {
         const i = queue[head++];
-        const x = i % WORLD_W, y = (i - x) / WORLD_W;
+        const x = i % WORLD_W,
+          y = (i - x) / WORLD_W;
         const visit = (j: number): void => {
           const v = tiles[j];
           if (isRail(v)) {
-            if (total < RAIL_FILL_CAP && !this.railComp.has(j)) { this.railComp.set(j, comp); queue[tail++] = j; total++; }
+            if (total < RAIL_FILL_CAP && !this.railComp.has(j)) {
+              this.railComp.set(j, comp);
+              queue[tail++] = j;
+              total++;
+            }
           } else if (zoneLike(v)) {
             const owner = this.ownerAt(j);
             if (owner) cities.add(owner.id);
@@ -592,13 +837,17 @@ export class Sim {
       }
       for (const id of cities) {
         let set = this.cityComps.get(id);
-        if (!set) { set = new Set(); this.cityComps.set(id, set); }
+        if (!set) {
+          set = new Set();
+          this.cityComps.set(id, set);
+        }
         set.add(comp);
       }
     };
     for (const key of this.players.claims.keys()) {
       const { cx, cy } = parseChunkKey(key);
-      const x0 = cx * CHUNK, y0 = cy * CHUNK;
+      const x0 = cx * CHUNK,
+        y0 = cy * CHUNK;
       for (let dy = 0; dy < CHUNK && total < RAIL_FILL_CAP; dy++) {
         let i = (y0 + dy) * WORLD_W + x0;
         for (let dx = 0; dx < CHUNK; dx++, i++) if (isRail(tiles[i]) && !this.railComp.has(i)) fill(i);
@@ -621,18 +870,27 @@ export class Sim {
   private powerScan(cities: PlayerRecord[], seedCities: PlayerRecord[] = cities): PowerScan {
     const tiles = this.world.tiles;
     // next epoch; on wrap-around clear the stamps (every 255 ticks, a single 32 MB fill)
-    if (++this.gridEpoch > 255) { this.gridStamp.fill(0); this.gridEpoch = 1; }
-    const stamp = this.gridStamp, epoch = this.gridEpoch;
+    if (++this.gridEpoch > 255) {
+      this.gridStamp.fill(0);
+      this.gridEpoch = 1;
+    }
+    const stamp = this.gridStamp,
+      epoch = this.gridEpoch;
     const grid = { has: (i: number): boolean => stamp[i] === epoch };
     const brownout = new Set<number>();
     const queue = this.queue;
     const book: TradeBook = { net: new Map(), spent: new Map(), buyFrom: new Map(), sellTo: new Map() };
-    for (const p of cities) { p.stats.powerImported = 0; p.stats.powerExported = 0; p.stats.powerTradeNet = 0; }
+    for (const p of cities) {
+      p.stats.powerImported = 0;
+      p.stats.powerExported = 0;
+      p.stats.powerTradeNet = 0;
+    }
 
     const fill = (start: number): void => {
       const plants: number[] = [];
       const zones: number[] = [];
-      let head = 0, tail = 0;
+      let head = 0,
+        tail = 0;
       queue[tail++] = start;
       stamp[start] = epoch;
       while (head < tail) {
@@ -645,10 +903,34 @@ export class Sim {
         if (tail >= POWER_FILL_CAP) continue;
         const x = i % WORLD_W;
         let j: number;
-        if (i >= WORLD_W) { j = i - WORLD_W; if (stamp[j] !== epoch && (tiles[j] & CONDBIT)) { stamp[j] = epoch; queue[tail++] = j; } }
-        if (x < WORLD_W - 1) { j = i + 1; if (stamp[j] !== epoch && (tiles[j] & CONDBIT)) { stamp[j] = epoch; queue[tail++] = j; } }
-        if (i < WORLD_W * (WORLD_H - 1)) { j = i + WORLD_W; if (stamp[j] !== epoch && (tiles[j] & CONDBIT)) { stamp[j] = epoch; queue[tail++] = j; } }
-        if (x > 0) { j = i - 1; if (stamp[j] !== epoch && (tiles[j] & CONDBIT)) { stamp[j] = epoch; queue[tail++] = j; } }
+        if (i >= WORLD_W) {
+          j = i - WORLD_W;
+          if (stamp[j] !== epoch && tiles[j] & CONDBIT) {
+            stamp[j] = epoch;
+            queue[tail++] = j;
+          }
+        }
+        if (x < WORLD_W - 1) {
+          j = i + 1;
+          if (stamp[j] !== epoch && tiles[j] & CONDBIT) {
+            stamp[j] = epoch;
+            queue[tail++] = j;
+          }
+        }
+        if (i < WORLD_W * (WORLD_H - 1)) {
+          j = i + WORLD_W;
+          if (stamp[j] !== epoch && tiles[j] & CONDBIT) {
+            stamp[j] = epoch;
+            queue[tail++] = j;
+          }
+        }
+        if (x > 0) {
+          j = i - 1;
+          if (stamp[j] !== epoch && tiles[j] & CONDBIT) {
+            stamp[j] = epoch;
+            queue[tail++] = j;
+          }
+        }
       }
       this.settleGrid(plants, zones, brownout, book);
     };
@@ -676,14 +958,19 @@ export class Sim {
       const buy = sortedKey(book.buyFrom.get(p.id));
       const sell = sortedKey(book.sellTo.get(p.id));
       let prev = this.tradePartners.get(p.id);
-      if (!prev) { prev = { buy: '', sell: '' }; this.tradePartners.set(p.id, prev); }
+      if (!prev) {
+        prev = { buy: '', sell: '' };
+        this.tradePartners.set(p.id, prev);
+      }
       if (buy !== prev.buy) {
         prev.buy = buy;
-        if (buy) this.toasts.push({ playerId: p.id, kind: 'info', msg: `Buying ${p.stats.powerImported} units of power from ${this.names(book.buyFrom.get(p.id)!)}` });
+        if (buy)
+          this.toasts.push({ playerId: p.id, kind: 'info', msg: `Buying ${p.stats.powerImported} units of power from ${this.names(book.buyFrom.get(p.id)!)}` });
       }
       if (sell !== prev.sell) {
         prev.sell = sell;
-        if (sell) this.toasts.push({ playerId: p.id, kind: 'info', msg: `Selling ${p.stats.powerExported} units of power to ${this.names(book.sellTo.get(p.id)!)}` });
+        if (sell)
+          this.toasts.push({ playerId: p.id, kind: 'info', msg: `Selling ${p.stats.powerExported} units of power to ${this.names(book.sellTo.get(p.id)!)}` });
       }
     }
     return { grid, brownout };
@@ -697,7 +984,10 @@ export class Sim {
       const p = this.ownerAt(i);
       if (!p) return null;
       let c = byId.get(p.id);
-      if (!c) { c = { p, supply: 0, zones: [], bought: 0 }; byId.set(p.id, c); }
+      if (!c) {
+        c = { p, supply: 0, zones: [], bought: 0 };
+        byId.set(p.id, c);
+      }
       return c;
     };
     for (const i of plants) {
@@ -759,19 +1049,24 @@ export class Sim {
   }
 
   private names(ids: Set<string>): string {
-    return [...ids].map((id) => this.players.players.get(id)?.name ?? 'a neighbour').sort().join(', ');
+    return [...ids]
+      .map((id) => this.players.players.get(id)?.name ?? 'a neighbour')
+      .sort()
+      .join(', ');
   }
 
   /** Owner of the chunk containing tile index i. */
   private ownerAt(i: number): PlayerRecord | undefined {
-    const x = i % WORLD_W, y = (i - x) / WORLD_W;
+    const x = i % WORLD_W,
+      y = (i - x) / WORLD_W;
     return this.players.ownerOf(Math.floor(x / CHUNK), Math.floor(y / CHUNK));
   }
 
   private forEachChunkTile(p: PlayerRecord, fn: (i: number, x: number, y: number) => void): void {
     for (const key of p.chunks) {
       const { cx, cy } = parseChunkKey(key);
-      const x0 = cx * CHUNK, y0 = cy * CHUNK;
+      const x0 = cx * CHUNK,
+        y0 = cy * CHUNK;
       for (let dy = 0; dy < CHUNK; dy++) {
         const y = y0 + dy;
         let i = y * WORLD_W + x0;
@@ -786,8 +1081,26 @@ export class Sim {
   private cityStep(p: PlayerRecord, power: PowerScan, newMonth: boolean): void {
     const tiles = this.world.tiles;
     const c: CityCounters = {
-      R: 0, C: 0, I: 0, zones: 0, rci: 0, plants: 0, supply: 0, demand: 0, stations: 0, upkeep: { roads: 0, rail: 0, power: 0, services: 0 }, resZones: 0, civic: 0,
-      police: 0, stadium: 0, seaport: 0, airport: 0, roads: 0, built: zeroBuilt(), hall: 0, university: 0,
+      R: 0,
+      C: 0,
+      I: 0,
+      zones: 0,
+      rci: 0,
+      plants: 0,
+      supply: 0,
+      demand: 0,
+      stations: 0,
+      upkeep: { roads: 0, rail: 0, power: 0, services: 0 },
+      resZones: 0,
+      civic: 0,
+      police: 0,
+      stadium: 0,
+      seaport: 0,
+      airport: 0,
+      roads: 0,
+      built: zeroBuilt(),
+      hall: 0,
+      university: 0,
     };
     const demand = p.stats.demand;
     const prev = this.civic.get(p.id) ?? { civic: 0, resZones: 0 };
@@ -799,46 +1112,114 @@ export class Sim {
       const v = tiles[i];
       if ((v & ZONEBIT) === 0) {
         // yearly upkeep for infrastructure (roads, rail); charged monthly below
-        if (isRoad(v)) { c.upkeep.roads += UPKEEP_ROAD; c.roads++; }
-        else if (isRail(v)) c.upkeep.rail += UPKEEP_RAIL;
+        if (isRoad(v)) {
+          c.upkeep.roads += UPKEEP_ROAD;
+          c.roads++;
+        } else if (isRail(v)) c.upkeep.rail += UPKEEP_RAIL;
         return;
       }
       const kind = zoneKind(v);
       const powered = (v & PWRBIT) !== 0;
-      if (kind === 'coal') { c.plants++; c.supply += COAL_POWER; c.upkeep.power += UPKEEP_COAL; this.animateCoal(x, y, powered); return; }
-      if (kind === 'nuclear') { c.plants++; c.supply += NUCLEAR_POWER; c.upkeep.power += UPKEEP_NUCLEAR; this.animateNuclear(x, y, powered); return; }
-      if (kind === 'wind') { c.plants++; c.supply += WIND_POWER; c.upkeep.power += UPKEEP_WIND; c.built.windfarm = (c.built.windfarm ?? 0) + 1; return; }
-      if (kind === 'offshore') { c.plants++; c.supply += OFFSHORE_POWER; c.upkeep.power += UPKEEP_OFFSHORE; c.built.offshore = (c.built.offshore ?? 0) + 1; return; }
+      if (kind === 'coal') {
+        c.plants++;
+        c.supply += COAL_POWER;
+        c.upkeep.power += UPKEEP_COAL;
+        this.animateCoal(x, y, powered);
+        return;
+      }
+      if (kind === 'nuclear') {
+        c.plants++;
+        c.supply += NUCLEAR_POWER;
+        c.upkeep.power += UPKEEP_NUCLEAR;
+        this.animateNuclear(x, y, powered);
+        return;
+      }
+      if (kind === 'wind') {
+        c.plants++;
+        c.supply += WIND_POWER;
+        c.upkeep.power += UPKEEP_WIND;
+        c.built.windfarm = (c.built.windfarm ?? 0) + 1;
+        return;
+      }
+      if (kind === 'offshore') {
+        c.plants++;
+        c.supply += OFFSHORE_POWER;
+        c.upkeep.power += UPKEEP_OFFSHORE;
+        c.built.offshore = (c.built.offshore ?? 0) + 1;
+        return;
+      }
       c.zones++;
       if (power.grid.has(i)) c.demand++;
       if (kind === 'other') {
         const id = v & LOMASK;
         if (id === HOSPITAL || id === CHURCH) c.civic++;
         if (id === FIRESTATION || id === POLICESTATION) c.upkeep.services += UPKEEP_STATION;
-        if (id === FIRESTATION && powered) { c.stations++; this.stations.push(i); }
+        if (id === FIRESTATION && powered) {
+          c.stations++;
+          this.stations.push(i);
+        }
         if (id === POLICESTATION && powered) {
-          c.police++; this.nextPolice.push(i);
+          c.police++;
+          this.nextPolice.push(i);
           this.nextPoliceRange.push(POLICE_RANGE * (this.uniCities.has(p.id) ? UNIVERSITY_POLICE_FACTOR : 1));
         }
         const mb = id === CUSTOMCENTRE ? this.world.buildings.at(x, y)?.kind : milestoneForCentre(id);
         if (mb && mb in c.built) c.built[mb]++;
-        if (mb === 'university') { c.upkeep.services += UPKEEP_UNIVERSITY; if (powered) { c.university++; this.nextUniversities.push(i); this.nextUniCities.add(p.id); } }
+        if (mb === 'university') {
+          c.upkeep.services += UPKEEP_UNIVERSITY;
+          if (powered) {
+            c.university++;
+            this.nextUniversities.push(i);
+            this.nextUniCities.add(p.id);
+          }
+        }
         if (mb === 'christmastree' && powered) this.nextXmasTrees.push(i);
-        if (mb === 'grandcentral') { c.upkeep.services += UPKEEP_GRANDCENTRAL; if (powered) { this.nextGrandCentrals.push(i); this.nextGcCities.add(p.id); } }
-        if (id === SCHOOL) { c.upkeep.services += UPKEEP_SCHOOL; if (powered) this.nextSchools.push(i); }
-        if (id === STADIUM || id === FULLSTADIUM) { if (powered) c.stadium++; this.animateStadium(x, y, v); }
-        else if (id === PORT) { if (powered && waterNear(this.world, x - 1, y - 1, 4, SEAPORT_WATER_RANGE)) { c.seaport++; this.seaportsNext.push({ x, y, ownerId: p.id }); } }
-        else if (id === AIRPORT) { if (powered) { c.airport++; this.airportsNext.push({ x, y, ownerId: p.id }); } this.animateAirport(x, y, powered); }
-        else if (id === CITYHALL) { c.upkeep.services += UPKEEP_CITYHALL; if (powered) c.hall++; }
+        if (mb === 'grandcentral') {
+          c.upkeep.services += UPKEEP_GRANDCENTRAL;
+          if (powered) {
+            this.nextGrandCentrals.push(i);
+            this.nextGcCities.add(p.id);
+          }
+        }
+        if (id === SCHOOL) {
+          c.upkeep.services += UPKEEP_SCHOOL;
+          if (powered) this.nextSchools.push(i);
+        }
+        if (id === STADIUM || id === FULLSTADIUM) {
+          if (powered) c.stadium++;
+          this.animateStadium(x, y, v);
+        } else if (id === PORT) {
+          if (powered && waterNear(this.world, x - 1, y - 1, 4, SEAPORT_WATER_RANGE)) {
+            c.seaport++;
+            this.seaportsNext.push({ x, y, ownerId: p.id });
+          }
+        } else if (id === AIRPORT) {
+          if (powered) {
+            c.airport++;
+            this.airportsNext.push({ x, y, ownerId: p.id });
+          }
+          this.animateAirport(x, y, powered);
+        } else if (id === CITYHALL) {
+          c.upkeep.services += UPKEEP_CITYHALL;
+          if (powered) c.hall++;
+        }
         return;
       }
       c.rci++;
       const road = this.hasRoadAccess(x, y);
       if (powered && road && Math.random() < this.tripChance(x, y, v, kind)) this.drive(x, y);
       switch (kind) {
-        case 'res': c.resZones++; c.R += this.stepRes(x, y, v, powered && road, demand.r, wantCivic); break;
-        case 'com': c.C += this.stepCom(x, y, v, powered && road, demand.c); break;
-        case 'ind': c.I += this.stepInd(x, y, v, powered && road, demand.i, cityPop); this.animateInd(x, y); break;
+        case 'res':
+          c.resZones++;
+          c.R += this.stepRes(x, y, v, powered && road, demand.r, wantCivic);
+          break;
+        case 'com':
+          c.C += this.stepCom(x, y, v, powered && road, demand.c);
+          break;
+        case 'ind':
+          c.I += this.stepInd(x, y, v, powered && road, demand.i, cityPop);
+          this.animateInd(x, y);
+          break;
       }
     });
     this.roadCount.set(p.id, c.roads);
@@ -857,7 +1238,8 @@ export class Sim {
     // Neighbours' jobs and shoppers, and rail links (commercial, half of it residential).
     // Special buildings (powered; one of each counts): a stadium draws residents, a seaport near water
     // attracts industry, an airport attracts commerce.
-    const nd = p.stats.neighbourDemand, rail = p.stats.railDemand;
+    const nd = p.stats.neighbourDemand,
+      rail = p.stats.railDemand;
     r = clamp(r + nd.r + rail / 2 + (c.stadium > 0 ? STADIUM_RES_BOOST : 0), -1, 1);
     // An airport only helps once there is somewhere to fly: another mayor's powered airport (last tick's list).
     const connected = c.airport > 0 && this.airports.some((a) => a.ownerId !== p.id);
@@ -865,10 +1247,10 @@ export class Sim {
     id = clamp(id + nd.i + (c.seaport > 0 ? SEAPORT_IND_BOOST : 0) + (c.university > 0 ? UNIVERSITY_IND_BOOST : 0), -1, 1);
     // Smoothed: the bars (and growth, which reads them next tick) drift towards the target instead of jumping.
     // A city with nobody living or working in it yet starts at its target, so a new mayor sees demand at once.
-    const was = p.stats.demand, fresh = c.R + c.C + c.I === 0 || !was;
+    const was = p.stats.demand,
+      fresh = c.R + c.C + c.I === 0 || !was;
     const ease = (from: number, to: number): number => Math.round((from + (to - from) * DEMAND_SMOOTHING) * 1000) / 1000;
-    const newDemand: Demand = fresh ? { r: round2(r), c: round2(cd), i: round2(id) }
-      : { r: ease(was.r, r), c: ease(was.c, cd), i: ease(was.i, id) };
+    const newDemand: Demand = fresh ? { r: round2(r), c: round2(cd), i: round2(id) } : { r: ease(was.r, r), c: ease(was.c, cd), i: ease(was.i, id) };
 
     // 4. Budget: this step's share (1/12) of the per-12-steps taxes and upkeep, and the power scan's trade, through the
     //    ledger (one line each). A lifeline is repaid from a surplus month. (Only running cities get here:
@@ -892,7 +1274,9 @@ export class Sim {
     // 5. Stats.
     const s = p.stats;
     s.funds = p.funds;
-    s.resPop = c.R; s.comPop = c.C; s.indPop = c.I;
+    s.resPop = c.R;
+    s.comPop = c.C;
+    s.indPop = c.I;
     s.population = displayPopulation(c.R, c.C, c.I);
     s.powerSupply = c.supply;
     s.powerDemand = c.demand;
@@ -916,7 +1300,11 @@ export class Sim {
       (p.announced ??= []).push(b);
       if ((p.grandfathered ?? []).includes(b)) continue; // they already have one
       const m = MILESTONE_BUILDINGS[b];
-      this.toasts.push({ playerId: p.id, kind: 'success', msg: `Milestone: ${m.pop.toLocaleString('en-US')} people! You can now build ${/^[aeiou]/i.test(m.name) ? 'an' : 'a'} ${milestoneLower(m)}${m.seasonName ? ` in ${m.seasonName}` : ''} (${m.benefits[0].toLowerCase()}). See 🏛 Milestones.` });
+      this.toasts.push({
+        playerId: p.id,
+        kind: 'success',
+        msg: `Milestone: ${m.pop.toLocaleString('en-US')} people! You can now build ${/^[aeiou]/i.test(m.name) ? 'an' : 'a'} ${milestoneLower(m)}${m.seasonName ? ` in ${m.seasonName}` : ''} (${m.benefits[0].toLowerCase()}). See 🏛 Milestones.`,
+      });
     }
 
     // 6. Random fire outbreak: p = BASE * sqrt(zones/30), capped; bigger cities burn more often.
@@ -948,14 +1336,18 @@ export class Sim {
       if (n === 0) continue;
       this.fireChunks.add(chunkIndex(cx, cy));
       const p = this.players.players.get(id);
-      if (p) { p.stats.fires += n; this.burning.add(id); }
+      if (p) {
+        p.stats.fires += n;
+        this.burning.add(id);
+      }
     }
   }
 
   /** Tile indices of all fire tiles in a chunk. */
   private fireTilesIn(cx: number, cy: number): number[] {
     const tiles = this.world.tiles;
-    const x0 = cx * CHUNK, y0 = cy * CHUNK;
+    const x0 = cx * CHUNK,
+      y0 = cy * CHUNK;
     const out: number[] = [];
     for (let dy = 0; dy < CHUNK; dy++) {
       let i = (y0 + dy) * WORLD_W + x0;
@@ -995,12 +1387,14 @@ export class Sim {
     this.forEachChunkTile(p, (i) => {
       const v = tiles[i];
       if ((v & BURNBIT) === 0 || isFireTile(v)) return;
-      if (isBuildingTile(v) || isHouse(v)) preferred.push(i); else other.push(i);
+      if (isBuildingTile(v) || isHouse(v)) preferred.push(i);
+      else other.push(i);
     });
     const pool = preferred.length > 0 ? preferred : other;
     if (pool.length === 0) return;
     const i = pool[randInt(pool.length - 1)];
-    const x = i % WORLD_W, y = (i - x) / WORLD_W;
+    const x = i % WORLD_W,
+      y = (i - x) / WORLD_W;
     // Inside a powered fire station's range most outbreaks are caught before they start.
     if (this.stations.some((s) => chebyshev(s, x, y) <= FIRE_STATION_RANGE) && chance(FIRE_PREVENTED_P)) return;
     if (this.ignite(x, y)) this.toasts.push({ playerId: p.id, kind: 'error', msg: 'Fire! A blaze broke out in your city', at: { x, y } });
@@ -1034,7 +1428,10 @@ export class Sim {
     for (const ci of this.fireChunks) {
       const { cx, cy } = chunkCoords(ci);
       const all = this.fireTilesIn(cx, cy);
-      if (all.length === 0) { this.fireChunks.delete(ci); continue; }
+      if (all.length === 0) {
+        this.fireChunks.delete(ci);
+        continue;
+      }
       const fires = all.filter((i) => !this.freshFires.has(i));
       if (fires.length < all.length) countFor(cx * CHUNK, cy * CHUNK, all.length - fires.length);
       if (fires.length > 0) work.push({ ci, fires });
@@ -1042,18 +1439,22 @@ export class Sim {
     this.freshFires.clear();
     for (const { ci, fires } of work) {
       const { cx, cy } = chunkCoords(ci);
-      const x0 = cx * CHUNK, y0 = cy * CHUNK;
+      const x0 = cx * CHUNK,
+        y0 = cy * CHUNK;
       // Powered fire stations close enough to cover any tile of this chunk.
       const near = this.stations.filter((s) => {
-        const sx = s % WORLD_W, sy = (s - sx) / WORLD_W;
+        const sx = s % WORLD_W,
+          sy = (s - sx) / WORLD_W;
         return sx >= x0 - R && sx < x0 + CHUNK + R && sy >= y0 - R && sy < y0 + CHUNK + R;
       });
       let surviving = 0;
       for (const i of fires) {
-        const x = i % WORLD_W, y = (i - x) / WORLD_W;
+        const x = i % WORLD_W,
+          y = (i - x) / WORLD_W;
         let cover = 0;
         for (const s of near) {
-          const sx = s % WORLD_W, sy = (s - sx) / WORLD_W;
+          const sx = s % WORLD_W,
+            sy = (s - sx) / WORLD_W;
           if (Math.max(Math.abs(sx - x), Math.abs(sy - y)) <= R) cover++;
         }
         const spreadP = cover >= 2 ? FIRE_SPREAD_P / 4 : cover === 1 ? FIRE_SPREAD_P / 2 : FIRE_SPREAD_P;
@@ -1120,14 +1521,19 @@ export class Sim {
     let value = 0;
     outer: for (let dy = -3; dy <= 3; dy++) {
       for (let dx = -3; dx <= 3; dx++) {
-        const xx = x + dx, yy = y + dy;
+        const xx = x + dx,
+          yy = y + dy;
         if (xx < 0 || yy < 0 || xx >= WORLD_W || yy >= WORLD_H) continue;
         const v = w.get(xx, yy);
         const id = v & LOMASK;
-        if (isTree(v) || isWater(v) || (id >= 40 && id <= 43)) { value++; break outer; }
+        if (isTree(v) || isWater(v) || (id >= 40 && id <= 43)) {
+          value++;
+          break outer;
+        }
       }
     }
-    let industry = false, commerce = false;
+    let industry = false,
+      commerce = false;
     let pollution = 0;
     for (let dy = -12; dy <= 12; dy++) {
       const yy = y + dy;
@@ -1153,13 +1559,15 @@ export class Sim {
     if (this.curCrime >= CRIME_LAND_VALUE_THRESHOLD && !this.policeCovers(x, y)) value--;
     // per-lot jitter so a street of identical conditions still shows different buildings
     const h = lotHash(x, y, 1);
-    if (h < 0.25) value--; else if (h > 0.75) value++;
+    if (h < 0.25) value--;
+    else if (h > 0.75) value++;
     return clamp(value, 0, 3);
   }
 
   /** Pollution at (x,y) from every source within POLLUTION_MAX_RADIUS (shared formula, as in the overlay). */
   private smogAt(x: number, y: number): number {
-    const w = this.world, R = POLLUTION_MAX_RADIUS;
+    const w = this.world,
+      R = POLLUTION_MAX_RADIUS;
     let p = 0;
     for (let dy = -R; dy <= R; dy++) {
       const yy = y + dy;
@@ -1204,17 +1612,21 @@ export class Sim {
   }
 
   private addDensity(x: number, y: number): void {
-    const cx = Math.floor(x / CHUNK), cy = Math.floor(y / CHUNK);
+    const cx = Math.floor(x / CHUNK),
+      cy = Math.floor(y / CHUNK);
     const ci = chunkIndex(cx, cy);
     let arr: Uint8Array | null | undefined;
     if (ci === this.lastDensityChunk) arr = this.lastDensityArr; // consecutive steps mostly stay in one chunk
     else {
       arr = this.density.get(ci);
       if (!arr) {
-        if (this.players.ownerOf(cx, cy)) { arr = new Uint8Array(CHUNK * CHUNK); this.density.set(ci, arr); }
-        else arr = null; // unclaimed land: no map
+        if (this.players.ownerOf(cx, cy)) {
+          arr = new Uint8Array(CHUNK * CHUNK);
+          this.density.set(ci, arr);
+        } else arr = null; // unclaimed land: no map
       }
-      this.lastDensityChunk = ci; this.lastDensityArr = arr;
+      this.lastDensityChunk = ci;
+      this.lastDensityArr = arr;
     }
     if (!arr) return;
     const k = (y - cy * CHUNK) * CHUNK + (x - cx * CHUNK);
@@ -1242,11 +1654,13 @@ export class Sim {
   private railNear(x: number, y: number): boolean {
     const w = this.world;
     const r = TRAFFIC_RAIL_REACH;
-    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
-      if (Math.abs(dx) < 2 && Math.abs(dy) < 2) continue; // the zone's own footprint
-      const tx = x + dx, ty = y + dy;
-      if (inWorld(tx, ty) && isRail(w.get(tx, ty))) return true;
-    }
+    for (let dy = -r; dy <= r; dy++)
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.abs(dx) < 2 && Math.abs(dy) < 2) continue; // the zone's own footprint
+        const tx = x + dx,
+          ty = y + dy;
+        if (inWorld(tx, ty) && isRail(w.get(tx, ty))) return true;
+      }
     return false;
   }
 
@@ -1259,16 +1673,19 @@ export class Sim {
       for (let dy = -r; dy <= r; dy++) {
         for (let dx = -r; dx <= r; dx++) {
           if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
-          const tx = x + dx, ty = y + dy;
+          const tx = x + dx,
+            ty = y + dy;
           if (inWorld(tx, ty) && roadLike(w.get(tx, ty))) starts.push(ty * WORLD_W + tx);
         }
       }
     }
     if (starts.length === 0) return;
     const start = starts[randInt(starts.length - 1)];
-    let cx = start % WORLD_W, cy = (start - cx) / WORLD_W;
+    let cx = start % WORLD_W,
+      cy = (start - cx) / WORLD_W;
     let dir = -1; // 0 N, 1 E, 2 S, 3 W
-    const DX = [0, 1, 0, -1], DY = [-1, 0, 1, 0];
+    const DX = [0, 1, 0, -1],
+      DY = [-1, 0, 1, 0];
     for (let step = 0; step < TRAFFIC_MAX_STEPS; step++) {
       if (isRoad(w.get(cx, cy))) this.addDensity(cx, cy);
       const back = dir < 0 ? -1 : (dir + 2) & 3;
@@ -1276,14 +1693,17 @@ export class Sim {
       const opts = [0, 0, 0, 0];
       for (let d = 0; d < 4; d++) {
         if (d === back) continue;
-        const nx = cx + DX[d], ny = cy + DY[d];
+        const nx = cx + DX[d],
+          ny = cy + DY[d];
         if (inWorld(nx, ny) && roadLike(w.get(nx, ny))) opts[n++] = d;
       }
       let d: number;
       if (n > 0) d = opts[randInt(n - 1)];
       else if (back >= 0 && inWorld(cx + DX[back], cy + DY[back]) && roadLike(w.get(cx + DX[back], cy + DY[back]))) d = back; // dead end: turn around
       else return;
-      cx += DX[d]; cy += DY[d]; dir = d;
+      cx += DX[d];
+      cy += DY[d];
+      dir = d;
     }
   }
 
@@ -1300,10 +1720,12 @@ export class Sim {
       this.trafficSeen.add(ci);
       if (!this.density.has(ci)) this.applyTrafficLevels(ci, null);
     }
-    this.lastDensityChunk = -1; this.lastDensityArr = null; // maps may be deleted below
+    this.lastDensityChunk = -1;
+    this.lastDensityArr = null; // maps may be deleted below
     const sums = new Map<string, number>();
     for (const [ci, arr] of this.density) {
-      let max = 0, sum = 0;
+      let max = 0,
+        sum = 0;
       for (let k = 0; k < arr.length; k++) {
         const d = arr[k];
         if (d === 0) continue;
@@ -1313,7 +1735,10 @@ export class Sim {
         if (nd > max) max = nd;
       }
       this.applyTrafficLevels(ci, arr);
-      if (max === 0) { this.density.delete(ci); continue; }
+      if (max === 0) {
+        this.density.delete(ci);
+        continue;
+      }
       const { cx, cy } = chunkCoords(ci);
       const owner = this.players.ownerOf(cx, cy);
       if (owner) sums.set(owner.id, (sums.get(owner.id) ?? 0) + sum);
@@ -1328,7 +1753,8 @@ export class Sim {
   private applyTrafficLevels(ci: ChunkIndex, arr: Uint8Array | null): void {
     const tiles = this.world.tiles;
     const { cx, cy } = chunkCoords(ci);
-    const x0 = cx * CHUNK, y0 = cy * CHUNK;
+    const x0 = cx * CHUNK,
+      y0 = cy * CHUNK;
     for (let dy = 0; dy < CHUNK; dy++) {
       let i = (y0 + dy) * WORLD_W + x0;
       for (let dx = 0; dx < CHUNK; dx++, i++) {
@@ -1356,10 +1782,9 @@ export class Sim {
   private animateCoal(x: number, y: number, powered: boolean): void {
     const w = this.world;
     for (const s of COAL_SMOKE) {
-      const tx = x + s.dx, ty = y + s.dy;
-      const want = powered
-        ? s.tile | ANIMBIT | CONDBIT | PWRBIT | BURNBIT
-        : (COALBASE + (s.dy + 1) * 4 + (s.dx + 1)) | BNCNBIT;
+      const tx = x + s.dx,
+        ty = y + s.dy;
+      const want = powered ? s.tile | ANIMBIT | CONDBIT | PWRBIT | BURNBIT : (COALBASE + (s.dy + 1) * 4 + (s.dx + 1)) | BNCNBIT;
       if (w.get(tx, ty) !== want) w.set(tx, ty, want);
     }
   }
@@ -1367,7 +1792,8 @@ export class Sim {
   /** Nuclear plant: the swirl cell animates while powered. */
   private animateNuclear(x: number, y: number, powered: boolean): void {
     const w = this.world;
-    const tx = x + NUKE_SWIRL.dx, ty = y + NUKE_SWIRL.dy;
+    const tx = x + NUKE_SWIRL.dx,
+      ty = y + NUKE_SWIRL.dy;
     const old = w.get(tx, ty);
     const want = (powered ? NUKE_SWIRL.tile | ANIMBIT : NUKE_SWIRL.still) | BNCNBIT | (old & PWRBIT);
     if (old !== want) w.set(tx, ty, want);
@@ -1376,7 +1802,8 @@ export class Sim {
   /** Airport: the radar dish spins while powered. */
   private animateAirport(x: number, y: number, powered: boolean): void {
     const w = this.world;
-    const tx = x + AIRPORT_RADAR.dx, ty = y + AIRPORT_RADAR.dy;
+    const tx = x + AIRPORT_RADAR.dx,
+      ty = y + AIRPORT_RADAR.dy;
     const old = w.get(tx, ty);
     const want = (powered ? AIRPORT_RADAR.on | ANIMBIT : AIRPORT_RADAR.off) | BNCNBIT | (old & PWRBIT);
     if (old !== want) w.set(tx, ty, want);
@@ -1395,7 +1822,8 @@ export class Sim {
     if (!e.animates) return;
     const powered = (v & PWRBIT) !== 0;
     for (const s of [e.a, e.b]) {
-      const tx = x + s.dx, ty = y + s.dy;
+      const tx = x + s.dx,
+        ty = y + s.dy;
       const old = w.get(tx, ty);
       const want = (powered ? s.on | ANIMBIT : s.off) | BNCNBIT | (old & PWRBIT);
       if (old !== want) w.set(tx, ty, want);
@@ -1409,7 +1837,8 @@ export class Sim {
       if ((v & PWRBIT) === 0 || !chance(STADIUM_GAME_P)) return;
       this.drawStadium(x, y, FULLSTADIUMBASE);
       for (const g of STADIUM_GAME) {
-        const tx = x + g.dx, ty = y + g.dy;
+        const tx = x + g.dx,
+          ty = y + g.dy;
         this.world.set(tx, ty, g.tile | ANIMBIT | BNCNBIT | (this.world.get(tx, ty) & PWRBIT));
       }
     } else if (id === FULLSTADIUM && chance(STADIUM_EMPTY_P)) {
@@ -1440,13 +1869,19 @@ export class Sim {
       const action = this.decide(serviced, demand, HOUSE_GROW_P);
       if (action === true) {
         const value = this.landValue(x, y);
-        if (houses < 8) { this.placeHouse(x, y, value); return houses + 1; }
+        if (houses < 8) {
+          this.placeHouse(x, y, value);
+          return houses + 1;
+        }
         // 8 houses -> first full residential building (pop 16).
         const centre = resBuildingCenter(0, value);
         plopZone(w, x, y, centre - 4);
         return resZonePop(centre);
       }
-      if (action === false && houses > 0) { this.removeHouse(x, y); return houses - 1; }
+      if (action === false && houses > 0) {
+        this.removeHouse(x, y);
+        return houses - 1;
+      }
       return houses;
     }
     const density = Math.floor((id - RZB) / 9) % 4;
@@ -1470,9 +1905,10 @@ export class Sim {
       }
       // Lowest building -> back to an empty zone full of houses (Micropolis doResOut at pop 16).
       plopZone(w, x, y, RESBASE);
-      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-        if (dx || dy) w.set(x + dx, y + dy, (HOUSE + value * 3 + randInt(2)) | BLBNCNBIT | (w.get(x + dx, y + dy) & PWRBIT));
-      }
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx || dy) w.set(x + dx, y + dy, (HOUSE + value * 3 + randInt(2)) | BLBNCNBIT | (w.get(x + dx, y + dy) & PWRBIT));
+        }
       return 8;
     }
     return resZonePop(id);
@@ -1488,7 +1924,8 @@ export class Sim {
     }
     if (free.length === 0) return;
     const k = free[randInt(free.length - 1)];
-    const hx = x + (k % 3) - 1, hy = y + Math.floor(k / 3) - 1;
+    const hx = x + (k % 3) - 1,
+      hy = y + Math.floor(k / 3) - 1;
     // Micropolis buildHouse: house id = HOUSE + value*3 + random(0..2)
     w.set(hx, hy, (HOUSE + value * 3 + randInt(2)) | BLBNCNBIT | (w.get(hx, hy) & PWRBIT));
   }
@@ -1501,7 +1938,8 @@ export class Sim {
     }
     if (houses.length === 0) return;
     const k = houses[randInt(houses.length - 1)];
-    const hx = x + (k % 3) - 1, hy = y + Math.floor(k / 3) - 1;
+    const hx = x + (k % 3) - 1,
+      hy = y + Math.floor(k / 3) - 1;
     w.set(hx, hy, (RESBASE + k) | BNCNBIT | (w.get(hx, hy) & PWRBIT));
   }
 
@@ -1526,7 +1964,10 @@ export class Sim {
       return comZonePop(centre);
     }
     if (action === false) {
-      if (density === 0) { plopZone(w, x, y, COMBASE); return 0; }
+      if (density === 0) {
+        plopZone(w, x, y, COMBASE);
+        return 0;
+      }
       const centre = comBuildingCenter(density - 1, value);
       plopZone(w, x, y, centre - 4);
       return comZonePop(centre);
@@ -1556,7 +1997,10 @@ export class Sim {
       return indZonePop(centre);
     }
     if (action === false) {
-      if (density === 0) { plopZone(w, x, y, INDBASE); return 0; }
+      if (density === 0) {
+        plopZone(w, x, y, INDBASE);
+        return 0;
+      }
       const centre = indBuildingCenter(density - 1, value);
       plopZone(w, x, y, centre - 4);
       return indZonePop(centre);
@@ -1572,7 +2016,10 @@ const sum = (a: number[]): number => a.reduce((x, y) => x + y, 0);
 const sortedKey = (ids: Set<string> | undefined): string => (ids && ids.size > 0 ? [...ids].sort().join(',') : '');
 function addTo(m: Map<string, Set<string>>, k: string, v: string): void {
   let s = m.get(k);
-  if (!s) { s = new Set(); m.set(k, s); }
+  if (!s) {
+    s = new Set();
+    m.set(k, s);
+  }
   s.add(v);
 }
 
@@ -1586,7 +2033,7 @@ function apportion(total: number, weights: number[]): number[] {
   const exact = weights.map((x) => (x * total) / w);
   const out = exact.map(Math.floor);
   let rem = total - sum(out);
-  const order = exact.map((e, k) => k).sort((a, b) => (exact[b] - out[b]) - (exact[a] - out[a]));
+  const order = exact.map((e, k) => k).sort((a, b) => exact[b] - out[b] - (exact[a] - out[a]));
   for (let k = 0; rem > 0 && k < order.length; k++, rem--) out[order[k]]++;
   return out;
 }
