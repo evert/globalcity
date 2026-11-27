@@ -13,11 +13,8 @@ import {
   ZONEBIT,
   ANIMBIT,
   BULLBIT,
-  BURNBIT,
   CONDBIT,
-  PWRBIT,
   BLBNBIT,
-  BLBNCNBIT,
   BNCNBIT,
   DIRT,
   RUBBLE,
@@ -65,7 +62,6 @@ import {
   HOSPITALBASE,
   CHURCHBASE,
   COMBASE,
-  INDBASE,
   PORTBASE,
   LASTPORT,
   AIRPORTBASE,
@@ -664,7 +660,6 @@ export function waterNear(world: World, x0: number, y0: number, size: number, ra
 export function queryTile(ctx: BuildCtx, x: number, y: number): QueryInfo {
   const { world, players } = ctx;
   const v = world.get(x, y);
-  const id = v & LOMASK;
   let name: string;
   let zonePopN: number | undefined;
   let zoneKindQ: 'res' | 'com' | 'ind' | undefined;

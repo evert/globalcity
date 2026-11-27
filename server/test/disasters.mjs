@@ -121,7 +121,7 @@ async function strike(kind, name, waitTicks) {
   A.send({ t: 'devDisaster', kind });
   await sleep(400);
   const toasts = A.toasts.slice(n);
-  if (!toasts.some((t) => t.startsWith('error: ') && /!$/.test(t))) fail(`${name}: no announcement (${toasts.join(' / ')})`);
+  if (!toasts.some((t) => t.startsWith('error: ') && t.endsWith('!'))) fail(`${name}: no announcement (${toasts.join(' / ')})`);
   if (!A.seen.slice(seenBefore).some((d) => d.kind === kind && d.ownerId === A.me.id)) fail(`${name}: not in the disasters list`);
   console.log(`${name}: ${toasts.find((t) => t.startsWith('error: '))}`);
   await sleep(waitTicks * TICK);

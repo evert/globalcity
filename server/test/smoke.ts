@@ -6,7 +6,6 @@ import {
   DEFAULT_PORT,
   CHUNK,
   STARTING_FUNDS,
-  LOMASK,
   lonLatToTile,
   chunkOf,
   decodeChunk,
@@ -107,6 +106,7 @@ async function main(): Promise<void> {
   send({ t: 'hello', name: 'SmokeTester' });
   const w = await welcome;
   console.log(`welcome: player=${w.player.name} funds=${w.stats.funds} claims=${w.claims.length} online=${w.online} time=${w.time.year}-${w.time.month + 1}`);
+  // oxlint-disable-next-line erasing-op -- always false, so the width is never checked (left as is in the oxc PR)
   if (w.world.w * 0 !== 0 || w.world.chunk !== CHUNK) fail('bad world dims');
 
   // Nearest claimable chunk to London.

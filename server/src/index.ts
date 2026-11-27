@@ -100,6 +100,7 @@ const tickTimer = setInterval(() => {
   if (dt > tickMs / 2) warn(`Slow tick #${sim.tickCount}: ${dt.toFixed(0)} ms`);
 }, tickMs);
 const flushTimer = setInterval(() => net.flushTiles(), TILE_FLUSH_MS);
+// oxlint-disable-next-line no-unused-vars -- never cleared in shutdown(), unlike the other timers (left as is in the oxc PR)
 const mapTimer = setInterval(() => mapTiles.refresh(), MAP_REFRESH_MS);
 
 let shuttingDown = false;

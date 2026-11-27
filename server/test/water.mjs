@@ -74,7 +74,7 @@ const cases = [
   ['wire', 'underwater power line', row.x + 2],
   ['rail', 'underwater rail', row.x + 4],
 ];
-for (const [tool, what, x] of cases) {
+for (const [tool, , x] of cases) {
   send({ t: 'build', tool, x, y: row.y });
   await sleep(60);
 }

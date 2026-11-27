@@ -436,7 +436,7 @@ async function main(): Promise<void> {
   A.send({ t: 'query', x: AX + 4, y: Y + 5 });
   const rq = await waitFor(() => A.queries[0], 'rail query');
   console.log(`rail query: "${rq.name}"`);
-  if (!/^Rail \(links 2 cities\)/.test(rq.name)) fail(`rail query name "${rq.name}"`);
+  if (!rq.name.startsWith('Rail (links 2 cities)')) fail(`rail query name "${rq.name}"`);
   console.log('waiting for neighbour demand (needs resPop > 0 next door)...');
   await waitFor(() => (A.stats?.resPop ?? 0) > 0 && (B.stats?.resPop ?? 0) > 0, 'both resPop > 0', ticks(40));
   await waitFor(() => (A.stats?.neighbourDemand.c ?? 0) > 0 && (B.stats?.neighbourDemand.c ?? 0) > 0, 'neighbourDemand.c > 0 on both', ticks(3));

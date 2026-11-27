@@ -84,13 +84,13 @@ const A = new C('Pilot-A'),
   B = new C('Pilot-B');
 await A.connect();
 await B.connect();
-const a = await A.settle(128, 26);
+await A.settle(128, 26);
 // one airport only: no boost, nothing published as a flight pair
 await sleep(Number(process.env.TICK_MS) * 4);
 const others = (A.airports?.airports ?? []).filter((p) => p.ownerId !== A.id).length;
 console.log('A first: specials.airport =', A.stats.specials.airport, "| other mayors' airports already in the world =", others);
 if (others === 0 && A.stats.specials.airport !== 0) fail('lone airport should not count');
-const b = await B.settle(220, 40);
+await B.settle(220, 40);
 const t0 = Date.now();
 while (Date.now() - t0 < 15000 && !(A.airports?.airports.some((p) => p.ownerId === B.id) && A.stats.specials.airport === 1 && B.stats.specials.airport === 1))
   await sleep(100);

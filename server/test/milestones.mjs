@@ -8,8 +8,7 @@ const CHUNK = 64,
   LOMASK = 0x3ff,
   ZONEBIT = 0x400,
   isWater = (t) => t >= 2 && t <= 20;
-const CITYHALL = 965,
-  AIRPORT = 716;
+const CITYHALL = 965;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const fail = (m) => {
   console.log('FAIL:', m);
@@ -148,7 +147,7 @@ await sleep(200);
 t = await B.build('airport', b.X + 1, b.Y + 8);
 await ticks(2);
 console.log('third airport (no per-city limit any more):', t.join(' | ') || 'placed', '| airports now', B.stats.built.airport);
-if (t.some((x) => /^error/.test(x))) fail('third airport should be allowed');
+if (t.some((x) => x.startsWith('error'))) fail('third airport should be allowed');
 // --- 3. rail counts as transport access ---
 const R = new C('Mayor-R');
 await R.connect();

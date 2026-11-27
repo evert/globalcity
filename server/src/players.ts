@@ -156,7 +156,6 @@ const FIND_FREE_MAX_RADIUS = 40;
 
 export function sanitizeName(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
-  // eslint-disable-next-line no-control-regex
   const s = raw
     .replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
     .trim()
@@ -166,7 +165,6 @@ export function sanitizeName(raw: unknown): string | null {
 
 export function sanitizeCityName(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
-  // eslint-disable-next-line no-control-regex
   const s = raw
     .replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
     .replace(/\s+/g, ' ')
@@ -638,10 +636,10 @@ export class Players {
     for (const raw of state.players) {
       const legacy = raw as Partial<PlayerRecord>;
       const stats = { ...emptyStats(raw.funds), ...raw.stats };
-      stats.neighbourDemand = { ...emptyStats(0).neighbourDemand, ...(raw.stats?.neighbourDemand ?? {}) };
-      stats.specials = { ...emptyStats(0).specials, ...(raw.stats?.specials ?? {}) };
+      stats.neighbourDemand = { ...emptyStats(0).neighbourDemand, ...raw.stats?.neighbourDemand };
+      stats.specials = { ...emptyStats(0).specials, ...raw.stats?.specials };
       stats.unlocked = Array.isArray(raw.stats?.unlocked) ? raw.stats.unlocked : [];
-      stats.built = { ...(raw.stats?.built ?? {}) };
+      stats.built = { ...raw.stats?.built };
       if (!raw.stats?.budget?.current) stats.budget = emptyStats(0).budget;
       const p: PlayerRecord = {
         ...raw,

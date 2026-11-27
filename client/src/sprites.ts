@@ -55,7 +55,7 @@ export function dirFrame(vx: number, vy: number): number {
   return ((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8;
 }
 /** Train frames: 0 vertical, 1 horizontal, 2 NE/SW diagonal, 3 NW/SE diagonal (4 is empty in the sheet). */
-export function trainFrame(dx: number, dy: number): number {
+export function trainFrame(dx: number, _dy: number): number {
   return dx === 0 ? 0 : 1;
 }
 

@@ -476,7 +476,6 @@ async function main() {
   const STRIP = 128,
     JIT = 6; // rows per strip, max jitter in tiles
   const kpt = kop.w / W; // source px per tile (both rasters are 1/120 degree)
-  const tpt = 360 / W / tree.res;
   const stats = new Float64Array(16);
   let shownPct = 0; // progress is logged every 10% of the rows
   for (let y0 = 0; y0 < H; y0 += STRIP) {

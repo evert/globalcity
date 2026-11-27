@@ -7,7 +7,6 @@ const PORT = process.env.PORT,
   TICK = Number(process.env.TICK_MS) || 500;
 const CHUNK = 64,
   LOMASK = 0x3ff,
-  ZONEBIT = 0x400,
   isWater = (t) => t >= 2 && t <= 20,
   CUSTOMFILL = 1017,
   CUSTOMCENTRE = 1018;
