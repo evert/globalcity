@@ -6,16 +6,15 @@
 //   TICK_MS    simulation step length in ms (default TICK_MS from shared; shorten for tests)
 //   STEPS_PER_MONTH  simulation steps per game month (default STEPS_PER_MONTH from shared; tests use 1)
 //   DEV_HOOKS  "1" enables dev-only hooks: the {t:'devIgnite',x,y} socket message starts a fire,
-//              {t:'devFunds',amount} grants money, and random fire outbreaks are disabled so tests are
-//              deterministic. Never set in production.
-//   SEASON_MONTH  1..12: pretend it is this month for seasonal buildings (the Christmas tree is December only);
-//              default the real month (UTC)
-//   ABANDON_DAY_MS  length of an abandonment "day" in ms (default 86400000; tests use 1000)
+//              {t:'devFunds',amount} grants money, {t:'devReset'} wipes the server back to a fresh boot on an empty
+//              save (only when it booted on one), {t:'devConfig',...} changes the settings below (see net.ts), and
+//              random fire outbreaks are disabled so tests are deterministic. Never set in production.
+//   SEASON_MONTH, ABANDON_DAY_MS, CITY_FREEZE_MS, SMALL_CITY_RELEASE_MS, REGROW_MS, REGROW_P, MONUMENT_MIN_POP,
+//   DISASTER_EVERY_MS  settings for testing, see config.ts (the tests change them at runtime with devConfig)
 //   ALL_ONLINE  "1": every mayor counts as online all the time (no frozen cities, disasters anywhere), to see how
 //              a full world simulates. Test saves only: it keeps every city from going idle or being released.
 //   DISASTER_TRIGGER  "1": players get a test dialog to start any disaster in any city right away (test servers).
-//   DISASTER_EVERY_MS  a disaster strikes this often (when a city can be struck) instead of about one every two
-//              hours; for testing (e.g. 120000). Disasters never strike with DEV_HOOKS.
+//              Disasters never strike with DEV_HOOKS.
 //   NOTIFY_DB  world reset notification sign-ups (SQLite; default notify.db beside the save directory, so it
 //              survives the world reset)
 
@@ -26,13 +25,14 @@ import { bootWorld } from './world.ts';
 import { Players } from './players.ts';
 import { Places } from './places.ts';
 import { Persist } from './persist.ts';
-import { Sim } from './sim.ts';
+import { Sim, type SimOptions } from './sim.ts';
 import { Net } from './net.ts';
 import { MapTiles } from './maptiles.ts';
 import { Elevation } from './elevation.ts';
 import fs from 'node:fs';
 import { Notify } from './notify.ts';
 import { log, warn, timed } from './util.ts';
+import { config, resetConfig } from './config.ts';
 
 const TILE_FLUSH_MS = 100;
 /** How often the zoomed-out map catches up with what was built. */
@@ -48,14 +48,13 @@ const port = Number(process.env.PORT) || DEFAULT_PORT;
 const host = process.env.HOST || '0.0.0.0';
 const tickMs = Number(process.env.TICK_MS) || TICK_MS;
 const devHooks = process.env.DEV_HOOKS === '1';
-const dayMs = Number(process.env.ABANDON_DAY_MS) || 86_400_000;
 
 const t0 = performance.now();
 const world = bootWorld(baseFile);
 const places = new Places();
 places.load(placesFile);
-const players = new Players(world, places, { dayMs });
-const persist = new Persist(world, players, saveDir);
+let players = new Players(world, places);
+let persist = new Persist(world, players, saveDir);
 const hadState = persist.loadState();
 const chunksLoaded = timed('Overlay saved chunks', () => persist.loadChunks());
 log(
@@ -80,9 +79,33 @@ const hazards = (() => {
   return new Uint8Array(fs.readFileSync(f));
 })();
 const elevation = new Elevation(path.join(worldDir, 'elevation.bin'));
-const sim = new Sim(world, players, { randomFires: !devHooks, hazards, elevation });
+const simOptions: SimOptions = { randomFires: !devHooks, hazards, elevation };
+let sim = new Sim(world, players, simOptions);
+simOptions.shippingWater = sim.shipping.water;
 const notify = new Notify(path.resolve(root, process.env.NOTIFY_DB || path.join(path.dirname(saveDir), 'notify.db')), devHooks);
-const net = new Net(world, players, sim, clientDist, root, { devHooks, dataDir: saveDir, mapTiles, notify });
+const net = new Net(world, players, sim, clientDist, root, { devHooks, dataDir: saveDir, mapTiles, notify, devReset: devHooks ? devReset : undefined });
+
+/**
+ * devReset (DEV_HOOKS only, for the tests): everything back to how this server booted on an empty save, keeping
+ * the generated world in memory: built chunks restored, custom buildings gone, the save deleted, settings back to
+ * the environment's, no notification sign-ups, and new players (so the clock starts over) and a new sim (no
+ * fires, disasters, rail networks, ports or airports). Net resets its own part and closes every other socket.
+ * Refused on a server that booted from a save, so a dev server's city can't be wiped by a stray message.
+ */
+function devReset(): { players: Players; sim: Sim } | string {
+  if (hadState || chunksLoaded > 0) return 'this server booted from a save; devReset only resets servers that started on an empty one';
+  persist.stop();
+  const chunks = world.resetToBoot();
+  persist.wipe();
+  resetConfig();
+  notify.resetForTests();
+  players = new Players(world, places);
+  persist = new Persist(world, players, saveDir);
+  sim = new Sim(world, players, simOptions);
+  persist.start();
+  log(`devReset: ${chunks} chunk(s) restored`);
+  return { players, sim };
+}
 try {
   await net.listen(port, host);
 } catch (e) {
@@ -135,7 +158,7 @@ ${lanUrls()
   .map((u) => `  LAN        ${u}`)
   .join('\n')}
   Save dir   ${saveDir}
-  Tick       every ${tickMs} ms = one simulation step (${Number(process.env.STEPS_PER_MONTH) || STEPS_PER_MONTH} to a game month)${devHooks ? '\n  DEV_HOOKS  enabled (devIgnite/devFunds accepted, random fires off)' : ''}${dayMs !== 86_400_000 ? `\n  Day        ${dayMs} ms (ABANDON_DAY_MS)` : ''}
+  Tick       every ${tickMs} ms = one simulation step (${Number(process.env.STEPS_PER_MONTH) || STEPS_PER_MONTH} to a game month)${devHooks ? '\n  DEV_HOOKS  enabled (devIgnite/devFunds accepted, random fires off)' : ''}${config.abandonDayMs !== 86_400_000 ? `\n  Day        ${config.abandonDayMs} ms (ABANDON_DAY_MS)` : ''}
 `);
 
 /** http:// URLs for every non-internal IPv4 interface, for reaching the server from the LAN. */

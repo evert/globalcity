@@ -38,13 +38,13 @@ import type { World } from './world.ts';
 import type { Players, PlayerRecord } from './players.ts';
 import type { Elevation } from './elevation.ts';
 import { findZoneCenter, clearFootprint, isBuildingTile } from './zones.ts';
+import { config } from './config.ts';
 
-/** DISASTER_EVERY_MS (testing): a disaster exactly this often, instead of the usual gap (DISASTER_MIN_GAP_MS) and the random wait after
- *  it, and no rest for a city that was just struck (DISASTER_CITY_GAP_MS) */
-const EVERY_MS = Number(process.env.DISASTER_EVERY_MS) || 0;
-const MIN_GAP_MS = EVERY_MS || DISASTER_MIN_GAP_MS,
-  STEP_P = EVERY_MS ? 1 : DISASTER_STEP_P;
-const CITY_GAP_MS = EVERY_MS ? 0 : DISASTER_CITY_GAP_MS;
+/** DISASTER_EVERY_MS (testing, config.ts): a disaster exactly this often, instead of the usual gap (DISASTER_MIN_GAP_MS) and the random
+ *  wait after it, and no rest for a city that was just struck (DISASTER_CITY_GAP_MS) */
+const minGapMs = (): number => config.disasterEveryMs || DISASTER_MIN_GAP_MS;
+const stepP = (): number => (config.disasterEveryMs ? 1 : DISASTER_STEP_P);
+const cityGapMs = (): number => (config.disasterEveryMs ? 0 : DISASTER_CITY_GAP_MS);
 
 /** Land no higher than this (metres) next to water floods. */
 const FLOOD_MAX_ELEV = 10;
@@ -161,11 +161,11 @@ export class Disasters {
     // at most one disaster per gap in the whole world: once the gap is up, now and then one strikes a city
     // that can be struck (its mayor online, big enough, a hazard on its land, not struck in the last few hours),
     // picked at random
-    if (random && now - this.lastStrike >= MIN_GAP_MS && rand() < STEP_P) {
+    if (random && now - this.lastStrike >= minGapMs() && rand() < stepP()) {
       const candidates: { p: PlayerRecord; kinds: Disaster[] }[] = [];
       for (const p of online) {
         if (p.stats.population < DISASTER_MIN_POP || p.monument) continue;
-        if (now - (p.lastDisaster ?? 0) < CITY_GAP_MS) continue; // spared a while after the last one
+        if (now - (p.lastDisaster ?? 0) < cityGapMs()) continue; // spared a while after the last one
         const h = this.hazardsOf(p);
         const kinds: Disaster[] = [];
         for (let d = 0; d < DISASTER_COUNT; d++) if (h & hazardBit(d)) kinds.push(d);

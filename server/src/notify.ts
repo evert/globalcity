@@ -91,6 +91,11 @@ export class Notify {
     this.db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value').run(key, value);
   }
 
+  /** Forget every sign-up and the reset time set by an admin; the VAPID keys stay (devReset). */
+  resetForTests(): void {
+    this.db.exec(`DELETE FROM push_subscriptions; DELETE FROM settings WHERE key = 'world_reset_at';`);
+  }
+
   /** When the world resets (epoch ms), or null when no reset is planned. */
   get resetAt(): number | null {
     const v = this.setting('world_reset_at');

@@ -3,8 +3,11 @@
 //
 // Dev hooks (only when the server runs with DEV_HOOKS=1, see index.ts): the non-protocol socket
 // message {t:'devIgnite', x, y} ignites tile (x,y) as a random outbreak would (whole building ->
-// rubble + one fire tile); {t:'devFunds', amount} adds money. Any other time these messages are
-// silently dropped like any unknown message.
+// rubble + one fire tile); {t:'devFunds', amount} adds money; and so on (onDevMessage). Two work before
+// 'hello' too, for the tests: {t:'devReset'} puts the server back as it was when it booted on an empty save,
+// keeping the loaded world (answered {t:'devReset', ok, ms}), and {t:'devConfig', ...settings} changes the
+// settings in config.ts (answered {t:'devConfig', ok, config} or {ok: false, error}). Any other time these
+// messages are silently dropped like any unknown message.
 
 import http from 'node:http';
 import fs from 'node:fs';
@@ -36,7 +39,6 @@ import {
   SANTA_MIN_TREES,
   LIFELINE_AMOUNT,
   LIFELINE_MAX_FUNDS,
-  MONUMENT_MIN_POP,
   STARTING_FUNDS,
   LIFELINE_EARLY_PEAK_POP,
   LIFELINE_MAX_DEBT,
@@ -61,6 +63,7 @@ import { Leaderboard } from './leaderboard.ts';
 import { log } from './util.ts';
 import { Admin, type Announcement, type GrantResult } from './admin.ts';
 import type { Notify } from './notify.ts';
+import { config, updateConfig } from './config.ts';
 
 // Clients paint at most one build per 25 ms (40/s); allow headroom above that so painting is never throttled.
 const BUILD_RATE_PER_SEC = 60;
@@ -129,6 +132,9 @@ export interface NetOptions {
   mapTiles?: MapTiles;
   /** world reset time and notification sign-ups (/api/world-reset, /api/notify) */
   notify?: Notify;
+  /** devReset (dev hooks only): reset everything but the network layer and return the new players and sim, or
+   *  an error message when this server can't be reset */
+  devReset?: () => { players: Players; sim: Sim } | string;
 }
 
 /** test servers: players may start disasters from the client's test dialog (see index.ts) */
@@ -140,21 +146,24 @@ export class Net {
   private presenceTimer: NodeJS.Timeout | null = null;
   readonly admin: Admin;
   private readonly notify: Notify | null;
-  private readonly leaderboard: Leaderboard;
-  private readonly worldStats: WorldStatsCounter;
+  private leaderboard: Leaderboard;
+  private worldStats: WorldStatsCounter;
   private readonly devHooks: boolean;
   private readonly mapTiles: MapTiles | null;
+  private readonly devReset: NetOptions['devReset'];
 
   constructor(
     private readonly world: World,
-    private readonly players: Players,
-    private readonly sim: Sim,
+    // replaced only by devReset
+    private players: Players,
+    private sim: Sim,
     private readonly clientDist: string,
     private readonly repoRoot: string,
     opts: NetOptions = {},
   ) {
     this.devHooks = opts.devHooks ?? false;
     this.mapTiles = opts.mapTiles ?? null;
+    this.devReset = opts.devReset;
     world.buildings.onChange = (op, b) => this.broadcast({ t: 'building', op, b });
     this.admin = new Admin(
       clientDist,
@@ -429,7 +438,7 @@ export class Net {
       } catch {
         return;
       }
-      if (this.devHooks && client.player && this.onDevMessage(client, raw)) return;
+      if (this.devHooks && this.onDevMessage(client, raw)) return;
       const msg = parseClientMsg(raw);
       if (msg) this.onMessage(client, msg);
     });
@@ -462,6 +471,24 @@ export class Net {
   private onDevMessage(client: Client, raw: unknown): boolean {
     if (typeof raw !== 'object' || raw === null) return false;
     const m = raw as Record<string, unknown>;
+    if (m.t === 'devReset') {
+      this.onDevReset(client);
+      return true;
+    }
+    if (m.t === 'devConfig') {
+      // {t:'devConfig', cityFreezeMs: 4000, ...}: change runtime settings (config.ts) until the next devReset
+      const { t: _t, ...patch } = m;
+      const error = updateConfig(patch);
+      if (!error) {
+        log(`devConfig ${JSON.stringify(patch)}`);
+        // the season is in every mayor's stats (what can be built now)
+        for (const p of this.players.players.values()) refreshMilestoneStats(p);
+        for (const c of this.clients) this.sendStatsIfChanged(c);
+      }
+      this.sendRaw(client, error ? { t: 'devConfig', ok: false, error } : { t: 'devConfig', ok: true, config });
+      return true;
+    }
+    if (!client.player) return false; // the others only after 'hello'
     if (m.t === 'devIgnite') {
       if (isInt(m.x) && isInt(m.y) && inWorld(m.x, m.y)) {
         const lit = this.sim.ignite(m.x, m.y);
@@ -544,6 +571,56 @@ export class Net {
       return true;
     }
     return false;
+  }
+
+  /** A message outside the protocol (dev hook replies). */
+  private sendRaw(client: Client, msg: object): void {
+    if (client.ws.readyState === WebSocket.OPEN) client.ws.send(JSON.stringify(msg));
+  }
+
+  /**
+   * devReset: the server as it was when it booted on an empty save. index.ts resets the world, the save, the
+   * settings and the notification sign-ups and makes new players and a new sim; here every other socket is closed
+   * (their players are gone) and the per-world state of the network layer starts over. The socket that asked
+   * stays open, without a player: it may say 'hello' as a new mayor.
+   */
+  private onDevReset(client: Client): void {
+    const t0 = performance.now();
+    const r = this.devReset ? this.devReset() : 'devReset is not available on this server';
+    if (typeof r === 'string') {
+      this.sendRaw(client, { t: 'devReset', ok: false, error: r });
+      return;
+    }
+    this.players = r.players;
+    this.sim = r.sim;
+    this.leaderboard = new Leaderboard(r.players);
+    this.worldStats = new WorldStatsCounter(this.world, r.players, r.sim);
+    this.admin.announcement = null;
+    this.airportsJson = '[]';
+    this.santaJson = '[]';
+    this.shippingVersion = -1;
+    for (const c of this.clients) {
+      if (c === client) continue;
+      c.player = null; // its close event must not touch the new players
+      c.ws.close(4000, 'devReset');
+      this.clients.delete(c);
+    }
+    Object.assign(client, {
+      player: null,
+      subs: new Set(),
+      buildTokens: BUILD_BURST,
+      lastRefill: Date.now(),
+      droppedAt: 0,
+      acks: [],
+      viewTokens: VIEW_RATE_PER_SEC,
+      viewRefill: Date.now(),
+      lastStatsJson: '',
+      view: null,
+      presenceEmpty: true,
+    } satisfies Partial<Client>);
+    const ms = Math.round(performance.now() - t0);
+    log(`devReset in ${ms} ms`);
+    this.sendRaw(client, { t: 'devReset', ok: true, ms });
   }
 
   private sendStatsIfChanged(client: Client): void {
@@ -634,7 +711,7 @@ export class Net {
         break;
       }
       case 'monument': {
-        const min = Number(process.env.MONUMENT_MIN_POP) || MONUMENT_MIN_POP; // tests lower it
+        const min = config.monumentMinPop; // tests lower it
         if (p.chunks.length === 0 || p.stats.population < min) {
           this.toast(client, `Only a city of more than ${min.toLocaleString('en-US')} people can become a monument`, 'error');
           break;
