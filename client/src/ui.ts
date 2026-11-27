@@ -1492,6 +1492,8 @@ export class UI {
   private overlayLegend!: HTMLElement;
   private overlayToggle!: HTMLButtonElement;
   private overlayBody!: HTMLElement;
+  private weatherBtn!: HTMLButtonElement;
+  private overlayTileMode: boolean | null = null;
   private buildOverlayBar(): void {
     const btns = OVERLAY_MODES.map((m) => {
       const info = OVERLAY_INFO[m];
@@ -1526,7 +1528,17 @@ export class UI {
       '🗺 Map view',
     );
     this.overlayToggle.onclick = () => this.setOverlayOpen(this.overlayBody.classList.contains('hidden'));
-    this.overlayBar = el('div', { id: 'overlays', class: 'panel' }, this.overlayToggle, this.overlayBody);
+    // zoomed out the map views don't apply: the corner holds the weather switch instead
+    this.weatherBtn = el(
+      'button',
+      { class: 'btn ov-toggle hidden', type: 'button', title: "Real weather: this hour's clouds, rain and snow (NOAA forecast)" },
+      '🌦 Weather',
+    );
+    this.weatherBtn.onclick = () => {
+      this.renderer.weather.setEnabled(!this.renderer.weather.enabled);
+      this.refreshWeatherBtn();
+    };
+    this.overlayBar = el('div', { id: 'overlays', class: 'panel' }, this.weatherBtn, this.overlayToggle, this.overlayBody);
     this.root.append(this.overlayBar);
     let open = false;
     try {
@@ -1535,12 +1547,30 @@ export class UI {
       /* ignore */
     }
     this.setOverlayOpen(open);
+    this.refreshWeatherBtn();
+    this.refreshOverlayMode();
+    this.renderer.on('camera', () => this.refreshOverlayMode());
     window.addEventListener('keydown', (e) => {
       if (e.key.toLowerCase() !== 'v' || e.ctrlKey || e.metaKey || e.altKey || (e.target as HTMLElement)?.tagName === 'INPUT') return;
       const i = OVERLAY_MODES.indexOf(this.renderer.overlay.mode);
       this.autoOverlay = null;
       this.setOverlay(OVERLAY_MODES[(i + 1) % OVERLAY_MODES.length]);
     });
+  }
+  /** Zoomed in: the map view menu; zoomed out: the weather switch. */
+  private refreshOverlayMode(): void {
+    const tile = this.renderer.isTileMode();
+    if (tile === this.overlayTileMode) return;
+    this.overlayTileMode = tile;
+    this.weatherBtn.classList.toggle('hidden', tile);
+    this.overlayToggle.classList.toggle('hidden', !tile);
+    this.overlayBody.classList.toggle('hidden', !tile || this.overlayToggle.getAttribute('aria-expanded') !== 'true');
+    this.overlayBar.classList.toggle('open', tile && this.overlayToggle.getAttribute('aria-expanded') === 'true');
+  }
+  private refreshWeatherBtn(): void {
+    const on = this.renderer.weather.enabled;
+    this.weatherBtn.classList.toggle('active', on);
+    this.weatherBtn.setAttribute('aria-pressed', String(on));
   }
   private setOverlayOpen(open: boolean): void {
     this.overlayBody.classList.toggle('hidden', !open);

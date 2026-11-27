@@ -2,13 +2,16 @@
 // whose red channel is cloud cover, green the rain or snow rate, blue where it is snow).
 //   zoomed out  clouds drift over the world map, darker where it rains, over the city lights (shaded by the night)
 //   zoomed in   the sky dims under cloud, and rain or snow falls across the screen where the camera is
-// `?weather=rain|snow|storm|clear` overrides what falls at the camera, to look at the effect.
+// Off until the player turns it on (the Weather button, zoomed out); the choice is remembered, and nothing is
+// downloaded while it is off. `?weather=rain|snow|storm|clear` turns it on and overrides what falls at the camera,
+// to look at the effect.
 import { WORLD_H, WORLD_W } from '@globalcity/shared';
 
 const W = 720,
   H = 360;
 /** How often to ask the server which hour it has (the image itself is only fetched when that changes). */
 const POLL_MS = 10 * 60_000;
+const STORAGE_KEY = 'globalcity.weather';
 
 export interface WeatherHere {
   /** cloud cover, 0..1 */
@@ -36,13 +39,24 @@ const OVERRIDE: WeatherHere | null = (() => {
   return null;
 })();
 
+function readEnabled(): boolean {
+  try {
+    return localStorage.getItem(STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 export class WeatherLayer {
   /** the zoomed-out map's clouds: white to rain-grey, alpha by cover */
   readonly clouds = document.createElement('canvas');
   /** the zoomed-in view's overcast: a dark veil by cover and rain */
   readonly shade = document.createElement('canvas');
-  /** bumped whenever a new hour arrives */
+  /** bumped whenever a new hour arrives or the layer is turned on or off */
   version = 0;
+  /** the player wants the weather shown */
+  enabled = OVERRIDE !== null || readEnabled();
+  /** an hour has arrived */
   ready = false;
   onChange: () => void = () => {};
   private data: Uint8ClampedArray | null = null;
@@ -55,11 +69,35 @@ export class WeatherLayer {
     this.clouds.height = this.shade.height = H;
   }
 
+  /** shown: on and loaded */
+  get shown(): boolean {
+    return this.enabled && this.ready;
+  }
+
+  setEnabled(on: boolean): void {
+    if (on === this.enabled) return;
+    this.enabled = on;
+    try {
+      localStorage.setItem(STORAGE_KEY, on ? '1' : '0');
+    } catch {
+      /* private mode */
+    }
+    if (on) this.start();
+    this.version++;
+    this.onChange();
+  }
+
+  private started = false;
+  /** Start fetching the weather (once it is on): now, then every POLL_MS. */
   start(): void {
+    if (!this.enabled || this.started) return;
+    this.started = true;
     void this.poll();
-    setInterval(() => void this.poll(), POLL_MS);
+    setInterval(() => {
+      if (this.enabled) void this.poll();
+    }, POLL_MS);
     document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) void this.poll();
+      if (!document.hidden && this.enabled) void this.poll();
     });
   }
 
@@ -128,6 +166,7 @@ export class WeatherLayer {
 
   /** The weather at a tile (bilinear between the grid's points). */
   at(tx: number, ty: number): WeatherHere {
+    if (!this.enabled) return { cloud: 0, precip: 0, snow: false };
     if (OVERRIDE) return OVERRIDE;
     const d = this.data;
     if (!d) return { cloud: 0, precip: 0, snow: false };
