@@ -16,7 +16,8 @@ const pick = (p: Record<string, unknown>, ...keys: string[]): unknown => {
 export async function genPlaces(): Promise<void> {
   mkdirSync(RAW, { recursive: true });
   mkdirSync(OUT, { recursive: true });
-  let json: any = null, url = '';
+  let json: any = null,
+    url = '';
   for (const res of ['10m', '50m']) {
     const file = resolve(RAW, `ne_${res}_populated_places.json`);
     url = `${BASE}/${res}/cultural/ne_${res}_populated_places.json`;
@@ -24,7 +25,10 @@ export async function genPlaces(): Promise<void> {
       if (!existsSync(file)) {
         console.log(`downloading ${url}`);
         const r = await fetch(url);
-        if (!r.ok) { console.log(`  HTTP ${r.status}`); continue; }
+        if (!r.ok) {
+          console.log(`  HTTP ${r.status}`);
+          continue;
+        }
         const text = await r.text();
         JSON.parse(text);
         writeFileSync(file, text);
@@ -62,10 +66,13 @@ export async function genPlaces(): Promise<void> {
     const ok = !!p && Math.abs(p[1] - tx) <= 10 && Math.abs(p[2] - ty) <= 10;
     console.log(`  sanity ${n}: ${p ? `(${p[1]},${p[2]})` : 'missing'} expected ~(${tx},${ty}) ${ok ? 'OK' : 'FAIL'}`);
   };
-  check('London', Math.round(4093 * WORLD_W / 8192), Math.round(876 * WORLD_W / 8192));
-  check('Sydney', Math.round(7534 * WORLD_W / 8192), Math.round(2819 * WORLD_W / 8192));
+  check('London', Math.round((4093 * WORLD_W) / 8192), Math.round((876 * WORLD_W) / 8192));
+  check('Sydney', Math.round((7534 * WORLD_W) / 8192), Math.round((2819 * WORLD_W) / 8192));
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  genPlaces().catch((e) => { console.error(e); process.exit(1); });
+  genPlaces().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
 }

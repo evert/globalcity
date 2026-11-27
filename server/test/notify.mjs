@@ -5,15 +5,23 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-const PORT = process.env.PORT, BASE = `http://127.0.0.1:${PORT}`;
-const fail = (m) => { console.log('FAIL:', m); process.exit(1); };
-const ok = (c, m) => { if (!c) fail(m); console.log('ok', m); };
+const PORT = process.env.PORT,
+  BASE = `http://127.0.0.1:${PORT}`;
+const fail = (m) => {
+  console.log('FAIL:', m);
+  process.exit(1);
+};
+const ok = (c, m) => {
+  if (!c) fail(m);
+  console.log('ok', m);
+};
 const token = fs.readFileSync(path.join(process.env.DATA_DIR, 'admin-token'), 'utf8').trim();
-const post = (p, body, admin = false) => fetch(BASE + p, {
-  method: 'POST',
-  headers: { 'content-type': 'application/json', ...(admin ? { 'x-admin-token': token } : {}) },
-  body: JSON.stringify(body),
-}).then(async (r) => ({ status: r.status, body: await r.json() }));
+const post = (p, body, admin = false) =>
+  fetch(BASE + p, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(admin ? { 'x-admin-token': token } : {}) },
+    body: JSON.stringify(body),
+  }).then(async (r) => ({ status: r.status, body: await r.json() }));
 const admin = (p) => fetch(BASE + p, { headers: { 'x-admin-token': token } }).then((r) => r.json());
 
 // the reset time and the key subscriptions are made with
@@ -22,18 +30,31 @@ ok(typeof info.at === 'number' && info.at > Date.parse('2026-01-01'), `reset at 
 const key = Buffer.from(info.vapidKey, 'base64url');
 ok(key.length === 65 && key[0] === 4, 'VAPID public key is an uncompressed P-256 point');
 const pub = crypto.createPublicKey({ format: 'jwk', key: { kty: 'EC', crv: 'P-256', x: b64(key.subarray(1, 33)), y: b64(key.subarray(33)) } });
-function b64(b) { return Buffer.from(b).toString('base64url'); }
+function b64(b) {
+  return Buffer.from(b).toString('base64url');
+}
 
 // a fake push service: /live accepts pushes, /gone says the subscription expired
 const got = [];
 const push = http.createServer((req, res) => {
   let body = '';
-  req.on('data', (c) => { body += c; });
-  req.on('end', () => { got.push({ url: req.url, headers: req.headers, body }); res.writeHead(req.url.startsWith('/gone') ? 410 : 201); res.end(); });
+  req.on('data', (c) => {
+    body += c;
+  });
+  req.on('end', () => {
+    got.push({ url: req.url, headers: req.headers, body });
+    res.writeHead(req.url.startsWith('/gone') ? 410 : 201);
+    res.end();
+  });
 });
 await new Promise((r) => push.listen(0, '127.0.0.1', r));
 const origin = `http://127.0.0.1:${push.address().port}`;
-const sub = (p, app = 'desktop') => ({ endpoint: origin + p, expirationTime: null, keys: { p256dh: b64(crypto.randomBytes(65)), auth: b64(crypto.randomBytes(16)) }, app });
+const sub = (p, app = 'desktop') => ({
+  endpoint: origin + p,
+  expirationTime: null,
+  keys: { p256dh: b64(crypto.randomBytes(65)), auth: b64(crypto.randomBytes(16)) },
+  app,
+});
 
 ok((await post('/api/notify', { endpoint: 'not a url' })).status === 400, 'rejects a bad endpoint');
 ok((await post('/api/notify', { endpoint: 'ftp://127.0.0.1/x' })).status === 400, 'rejects a non-http endpoint');
@@ -45,7 +66,10 @@ ok((await post('/api/notify', sub('/live/4'))).status === 200, 'subscribes one m
 ok((await post('/api/notify/remove', { endpoint: origin + '/live/4' })).body.removed === true, 'unsubscribes');
 
 let st = await admin('/admin/notify');
-ok(st.total === 3 && st.byApp['android-app'] === 1 && st.byApp.desktop === 1 && st.byApp.other === 1 && st.sent === 0, `admin sees the sign-ups: ${JSON.stringify(st)}`);
+ok(
+  st.total === 3 && st.byApp['android-app'] === 1 && st.byApp.desktop === 1 && st.byApp.other === 1 && st.sent === 0,
+  `admin sees the sign-ups: ${JSON.stringify(st)}`,
+);
 ok((await fetch(BASE + '/admin/notify')).status === 404, 'admin needs the token');
 
 // move the reset; clear it; put it back

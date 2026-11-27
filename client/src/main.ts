@@ -20,14 +20,19 @@ function applyHashCamera(renderer: Renderer): boolean {
   const m = /^#?(.*)$/.exec(location.hash);
   if (!m) return false;
   const q = new URLSearchParams(m[1]);
-  const x = Number(q.get('x')), y = Number(q.get('y')), z = Number(q.get('z'));
+  const x = Number(q.get('x')),
+    y = Number(q.get('y')),
+    z = Number(q.get('z'));
   if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z) || z <= 0) return false;
   renderer.setCamera(x, y, z);
   return true;
 }
 
 function writeHashCamera(cam: { x: number; y: number; zoom: number }): void {
-  if (cam.zoom < 0.125) { if (location.hash) history.replaceState(null, '', location.pathname + location.search); return; }
+  if (cam.zoom < 0.125) {
+    if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+    return;
+  }
   const h = `#x=${Math.round(cam.x)}&y=${Math.round(cam.y)}&z=${+cam.zoom.toFixed(4)}`;
   if (h !== location.hash) history.replaceState(null, '', h);
 }
@@ -87,7 +92,9 @@ async function boot(): Promise<void> {
     try {
       if (localStorage.getItem('globalcity.drawHint')) return;
       localStorage.setItem('globalcity.drawHint', '1');
-    } catch { /* no storage: show it anyway */ }
+    } catch {
+      /* no storage: show it anyway */
+    }
     ui.toast('Draw with one finger · move the map with two', 'info', 6000);
   });
 
@@ -110,11 +117,19 @@ async function boot(): Promise<void> {
   renderer.on('camera', () => view.poke());
   renderer.on('hover', () => view.poke());
   renderer.on('touchCursor', () => view.poke());
-  state.on('me', (me) => { if (me) { view.reset(); view.sendNow(); } });
+  state.on('me', (me) => {
+    if (me) {
+      view.reset();
+      view.sendNow();
+    }
+  });
 
   // ---- network ----
   // Net re-sends hello + the stored subscription itself on (re)connect; just refresh the desired set.
-  net.on('open', () => { state.setConnected(true); updateSubscription(); });
+  net.on('open', () => {
+    state.setConnected(true);
+    updateSubscription();
+  });
   net.on('close', () => state.setConnected(false));
   net.on('chunk', ({ cx, cy, tiles }) => map.setChunk(cx, cy, tiles));
   const updater = new Updater(__BUILD_VERSION__, (reload) => ui.showUpdateBanner(reload));
@@ -136,7 +151,11 @@ async function boot(): Promise<void> {
 
 // Offline fallback page (and what makes the game installable as an Android app); not during self-tests.
 if ('serviceWorker' in navigator && !location.hash.startsWith('#selftest')) {
-  window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => { /* not fatal */ }); });
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      /* not fatal */
+    });
+  });
 }
 
 boot().catch((err) => {

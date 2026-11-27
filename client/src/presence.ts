@@ -25,18 +25,29 @@ export class ViewReporter {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private lastKey = '';
 
-  constructor(readonly net: Net, readonly renderer: Renderer, private readonly now: () => number = () => performance.now()) {}
+  constructor(
+    readonly net: Net,
+    readonly renderer: Renderer,
+    private readonly now: () => number = () => performance.now(),
+  ) {}
 
   /** Call on camera / hover change. */
   poke(): void {
     const wait = this.last + VIEW_INTERVAL_MS - this.now();
     if (wait <= 0) {
-      if (this.timer) { clearTimeout(this.timer); this.timer = null; }
+      if (this.timer) {
+        clearTimeout(this.timer);
+        this.timer = null;
+      }
       this.sendNow();
       return;
     }
     // inside the window: one trailing send picks up the latest view
-    if (!this.timer) this.timer = setTimeout(() => { this.timer = null; this.sendNow(); }, wait);
+    if (!this.timer)
+      this.timer = setTimeout(() => {
+        this.timer = null;
+        this.sendNow();
+      }, wait);
   }
 
   /** Send the current view right away (e.g. right after welcome), regardless of throttling. */
@@ -44,10 +55,16 @@ export class ViewReporter {
     const r = this.renderer;
     const cam = r.cam;
     const msg: { t: 'view'; x: number; y: number; zoom: number; cx?: number; cy?: number } = {
-      t: 'view', x: Math.round(cam.x * 10) / 10, y: Math.round(cam.y * 10) / 10, zoom: Math.round(cam.zoom * 10000) / 10000,
+      t: 'view',
+      x: Math.round(cam.x * 10) / 10,
+      y: Math.round(cam.y * 10) / 10,
+      zoom: Math.round(cam.zoom * 10000) / 10000,
     };
     const cursor = r.hover ?? r.touchCursor; // a mouse hovers; a finger leaves its last touch behind
-    if (r.isTileMode() && cursor) { msg.cx = cursor.x; msg.cy = cursor.y; }
+    if (r.isTileMode() && cursor) {
+      msg.cx = cursor.x;
+      msg.cy = cursor.y;
+    }
     this.last = this.now();
     const key = `${msg.x},${msg.y},${msg.zoom},${msg.cx},${msg.cy}`;
     if (key === this.lastKey) return false; // nothing changed since the last send
@@ -56,18 +73,28 @@ export class ViewReporter {
   }
 
   /** Forget the last sent view so the next poke/sendNow goes out even if nothing moved (after reconnect/welcome). */
-  reset(): void { this.lastKey = ''; }
+  reset(): void {
+    this.lastKey = '';
+  }
 }
 
 export interface PresenceMarker {
   p: Presence;
   /** displayed (interpolated) camera centre / cursor, tiles */
-  x: number; y: number;
-  cx?: number; cy?: number;
+  x: number;
+  y: number;
+  cx?: number;
+  cy?: number;
   hasCursor: boolean;
 }
 
-interface Track { from: { x: number; y: number; cx: number; cy: number }; to: { x: number; y: number; cx: number; cy: number }; t0: number; hasCursor: boolean; p: Presence }
+interface Track {
+  from: { x: number; y: number; cx: number; cy: number };
+  to: { x: number; y: number; cx: number; cy: number };
+  t0: number;
+  hasCursor: boolean;
+  p: Presence;
+}
 
 /** Keeps per-player interpolation state across presence frames. */
 export class PresenceTracker {
@@ -90,7 +117,10 @@ export class PresenceTracker {
       if (prev) {
         const cur = this.positionOf(prev, now);
         prev.from = { x: cur.x, y: cur.y, cx: cur.cx ?? to.cx, cy: cur.cy ?? to.cy };
-        prev.to = to; prev.t0 = now; prev.hasCursor = hasCursor; prev.p = p;
+        prev.to = to;
+        prev.t0 = now;
+        prev.hasCursor = hasCursor;
+        prev.p = p;
       } else {
         this.tracks.set(p.id, { from: to, to, t0: now - PRESENCE_LERP_MS, hasCursor, p });
       }

@@ -11,14 +11,19 @@ export interface AirportInfo {
 
 export interface Flight {
   key: string; // stable id: `${from}>${to}#${k}`
-  fromX: number; fromY: number;
-  toX: number; toY: number; // destination, already unwrapped so the route is the shortest way round
-  fromOwner: string; toOwner: string; // airport owners (player ids)
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number; // destination, already unwrapped so the route is the shortest way round
+  fromOwner: string;
+  toOwner: string; // airport owners (player ids)
   depart: number; // ms (server clock)
   duration: number; // ms
   progress: number; // 0..1
-  x: number; y: number; // current position in tiles, wrapped into 0..WORLD_W
-  vx: number; vy: number; // heading (unit-ish), for the direction frame
+  x: number;
+  y: number; // current position in tiles, wrapped into 0..WORLD_W
+  vx: number;
+  vy: number; // heading (unit-ish), for the direction frame
 }
 
 /**
@@ -42,8 +47,13 @@ const keyOf = (a: AirportInfo): string => `${a.x},${a.y}`;
 
 function hash(str: string, n: number): number {
   let h = 2166136261 ^ n;
-  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
-  h ^= h >>> 13; h = Math.imul(h, 0x5bd1e995); h ^= h >>> 15;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  h ^= h >>> 13;
+  h = Math.imul(h, 0x5bd1e995);
+  h ^= h >>> 15;
   return h >>> 0;
 }
 
@@ -85,15 +95,26 @@ export function activeFlights(airports: readonly AirportInfo[], now: number): Fl
       const duration = flightDuration(a, b);
       const t = (now - depart) / duration;
       if (t < 0 || t >= 1) continue;
-      const dx = wrapDx(b.x - a.x), dy = b.y - a.y;
+      const dx = wrapDx(b.x - a.x),
+        dy = b.y - a.y;
       let x = a.x + dx * t;
       x = ((x % WORLD_W) + WORLD_W) % WORLD_W;
       const len = Math.hypot(dx, dy) || 1;
       out.push({
         key: `${keyOf(a)}>${keyOf(b)}#${k}`,
-        fromX: a.x, fromY: a.y, toX: a.x + dx, toY: b.y, fromOwner: a.ownerId, toOwner: b.ownerId,
-        depart, duration, progress: t,
-        x, y: a.y + dy * t, vx: dx / len, vy: dy / len,
+        fromX: a.x,
+        fromY: a.y,
+        toX: a.x + dx,
+        toY: b.y,
+        fromOwner: a.ownerId,
+        toOwner: b.ownerId,
+        depart,
+        duration,
+        progress: t,
+        x,
+        y: a.y + dy * t,
+        vx: dx / len,
+        vy: dy / len,
       });
     }
   }

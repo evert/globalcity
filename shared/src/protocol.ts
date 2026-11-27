@@ -69,7 +69,11 @@ export interface GameTime {
   step?: number;
 }
 
-export interface Demand { r: number; c: number; i: number } // -1..1
+export interface Demand {
+  r: number;
+  c: number;
+  i: number;
+} // -1..1
 
 export interface PlayerStats {
   funds: number;
@@ -261,11 +265,20 @@ export type ServerMsg =
 export const BIN_CHUNK = 3;
 const CHUNK_TILES = CHUNK * CHUNK;
 
-export interface ChunkFrame { cx: number; cy: number; tiles: Uint32Array }
+export interface ChunkFrame {
+  cx: number;
+  cy: number;
+  tiles: Uint32Array;
+}
 
 export function encodeChunk(cx: number, cy: number, tiles: Uint32Array): ArrayBuffer {
   let runs = 0;
-  for (let i = 0; i < CHUNK_TILES; ) { let j = i + 1; while (j < CHUNK_TILES && j - i < 255 && tiles[j] === tiles[i]) j++; runs++; i = j; }
+  for (let i = 0; i < CHUNK_TILES;) {
+    let j = i + 1;
+    while (j < CHUNK_TILES && j - i < 255 && tiles[j] === tiles[i]) j++;
+    runs++;
+    i = j;
+  }
   const rle = runs * 5 < CHUNK_TILES * 4;
   const buf = new ArrayBuffer(6 + (rle ? runs * 5 : CHUNK_TILES * 4));
   const dv = new DataView(buf);
@@ -275,9 +288,13 @@ export function encodeChunk(cx: number, cy: number, tiles: Uint32Array): ArrayBu
   dv.setUint8(5, rle ? 1 : 0);
   let o = 6;
   if (rle) {
-    for (let i = 0; i < CHUNK_TILES; ) {
-      let j = i + 1; while (j < CHUNK_TILES && j - i < 255 && tiles[j] === tiles[i]) j++;
-      dv.setUint8(o, j - i); dv.setUint32(o + 1, tiles[i], true); o += 5; i = j;
+    for (let i = 0; i < CHUNK_TILES;) {
+      let j = i + 1;
+      while (j < CHUNK_TILES && j - i < 255 && tiles[j] === tiles[i]) j++;
+      dv.setUint8(o, j - i);
+      dv.setUint32(o + 1, tiles[i], true);
+      o += 5;
+      i = j;
     }
   } else {
     for (let i = 0; i < CHUNK_TILES; i++, o += 4) dv.setUint32(o, tiles[i], true);
@@ -289,15 +306,20 @@ export function decodeChunk(buf: ArrayBuffer): ChunkFrame | null {
   if (buf.byteLength < 6) return null;
   const dv = new DataView(buf);
   if (dv.getUint8(0) !== BIN_CHUNK) return null;
-  const cx = dv.getUint16(1, true), cy = dv.getUint16(3, true), rle = (dv.getUint8(5) & 1) !== 0;
+  const cx = dv.getUint16(1, true),
+    cy = dv.getUint16(3, true),
+    rle = (dv.getUint8(5) & 1) !== 0;
   const tiles = new Uint32Array(CHUNK_TILES);
   let o = 6;
   if (rle) {
-    for (let i = 0; i < CHUNK_TILES; ) {
+    for (let i = 0; i < CHUNK_TILES;) {
       if (o + 5 > buf.byteLength) return null;
-      const n = dv.getUint8(o), v = dv.getUint32(o + 1, true); o += 5;
+      const n = dv.getUint8(o),
+        v = dv.getUint32(o + 1, true);
+      o += 5;
       if (!n || i + n > CHUNK_TILES) return null;
-      tiles.fill(v, i, i + n); i += n;
+      tiles.fill(v, i, i + n);
+      i += n;
     }
   } else {
     if (o + CHUNK_TILES * 4 > buf.byteLength) return null;

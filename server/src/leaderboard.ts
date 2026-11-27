@@ -25,13 +25,35 @@ export class Leaderboard {
     this.ranks = new Map(ranked.map((p, k) => [p.id, k + 1]));
     const entries = ranked.slice(0, LEADERBOARD_SIZE).map((p): LeaderboardEntry => {
       const c = centroid(p);
-      return { id: p.id, name: p.name, cityName: p.cityName, color: p.color, population: p.stats.population, chunks: p.chunks.length, cx: c.cx, cy: c.cy, fires: p.stats.fires, milestones: milestonePercent(unlockedOf(p)) };
+      return {
+        id: p.id,
+        name: p.name,
+        cityName: p.cityName,
+        color: p.color,
+        population: p.stats.population,
+        chunks: p.chunks.length,
+        cx: c.cx,
+        cy: c.cy,
+        fires: p.stats.fires,
+        milestones: milestonePercent(unlockedOf(p)),
+      };
     });
     const monuments = [...this.players.players.values()]
       .filter((p) => p.monument && p.chunks.length > 0)
       .map((p): MonumentEntry => {
-        const c = centroid(p), m = p.monument!;
-        return { id: p.id, name: p.name, cityName: p.cityName, color: p.color, population: m.population, chunks: p.chunks.length, cx: c.cx, cy: c.cy, at: m.at };
+        const c = centroid(p),
+          m = p.monument!;
+        return {
+          id: p.id,
+          name: p.name,
+          cityName: p.cityName,
+          color: p.color,
+          population: m.population,
+          chunks: p.chunks.length,
+          cx: c.cx,
+          cy: c.cy,
+          at: m.at,
+        };
       })
       .sort((a, b) => b.population - a.population || a.at - b.at);
     const json = JSON.stringify([entries, monuments]);
@@ -53,8 +75,13 @@ export class Leaderboard {
 
 /** Rounded centroid of a player's chunks. */
 function centroid(p: PlayerRecord): { cx: number; cy: number } {
-  let sx = 0, sy = 0;
-  for (const k of p.chunks) { const c = parseChunkKey(k); sx += c.cx; sy += c.cy; }
+  let sx = 0,
+    sy = 0;
+  for (const k of p.chunks) {
+    const c = parseChunkKey(k);
+    sx += c.cx;
+    sy += c.cy;
+  }
   const n = p.chunks.length || 1;
   return { cx: Math.round(sx / n), cy: Math.round(sy / n) };
 }

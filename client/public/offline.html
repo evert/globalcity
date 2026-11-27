@@ -1,29 +1,76 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0b0f17">
-<title>GlobalCity: offline</title>
-<style>
-  :root { color-scheme: dark; }
-  html, body { height: 100%; margin: 0; }
-  body { background: #0b0f17; color: #e8ecf3; font: 15px/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-         display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box; text-align: center; }
-  main { display: grid; gap: 14px; justify-items: center; max-width: 360px; }
-  img { width: 96px; height: 96px; image-rendering: pixelated; border-radius: 20px; }
-  h1 { margin: 0; font-size: 20px; color: #58c4ff; }
-  p { margin: 0; color: #aab3c2; }
-  button { font: inherit; padding: 8px 18px; border-radius: 6px; border: 1px solid #2f3b52; background: #1b2436; color: #e8ecf3; cursor: pointer; }
-  button:hover { background: #24304a; }
-</style>
-</head>
-<body>
-<main>
-  <img src="/icons/icon-192.png" alt="">
-  <h1>You're offline</h1>
-  <p>GlobalCity is one shared world, so it needs an internet connection. Your city is safe and waiting.</p>
-  <button type="button" onclick="location.reload()">Try again</button>
-</main>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0f17" />
+    <title>GlobalCity: offline</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        background: #0b0f17;
+        color: #e8ecf3;
+        font:
+          15px/1.5 ui-monospace,
+          'SFMono-Regular',
+          Menlo,
+          Consolas,
+          monospace;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        box-sizing: border-box;
+        text-align: center;
+      }
+      main {
+        display: grid;
+        gap: 14px;
+        justify-items: center;
+        max-width: 360px;
+      }
+      img {
+        width: 96px;
+        height: 96px;
+        image-rendering: pixelated;
+        border-radius: 20px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 20px;
+        color: #58c4ff;
+      }
+      p {
+        margin: 0;
+        color: #aab3c2;
+      }
+      button {
+        font: inherit;
+        padding: 8px 18px;
+        border-radius: 6px;
+        border: 1px solid #2f3b52;
+        background: #1b2436;
+        color: #e8ecf3;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #24304a;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/icons/icon-192.png" alt="" />
+      <h1>You're offline</h1>
+      <p>GlobalCity is one shared world, so it needs an internet connection. Your city is safe and waiting.</p>
+      <button type="button" onclick="location.reload()">Try again</button>
+    </main>
+  </body>
 </html>

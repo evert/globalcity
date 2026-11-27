@@ -5,9 +5,24 @@
 
 import WebSocket from 'ws';
 import {
-  DEFAULT_PORT, CHUNK, TICK_MS, budgetTotals, LOMASK, FIRE, LASTFIRE, RUBBLE, LASTRUBBLE,
-  lonLatToTile, chunkOf, chunkKey, decodeChunk, isWater,
-  type ClientMsg, type ServerMsg, type PlayerStats, type LeaderboardEntry,
+  DEFAULT_PORT,
+  CHUNK,
+  TICK_MS,
+  budgetTotals,
+  LOMASK,
+  FIRE,
+  LASTFIRE,
+  RUBBLE,
+  LASTRUBBLE,
+  lonLatToTile,
+  chunkOf,
+  chunkKey,
+  decodeChunk,
+  isWater,
+  type ClientMsg,
+  type ServerMsg,
+  type PlayerStats,
+  type LeaderboardEntry,
 } from '@globalcity/shared';
 
 const port = Number(process.env.PORT) || DEFAULT_PORT;
@@ -19,7 +34,11 @@ const ticks = (n: number): number => n * TICK + 500;
 
 function fail(msg: string): never {
   console.error(`FAIL: ${msg}`);
-  for (const c of clients) console.error(`${c.name} toasts:`, c.toasts.map((t) => `${t.kind}: ${t.msg}`));
+  for (const c of clients)
+    console.error(
+      `${c.name} toasts:`,
+      c.toasts.map((t) => `${t.kind}: ${t.msg}`),
+    );
   process.exit(1);
 }
 
@@ -40,11 +59,16 @@ class TestClient {
   newMonths: { funds: number; lastIncome: number }[] = [];
   private lastMonth = -1;
 
-  constructor(readonly name: string) { clients.push(this); }
+  constructor(readonly name: string) {
+    clients.push(this);
+  }
 
   async connect(): Promise<void> {
     this.ws = new WebSocket(url);
-    await new Promise<void>((res, rej) => { this.ws.on('open', res); this.ws.on('error', rej); });
+    await new Promise<void>((res, rej) => {
+      this.ws.on('open', res);
+      this.ws.on('error', rej);
+    });
     const welcome = new Promise<void>((resolve) => {
       this.ws.on('message', (data, isBinary) => {
         if (isBinary) {
@@ -57,19 +81,38 @@ class TestClient {
         }
         const msg = JSON.parse(data.toString()) as ServerMsg;
         switch (msg.t) {
-          case 'welcome': this.id = msg.player.id; this.stats = msg.stats; resolve(); break;
+          case 'welcome':
+            this.id = msg.player.id;
+            this.stats = msg.stats;
+            resolve();
+            break;
           case 'stats':
             this.stats = msg.stats;
-            if (this.month >= 0 && this.month !== this.lastMonth) { this.newMonths.push({ funds: msg.stats.funds, lastIncome: msg.stats.lastIncome }); this.lastMonth = this.month; }
+            if (this.month >= 0 && this.month !== this.lastMonth) {
+              this.newMonths.push({ funds: msg.stats.funds, lastIncome: msg.stats.lastIncome });
+              this.lastMonth = this.month;
+            }
             break;
-          case 'time': this.month = msg.time.month; break;
-          case 'toast': this.toasts.push({ kind: msg.kind, msg: msg.msg, at: msg.at }); break;
-          case 'freeSpot': this.freeSpot = msg; break;
-          case 'claim': if (msg.claim.ownerId === this.id) this.claims.add(chunkKey(msg.claim.cx, msg.claim.cy)); break;
-          case 'leaderboard': this.leaderboards.push({ entries: msg.entries, me: msg.me }); break;
+          case 'time':
+            this.month = msg.time.month;
+            break;
+          case 'toast':
+            this.toasts.push({ kind: msg.kind, msg: msg.msg, at: msg.at });
+            break;
+          case 'freeSpot':
+            this.freeSpot = msg;
+            break;
+          case 'claim':
+            if (msg.claim.ownerId === this.id) this.claims.add(chunkKey(msg.claim.cx, msg.claim.cy));
+            break;
+          case 'leaderboard':
+            this.leaderboards.push({ entries: msg.entries, me: msg.me });
+            break;
           case 'tiles':
             for (let k = 0; k < msg.u.length; k += 3) {
-              const x = msg.u[k], y = msg.u[k + 1], v = msg.u[k + 2];
+              const x = msg.u[k],
+                y = msg.u[k + 1],
+                v = msg.u[k + 2];
               const c = chunkOf(x, y);
               const tiles = this.chunks.get(chunkKey(c.cx, c.cy));
               if (tiles) tiles[(y - c.cy * CHUNK) * CHUNK + (x - c.cx * CHUNK)] = v;
@@ -77,7 +120,8 @@ class TestClient {
               if (id >= FIRE && id <= LASTFIRE) this.fireTilesSeen++;
             }
             break;
-          default: break;
+          default:
+            break;
         }
       });
     });
@@ -85,8 +129,12 @@ class TestClient {
     await welcome;
   }
 
-  send(m: ClientMsg): void { this.ws.send(JSON.stringify(m)); }
-  sendRaw(m: unknown): void { this.ws.send(JSON.stringify(m)); }
+  send(m: ClientMsg): void {
+    this.ws.send(JSON.stringify(m));
+  }
+  sendRaw(m: unknown): void {
+    this.ws.send(JSON.stringify(m));
+  }
 
   tile(x: number, y: number): number | undefined {
     const c = chunkOf(x, y);
@@ -101,7 +149,9 @@ class TestClient {
     return s.cx === null || s.cy === null ? null : { cx: s.cx, cy: s.cy };
   }
 
-  hasToast(re: RegExp): boolean { return this.toasts.some((t) => re.test(`${t.kind}: ${t.msg}`)); }
+  hasToast(re: RegExp): boolean {
+    return this.toasts.some((t) => re.test(`${t.kind}: ${t.msg}`));
+  }
 }
 
 const waitFor = <T>(pred: () => T | null | undefined | false, label: string, ms = 5000): Promise<T> =>
@@ -109,31 +159,58 @@ const waitFor = <T>(pred: () => T | null | undefined | false, label: string, ms 
     const t0 = Date.now();
     const iv = setInterval(() => {
       const v = pred();
-      if (v) { clearInterval(iv); resolve(v); }
-      else if (Date.now() - t0 > ms) { clearInterval(iv); reject(new Error(`timeout waiting for ${label}`)); }
+      if (v) {
+        clearInterval(iv);
+        resolve(v);
+      } else if (Date.now() - t0 > ms) {
+        clearInterval(iv);
+        reject(new Error(`timeout waiting for ${label}`));
+      }
     }, 25);
   });
 
 // Seed locations to look for two adjacent free chunks with enough flat land.
 const SEEDS: [number, number][] = [
-  [-0.1, 51.5], [2.35, 48.85], [13.4, 52.5], [-3.7, 40.4], [21.0, 52.2], [30.5, 50.45], [37.6, 55.75],
-  [-94.6, 39.1], [-87.6, 41.9], [-104.9, 39.7], [-46.6, -23.5], [151.2, -33.9], [116.4, 39.9], [77.2, 28.6],
-  [3.4, 6.5], [28.0, -26.2], [-99.1, 19.4], [-58.4, -34.6], [105.8, 21.0], [44.4, 33.3],
+  [-0.1, 51.5],
+  [2.35, 48.85],
+  [13.4, 52.5],
+  [-3.7, 40.4],
+  [21.0, 52.2],
+  [30.5, 50.45],
+  [37.6, 55.75],
+  [-94.6, 39.1],
+  [-87.6, 41.9],
+  [-104.9, 39.7],
+  [-46.6, -23.5],
+  [151.2, -33.9],
+  [116.4, 39.9],
+  [77.2, 28.6],
+  [3.4, 6.5],
+  [28.0, -26.2],
+  [-99.1, 19.4],
+  [-58.4, -34.6],
+  [105.8, 21.0],
+  [44.4, 33.3],
 ];
 
 // Layout (Y = top row). A owns chunk (cx,cy), B owns (cx+1,cy); the border is between columns cx*64+63 and (cx+1)*64.
 //   A: coal plant cols 58..61 rows Y..Y+3; wires cols 62,63 row Y+1; res zone cols 58..60 rows Y+4..Y+6; road row Y+7 cols 58..63
 //   B: wires cols 0,1 row Y+1; res zones cols 2-4, 5-7, 8-10 rows Y..Y+2; fire station cols 11..13; road row Y+4 cols 0..13
-const A_COLS = 6, A_ROWS = 8, B_COLS = 14, B_ROWS = 5;
+const A_COLS = 6,
+  A_ROWS = 8,
+  B_COLS = 14,
+  B_ROWS = 5;
 
 function findRow(aTiles: Uint32Array, bTiles: Uint32Array): number | null {
   rows: for (let y = 1; y + A_ROWS < CHUNK - 1; y++) {
-    for (let dy = 0; dy < A_ROWS; dy++) for (let dx = 0; dx < A_COLS; dx++) {
-      if (isWater(aTiles[(y + dy) * CHUNK + CHUNK - A_COLS + dx])) continue rows;
-    }
-    for (let dy = 0; dy < B_ROWS; dy++) for (let dx = 0; dx < B_COLS; dx++) {
-      if (isWater(bTiles[(y + dy) * CHUNK + dx])) continue rows;
-    }
+    for (let dy = 0; dy < A_ROWS; dy++)
+      for (let dx = 0; dx < A_COLS; dx++) {
+        if (isWater(aTiles[(y + dy) * CHUNK + CHUNK - A_COLS + dx])) continue rows;
+      }
+    for (let dy = 0; dy < B_ROWS; dy++)
+      for (let dx = 0; dx < B_COLS; dx++) {
+        if (isWater(bTiles[(y + dy) * CHUNK + dx])) continue rows;
+      }
     return y;
   }
   return null;
@@ -156,7 +233,13 @@ async function main(): Promise<void> {
     if (!a || a.cx + 1 >= 128) continue;
     const b = await B.findFree(a.cx + 1, a.cy);
     if (!b || b.cx !== a.cx + 1 || b.cy !== a.cy) continue;
-    B.send({ t: 'sub', chunks: [[a.cx, a.cy], [b.cx, b.cy]] });
+    B.send({
+      t: 'sub',
+      chunks: [
+        [a.cx, a.cy],
+        [b.cx, b.cy],
+      ],
+    });
     await waitFor(() => B.chunks.has(chunkKey(a.cx, a.cy)) && B.chunks.has(chunkKey(b.cx, b.cy)), 'chunk frames');
     const y = findRow(B.chunks.get(chunkKey(a.cx, a.cy))!, B.chunks.get(chunkKey(b.cx, b.cy))!);
     if (y === null) continue;
@@ -166,13 +249,19 @@ async function main(): Promise<void> {
   if (!site) fail('no pair of adjacent free chunks with enough land found');
   const { cx, cy, Y } = site;
   const AX = (cx + 1) * CHUNK - A_COLS; // A's first column
-  const BX = (cx + 1) * CHUNK;          // B's first column
+  const BX = (cx + 1) * CHUNK; // B's first column
   console.log(`site: A chunk ${cx},${cy}; B chunk ${cx + 1},${cy}; rows from ${Y}`);
 
   A.send({ t: 'claim', cx, cy });
   B.send({ t: 'claim', cx: cx + 1, cy });
   await waitFor(() => A.claims.has(chunkKey(cx, cy)) && B.claims.has(chunkKey(cx + 1, cy)), 'claims');
-  A.send({ t: 'sub', chunks: [[cx, cy], [cx + 1, cy]] });
+  A.send({
+    t: 'sub',
+    chunks: [
+      [cx, cy],
+      [cx + 1, cy],
+    ],
+  });
 
   // ---- build ----
   A.send({ t: 'build', tool: 'coal', x: AX + 1, y: Y + 1 });
@@ -195,7 +284,8 @@ async function main(): Promise<void> {
   // ---- (a) power trade ----
   console.log('waiting for power trade...');
   await waitFor(() => (B.stats?.powerImported ?? 0) > 0 && (A.stats?.powerExported ?? 0) > 0, 'powerImported/powerExported > 0', ticks(20));
-  const bs = B.stats!, as0 = A.stats!;
+  const bs = B.stats!,
+    as0 = A.stats!;
   console.log(`B: imported=${bs.powerImported} demand=${bs.powerDemand} supply=${bs.powerSupply} tradeNet=${bs.powerTradeNet} funds=${bs.funds}`);
   console.log(`A: exported=${as0.powerExported} demand=${as0.powerDemand} supply=${as0.powerSupply} tradeNet=${as0.powerTradeNet} funds=${as0.funds}`);
   if (bs.powerImported < 3) fail(`B imports ${bs.powerImported}, expected >= 3 (3 res zones + station)`);
@@ -229,12 +319,18 @@ async function main(): Promise<void> {
     B.leaderboards = [];
     B.send({ t: 'leaderboard' });
     const got = await waitFor(() => B.leaderboards[0], 'leaderboard reply');
-    if (got.entries.some((e) => e.id === A.id) && got.entries.some((e) => e.id === B.id)) { lb = got; break; }
+    if (got.entries.some((e) => e.id === A.id) && got.entries.some((e) => e.id === B.id)) {
+      lb = got;
+      break;
+    }
     await sleep(TICK);
   }
   if (!lb) fail('leaderboard never listed both A and B');
-  const ea = lb.entries.find((e) => e.id === A.id)!, eb = lb.entries.find((e) => e.id === B.id)!;
-  console.log(`leaderboard: ${lb.entries.length} entries; A #${lb.entries.indexOf(ea) + 1} pop=${ea.population} at ${ea.cx},${ea.cy}; B #${lb.entries.indexOf(eb) + 1} pop=${eb.population} at ${eb.cx},${eb.cy}; me=${JSON.stringify(lb.me)}`);
+  const ea = lb.entries.find((e) => e.id === A.id)!,
+    eb = lb.entries.find((e) => e.id === B.id)!;
+  console.log(
+    `leaderboard: ${lb.entries.length} entries; A #${lb.entries.indexOf(ea) + 1} pop=${ea.population} at ${ea.cx},${ea.cy}; B #${lb.entries.indexOf(eb) + 1} pop=${eb.population} at ${eb.cx},${eb.cy}; me=${JSON.stringify(lb.me)}`,
+  );
   if (ea.cx !== cx || ea.cy !== cy || eb.cx !== cx + 1 || eb.cy !== cy) fail('leaderboard centroids wrong');
   if (!lb.me || lb.me.rank < 1 || lb.me.population <= 0) fail('me missing/wrong');
   for (let k = 1; k < lb.entries.length; k++) if (lb.entries[k - 1].population < lb.entries[k].population) fail('leaderboard not sorted');
@@ -249,38 +345,57 @@ async function main(): Promise<void> {
   await waitFor(() => (A.stats?.budget?.current.year ?? 0) > startYear, 'a new year for A', ticks(14));
   const fundsAtBudget = A.stats!.funds;
   A.send({ t: 'build', tool: 'bulldozer', x: AX + 1, y: Y + 7 });
-  await waitFor(() => { const c = A.stats?.budget?.current; return !!c && c.taxes > 0 && c.power > 0 && c.roads > 0 && c.construction > 0; }, 'A has taxes, upkeep lines and construction this year', ticks(14));
+  await waitFor(
+    () => {
+      const c = A.stats?.budget?.current;
+      return !!c && c.taxes > 0 && c.power > 0 && c.roads > 0 && c.construction > 0;
+    },
+    'A has taxes, upkeep lines and construction this year',
+    ticks(14),
+  );
   const cur = A.stats!.budget!.current;
-  console.log(`A ${cur.year} so far: taxes $${cur.taxes}, upkeep roads $${cur.roads} rail $${cur.rail} power $${cur.power} services $${cur.services}, construction $${cur.construction} (funds ${fundsAtBudget} -> ${A.stats!.funds})`);
+  console.log(
+    `A ${cur.year} so far: taxes $${cur.taxes}, upkeep roads $${cur.roads} rail $${cur.rail} power $${cur.power} services $${cur.services}, construction $${cur.construction} (funds ${fundsAtBudget} -> ${A.stats!.funds})`,
+  );
   if (cur.construction !== 1) fail(`construction should be the $1 bulldoze, got $${cur.construction}`);
   // A completed year lands in the history with the same lines, oldest first and never the current year.
   const had = A.stats!.budget!.years.length;
   await waitFor(() => (A.stats?.budget?.years.length ?? 0) > had, 'a year closed for A', ticks(14));
-  const ys = A.stats!.budget!.years, last = ys[ys.length - 1];
-  console.log(`A history: ${ys.map((y) => `${y.year}: taxes $${y.taxes} upkeep $${budgetTotals(y).upkeep} construction $${y.construction} net $${budgetTotals(y).net}`).join('; ')}`);
+  const ys = A.stats!.budget!.years,
+    last = ys[ys.length - 1];
+  console.log(
+    `A history: ${ys.map((y) => `${y.year}: taxes $${y.taxes} upkeep $${budgetTotals(y).upkeep} construction $${y.construction} net $${budgetTotals(y).net}`).join('; ')}`,
+  );
   if (last.year !== A.stats!.budget!.current.year - 1) fail(`last closed year ${last.year} should be the year before ${A.stats!.budget!.current.year}`);
   if (last.taxes <= 0 || last.power <= 0 || last.roads <= 0) fail('closed year is missing taxes or upkeep lines');
   for (let k = 1; k < ys.length; k++) if (ys[k].year !== ys[k - 1].year + 1) fail('history years are not consecutive');
   console.log('budget OK');
 
   // ---- (c) fire ----
-  const fx = BX + 6, fy = Y + 1; // centre of B's middle residential zone
+  const fx = BX + 6,
+    fy = Y + 1; // centre of B's middle residential zone
   const before = B.tile(fx, fy)!;
   console.log(`igniting B's zone at ${fx},${fy} (tile ${before & LOMASK}); station powered: ${B.stats!.fireStations}`);
   B.sendRaw({ t: 'devIgnite', x: fx, y: fy });
-  await waitFor(() => B.fireTilesSeen > 0 && (B.tile(fx, fy)! & LOMASK) >= FIRE && (B.tile(fx, fy)! & LOMASK) <= LASTFIRE, 'fire tile in tiles update', ticks(2));
+  await waitFor(
+    () => B.fireTilesSeen > 0 && (B.tile(fx, fy)! & LOMASK) >= FIRE && (B.tile(fx, fy)! & LOMASK) <= LASTFIRE,
+    'fire tile in tiles update',
+    ticks(2),
+  );
   await waitFor(() => (B.stats?.fires ?? 0) > 0, 'stats.fires > 0', ticks(2));
   console.log(`fire burning: stats.fires=${B.stats!.fires}, fire tiles seen=${B.fireTilesSeen}`);
   // Building on fire must be refused (fire tiles are not bulldozable either).
   B.send({ t: 'build', tool: 'bulldozer', x: fx, y: fy });
   await waitFor(() => (B.stats?.fires ?? 0) === 0, 'stats.fires back to 0', ticks(60));
   await waitFor(() => B.hasToast(/^success: The fire is out\./), 'fire out toast', ticks(2));
-  let rubble = 0, fireLeft = 0;
-  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-    const id = B.tile(fx + dx, fy + dy)! & LOMASK;
-    if (id >= RUBBLE && id <= LASTRUBBLE) rubble++;
-    if (id >= FIRE && id <= LASTFIRE) fireLeft++;
-  }
+  let rubble = 0,
+    fireLeft = 0;
+  for (let dy = -1; dy <= 1; dy++)
+    for (let dx = -1; dx <= 1; dx++) {
+      const id = B.tile(fx + dx, fy + dy)! & LOMASK;
+      if (id >= RUBBLE && id <= LASTRUBBLE) rubble++;
+      if (id >= FIRE && id <= LASTFIRE) fireLeft++;
+    }
   console.log(`after the fire: ${rubble}/9 footprint tiles are rubble, ${fireLeft} still burning`);
   if (fireLeft > 0) fail('fire tiles left although stats.fires is 0');
   if (rubble < 8) fail(`expected the 3x3 footprint to be rubble, got ${rubble}`);

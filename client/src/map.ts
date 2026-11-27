@@ -20,9 +20,13 @@ export class TileMap extends Emitter<MapEvents> {
   private lastUse = new Map<string, number>();
   private tick = 0;
 
-  constructor(private maxChunks = 320) { super(); }
+  constructor(private maxChunks = 320) {
+    super();
+  }
 
-  has(cx: number, cy: number): boolean { return this.chunks.has(chunkKey(cx, cy)); }
+  has(cx: number, cy: number): boolean {
+    return this.chunks.has(chunkKey(cx, cy));
+  }
 
   getChunk(cx: number, cy: number): Uint32Array | undefined {
     const key = chunkKey(cx, cy);
@@ -53,9 +57,12 @@ export class TileMap extends Emitter<MapEvents> {
   applyTiles(u: number[]): void {
     const touched = new Set<string>();
     for (let i = 0; i + 2 < u.length; i += 3) {
-      const x = u[i], y = u[i + 1], v = u[i + 2];
+      const x = u[i],
+        y = u[i + 1],
+        v = u[i + 2];
       if (!inWorld(x, y)) continue;
-      const cx = Math.floor(x / CHUNK), cy = Math.floor(y / CHUNK);
+      const cx = Math.floor(x / CHUNK),
+        cy = Math.floor(y / CHUNK);
       const key = chunkKey(cx, cy);
       const c = this.chunks.get(key);
       if (!c) continue;
@@ -63,10 +70,16 @@ export class TileMap extends Emitter<MapEvents> {
       if (c[idx] === v) continue;
       c[idx] = v;
       let d = this.dirty.get(key);
-      if (!d) { d = []; this.dirty.set(key, d); }
+      if (!d) {
+        d = [];
+        this.dirty.set(key, d);
+      }
       if (d.length && d[0] === DIRTY_ALL) continue;
       d.push(idx);
-      if (d.length > CHUNK * CHUNK / 4) { d.length = 0; d.push(DIRTY_ALL); }
+      if (d.length > (CHUNK * CHUNK) / 4) {
+        d.length = 0;
+        d.push(DIRTY_ALL);
+      }
       touched.add(key);
     }
     if (touched.size) this.emit('tiles', [...touched]);

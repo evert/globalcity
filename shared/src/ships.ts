@@ -3,18 +3,29 @@
 // derives the same voyages from that and the server clock, like flights.
 import { WORLD_W } from './constants.ts';
 
-export interface PortInfo { x: number; y: number; ownerId: string }
+export interface PortInfo {
+  x: number;
+  y: number;
+  ownerId: string;
+}
 /** A sea route between ports a and b (indices into the port list): waypoints x0,y0,x1,y1,... from a to b. */
-export interface SeaRoute { a: number; b: number; pts: number[] }
+export interface SeaRoute {
+  a: number;
+  b: number;
+  pts: number[];
+}
 
 export interface Voyage {
   key: string;
-  x: number; y: number; // current position in tiles
-  vx: number; vy: number; // heading
+  x: number;
+  y: number; // current position in tiles
+  vx: number;
+  vy: number; // heading
   progress: number; // 0..1
   duration: number; // ms
   trail: number[]; // waypoints already passed + current position (for the world-map trail)
-  from: PortInfo; to: PortInfo; // origin and destination ports
+  from: PortInfo;
+  to: PortInfo; // origin and destination ports
   depart: number; // ms (server clock)
 }
 
@@ -33,8 +44,13 @@ export const SHIP_MIN_S = 20;
 const keyOf = (p: PortInfo): string => `${p.x},${p.y}`;
 function hash(str: string, n: number): number {
   let h = 2166136261 ^ n;
-  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
-  h ^= h >>> 13; h = Math.imul(h, 0x5bd1e995); h ^= h >>> 15;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  h ^= h >>> 13;
+  h = Math.imul(h, 0x5bd1e995);
+  h ^= h >>> 15;
   return h >>> 0;
 }
 const routeLength = (pts: number[]): number => {
@@ -56,33 +72,68 @@ export function activeVoyages(ports: readonly PortInfo[], routes: readonly SeaRo
     (from.get(r.b) ?? from.set(r.b, []).get(r.b)!).push({ to: r.a, pts: rev, len });
   }
   const period = shipPeriodS(ports.length) * 1000;
-  const longest = Math.max(...routes.map((r) => routeLength(r.pts))) / SHIP_SPEED * 1000 + 1000;
+  const longest = (Math.max(...routes.map((r) => routeLength(r.pts))) / SHIP_SPEED) * 1000 + 1000;
   const out: Voyage[] = [];
   ports.forEach((p, ai) => {
     const opts = (from.get(ai) ?? []).filter((o) => ports[o.to] && ports[o.to].ownerId !== p.ownerId).sort((u, v) => u.to - v.to);
     if (!opts.length) return;
     const phase = hash(keyOf(p), 0x5e) % period;
-    const kMax = Math.floor((now - phase) / period), kMin = Math.floor((now - longest - phase) / period);
+    const kMax = Math.floor((now - phase) / period),
+      kMin = Math.floor((now - longest - phase) / period);
     for (let k = kMin; k <= kMax; k++) {
       const depart = k * period + phase;
       // rendezvous hashing: the destination with the highest hash for this departure. A route appearing or
       // vanishing only moves the departures that prefer it; every other ship stays on its course.
-      let o = opts[0], best = -1;
-      for (const c of opts) { const h = hash(`${keyOf(p)}>${keyOf(ports[c.to])}`, k); if (h > best) { best = h; o = c; } }
+      let o = opts[0],
+        best = -1;
+      for (const c of opts) {
+        const h = hash(`${keyOf(p)}>${keyOf(ports[c.to])}`, k);
+        if (h > best) {
+          best = h;
+          o = c;
+        }
+      }
       const duration = Math.max(SHIP_MIN_S * 1000, (o.len / SHIP_SPEED) * 1000);
       const t = (now - depart) / duration;
       if (t < 0 || t >= 1) continue;
       // walk the polyline to distance t * len
-      let left = t * o.len, i = 2, x = o.pts[0], y = o.pts[1], vx = 1, vy = 0;
+      let left = t * o.len,
+        i = 2,
+        x = o.pts[0],
+        y = o.pts[1],
+        vx = 1,
+        vy = 0;
       const trail = [o.pts[0], o.pts[1]];
       for (; i < o.pts.length; i += 2) {
-        const sx = o.pts[i] - o.pts[i - 2], sy = o.pts[i + 1] - o.pts[i - 1], seg = Math.hypot(sx, sy) || 1;
-        vx = sx / seg; vy = sy / seg;
-        if (left <= seg) { x = o.pts[i - 2] + vx * left; y = o.pts[i - 1] + vy * left; break; }
-        left -= seg; trail.push(o.pts[i], o.pts[i + 1]); x = o.pts[i]; y = o.pts[i + 1];
+        const sx = o.pts[i] - o.pts[i - 2],
+          sy = o.pts[i + 1] - o.pts[i - 1],
+          seg = Math.hypot(sx, sy) || 1;
+        vx = sx / seg;
+        vy = sy / seg;
+        if (left <= seg) {
+          x = o.pts[i - 2] + vx * left;
+          y = o.pts[i - 1] + vy * left;
+          break;
+        }
+        left -= seg;
+        trail.push(o.pts[i], o.pts[i + 1]);
+        x = o.pts[i];
+        y = o.pts[i + 1];
       }
       trail.push(x, y);
-      out.push({ key: `${keyOf(p)}>${keyOf(ports[o.to])}#${k}`, x: ((x % WORLD_W) + WORLD_W) % WORLD_W, y, vx, vy, progress: t, duration, trail, from: p, to: ports[o.to], depart });
+      out.push({
+        key: `${keyOf(p)}>${keyOf(ports[o.to])}#${k}`,
+        x: ((x % WORLD_W) + WORLD_W) % WORLD_W,
+        y,
+        vx,
+        vy,
+        progress: t,
+        duration,
+        trail,
+        from: p,
+        to: ports[o.to],
+        depart,
+      });
     }
   });
   return out;

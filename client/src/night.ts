@@ -3,14 +3,20 @@
 // most once a minute; the renderer asks for a redraw on the same cadence. `?day=<minutes>` speeds the day up.
 import { nightLevel, subsolarPoint, sunElevation } from '@globalcity/shared';
 
-const W = 360, H = 180;
+const W = 360,
+  H = 180;
 
 /**
  * The sun's clock. Real time, unless the page address asks for a faster day to look at night art: `?day=5`
  * makes a full day last 5 minutes (counted from page load, starting at the real time of day).
  */
 const DAY_MINUTES = (() => {
-  try { const v = Number(new URLSearchParams(location.search).get('day')); return v > 0 ? v : 0; } catch { return 0; }
+  try {
+    const v = Number(new URLSearchParams(location.search).get('day'));
+    return v > 0 ? v : 0;
+  } catch {
+    return 0;
+  }
 })();
 const SPEED = DAY_MINUTES ? 1440 / DAY_MINUTES : 1;
 const T0 = Date.now();
@@ -30,7 +36,10 @@ export class NightLayer {
   /** bumped every time the shade is recomputed */
   version = 0;
 
-  constructor() { this.canvas.width = this.mask.width = W; this.canvas.height = this.mask.height = H; }
+  constructor() {
+    this.canvas.width = this.mask.width = W;
+    this.canvas.height = this.mask.height = H;
+  }
 
   /** Recompute the darkness grid if it is more than a minute (of sun time) old. Returns true when it changed. */
   update(): boolean {
@@ -49,7 +58,9 @@ export class NightLayer {
         const lon = x + 0.5 - 180;
         const a = nightLevel(sunElevation(lat, lon, this.sub)) * NIGHT_MAX;
         const i = (y * W + x) * 4;
-        img.data[i] = NIGHT_RGB[0]; img.data[i + 1] = NIGHT_RGB[1]; img.data[i + 2] = NIGHT_RGB[2];
+        img.data[i] = NIGHT_RGB[0];
+        img.data[i + 1] = NIGHT_RGB[1];
+        img.data[i + 2] = NIGHT_RGB[2];
         img.data[i + 3] = Math.round(a * 255);
         mimg.data[i] = mimg.data[i + 1] = mimg.data[i + 2] = 255;
         mimg.data[i + 3] = Math.round(Math.min(1, (a / NIGHT_MAX) * 2.5) * 255); // lights come on at dusk
@@ -61,5 +72,7 @@ export class NightLayer {
   }
 
   /** How dark it is (0..1) at a latitude/longitude, from the last update. */
-  levelAt(lat: number, lon: number): number { return nightLevel(sunElevation(lat, lon, this.sub)); }
+  levelAt(lat: number, lon: number): number {
+    return nightLevel(sunElevation(lat, lon, this.sub));
+  }
 }

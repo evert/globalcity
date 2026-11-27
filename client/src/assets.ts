@@ -103,24 +103,38 @@ export function proceduralSheet(): SpriteSheet {
       g.fillStyle = '#ffd54f';
       if (id === T.LHPOWER || id === T.HPOWER) g.fillRect(x, y + 7, 16, 2);
       else if (id === T.LVPOWER || id === T.VPOWER) g.fillRect(x + 7, y, 2, 16);
-      else { g.fillRect(x + 7, y + 3, 2, 10); g.fillRect(x + 3, y + 7, 10, 2); }
+      else {
+        g.fillRect(x + 7, y + 3, 2, 10);
+        g.fillRect(x + 3, y + 7, 10, 2);
+      }
     } else if (id >= T.RAIL_LOW && id <= T.RAIL_HIGH) {
       g.fillStyle = '#7a6a45';
       g.fillRect(x, y, TILE_PX, TILE_PX);
       g.fillStyle = '#4a4036';
-      if (id === T.LHRAIL || id === T.HRAIL) { g.fillRect(x, y + 5, 16, 2); g.fillRect(x, y + 9, 16, 2); }
-      else if (id === T.LVRAIL || id === T.VRAIL) { g.fillRect(x + 5, y, 2, 16); g.fillRect(x + 9, y, 2, 16); }
-      else g.fillRect(x + 4, y + 4, 8, 8);
+      if (id === T.LHRAIL || id === T.HRAIL) {
+        g.fillRect(x, y + 5, 16, 2);
+        g.fillRect(x, y + 9, 16, 2);
+      } else if (id === T.LVRAIL || id === T.VRAIL) {
+        g.fillRect(x + 5, y, 2, 16);
+        g.fillRect(x + 9, y, 2, 16);
+      } else g.fillRect(x + 4, y + 4, 8, 8);
     } else if (id === LIGHTNINGBOLT) {
       g.clearRect(x, y, TILE_PX, TILE_PX);
       g.fillStyle = '#ffeb3b';
       g.beginPath();
-      g.moveTo(x + 9, y + 1); g.lineTo(x + 4, y + 9); g.lineTo(x + 8, y + 9);
-      g.lineTo(x + 6, y + 15); g.lineTo(x + 12, y + 6); g.lineTo(x + 8, y + 6); g.closePath();
+      g.moveTo(x + 9, y + 1);
+      g.lineTo(x + 4, y + 9);
+      g.lineTo(x + 8, y + 9);
+      g.lineTo(x + 6, y + 15);
+      g.lineTo(x + 12, y + 6);
+      g.lineTo(x + 8, y + 6);
+      g.closePath();
       g.fill();
     } else if (id >= T.WOODS_LOW && id <= T.WOODS5) {
       g.fillStyle = '#144d1c';
-      g.beginPath(); g.arc(x + 8, y + 8, 5, 0, Math.PI * 2); g.fill();
+      g.beginPath();
+      g.arc(x + 8, y + 8, 5, 0, Math.PI * 2);
+      g.fill();
     } else if (T.zoneSizeForCenter(id) > 0) {
       g.fillStyle = 'rgba(0,0,0,0.25)';
       g.fillRect(x + 4, y + 4, 8, 8);
@@ -131,9 +145,11 @@ export function proceduralSheet(): SpriteSheet {
 
 /** Procedural minimap: dark ocean with a faint graticule. */
 export function proceduralMinimap(): Minimap {
-  const w = 2048, h = 1024;
+  const w = 2048,
+    h = 1024;
   const c = document.createElement('canvas');
-  c.width = w; c.height = h;
+  c.width = w;
+  c.height = h;
   const g = c.getContext('2d')!;
   g.fillStyle = '#0b1e3a';
   g.fillRect(0, 0, w, h);
@@ -141,11 +157,17 @@ export function proceduralMinimap(): Minimap {
   g.lineWidth = 1;
   for (let lon = -180; lon <= 180; lon += 30) {
     const x = Math.round(((lon + 180) / 360) * w) + 0.5;
-    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke();
+    g.beginPath();
+    g.moveTo(x, 0);
+    g.lineTo(x, h);
+    g.stroke();
   }
   for (let lat = -90; lat <= 90; lat += 30) {
     const y = Math.round(((90 - lat) / 180) * h) + 0.5;
-    g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke();
+    g.beginPath();
+    g.moveTo(0, y);
+    g.lineTo(w, y);
+    g.stroke();
   }
   return { image: c, width: w, height: h, procedural: true };
 }

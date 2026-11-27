@@ -205,31 +205,79 @@ export const isUnderwaterWireId = (t: number): boolean => t === HPOWER || t === 
 
 // ---- connection tables (index = N:1 | E:2 | S:4 | W:8 of same-kind neighbours) ----
 export const ROAD_TABLE: readonly number[] = [
-  ROADS, ROADS2, ROADS, ROADS3,
-  ROADS2, ROADS2, ROADS4, ROADS8,
-  ROADS, ROADS6, ROADS, ROADS7,
-  ROADS5, ROADS10, ROADS9, INTERSECTION,
+  ROADS,
+  ROADS2,
+  ROADS,
+  ROADS3,
+  ROADS2,
+  ROADS2,
+  ROADS4,
+  ROADS8,
+  ROADS,
+  ROADS6,
+  ROADS,
+  ROADS7,
+  ROADS5,
+  ROADS10,
+  ROADS9,
+  INTERSECTION,
 ];
 export const RAIL_TABLE: readonly number[] = [
-  LHRAIL, LVRAIL, LHRAIL, LVRAIL2,
-  LVRAIL, LVRAIL, LVRAIL3, LVRAIL7,
-  LHRAIL, LVRAIL5, LHRAIL, LVRAIL6,
-  LVRAIL4, LVRAIL9, LVRAIL8, LVRAIL10,
+  LHRAIL,
+  LVRAIL,
+  LHRAIL,
+  LVRAIL2,
+  LVRAIL,
+  LVRAIL,
+  LVRAIL3,
+  LVRAIL7,
+  LHRAIL,
+  LVRAIL5,
+  LHRAIL,
+  LVRAIL6,
+  LVRAIL4,
+  LVRAIL9,
+  LVRAIL8,
+  LVRAIL10,
 ];
 export const WIRE_TABLE: readonly number[] = [
-  LHPOWER, LVPOWER, LHPOWER, LVPOWER2,
-  LVPOWER, LVPOWER, LVPOWER3, LVPOWER7,
-  LHPOWER, LVPOWER5, LHPOWER, LVPOWER6,
-  LVPOWER4, LVPOWER9, LVPOWER8, LVPOWER10,
+  LHPOWER,
+  LVPOWER,
+  LHPOWER,
+  LVPOWER2,
+  LVPOWER,
+  LVPOWER,
+  LVPOWER3,
+  LVPOWER7,
+  LHPOWER,
+  LVPOWER5,
+  LHPOWER,
+  LVPOWER6,
+  LVPOWER4,
+  LVPOWER9,
+  LVPOWER8,
+  LVPOWER10,
 ];
 
 // Shoreline smoothing (generate.cpp smoothRiver, REdTab). Index bit set = neighbour is neither dirt nor woods,
 // same N/E/S/W bit order as above. The engine applies it to REDGE tiles.
 export const RIVER_EDGE_TABLE: readonly number[] = [
-  13 | BULLBIT, 13 | BULLBIT, 17 | BULLBIT, 15 | BULLBIT,
-  5 | BULLBIT, 2, 19 | BULLBIT, 17 | BULLBIT,
-  9 | BULLBIT, 11 | BULLBIT, 2, 13 | BULLBIT,
-  7 | BULLBIT, 9 | BULLBIT, 5 | BULLBIT, 2,
+  13 | BULLBIT,
+  13 | BULLBIT,
+  17 | BULLBIT,
+  15 | BULLBIT,
+  5 | BULLBIT,
+  2,
+  19 | BULLBIT,
+  17 | BULLBIT,
+  9 | BULLBIT,
+  11 | BULLBIT,
+  2,
+  13 | BULLBIT,
+  7 | BULLBIT,
+  9 | BULLBIT,
+  5 | BULLBIT,
+  2,
 ];
 // Tree smoothing (generate.cpp smoothTrees). Index bit set = neighbour is woods.
 // Result 0 means the tree is removed; result != WOODS gets -8 on odd (x+y) for variety.
@@ -238,18 +286,39 @@ export const TREE_EDGE_TABLE: readonly number[] = [0, 0, 0, 34, 0, 0, 36, 35, 0,
 // ---- helpers ----
 export const tileId = (v: number): number => v & LOMASK;
 export const isDirt = (v: number): boolean => (v & LOMASK) === DIRT;
-export const isWater = (v: number): boolean => { const t = v & LOMASK; return t >= WATER_LOW && t <= WATER_HIGH; };
+export const isWater = (v: number): boolean => {
+  const t = v & LOMASK;
+  return t >= WATER_LOW && t <= WATER_HIGH;
+};
 /** Number of non-water tiles in one chunk's tiles (CHUNK*CHUNK values, row-major). */
 export const chunkLandCount = (tiles: ArrayLike<number>): number => {
   let n = 0;
-  for (let i = 0; i < tiles.length; i++) { const t = tiles[i] & LOMASK; if (t < WATER_LOW || t > WATER_HIGH) n++; }
+  for (let i = 0; i < tiles.length; i++) {
+    const t = tiles[i] & LOMASK;
+    if (t < WATER_LOW || t > WATER_HIGH) n++;
+  }
   return n;
 };
-export const isTree = (v: number): boolean => { const t = v & LOMASK; return t >= WOODS_LOW && t <= WOODS_HIGH; };
-export const isRubble = (v: number): boolean => { const t = v & LOMASK; return t >= RUBBLE && t <= LASTRUBBLE; };
-export const isRoad = (v: number): boolean => { const t = v & LOMASK; return t >= ROADBASE && t <= LASTROAD; };
-export const isRail = (v: number): boolean => { const t = v & LOMASK; return (t >= RAIL_LOW && t <= RAIL_HIGH) || t === RAILHPOWERV || t === RAILVPOWERH; };
-export const isWire = (v: number): boolean => { const t = v & LOMASK; return (t >= POWER_LOW && t <= POWER_HIGH) || t === HROADPOWER || t === VROADPOWER || (t >= UWPOWER_NE && t <= UWPOWER_NW); };
+export const isTree = (v: number): boolean => {
+  const t = v & LOMASK;
+  return t >= WOODS_LOW && t <= WOODS_HIGH;
+};
+export const isRubble = (v: number): boolean => {
+  const t = v & LOMASK;
+  return t >= RUBBLE && t <= LASTRUBBLE;
+};
+export const isRoad = (v: number): boolean => {
+  const t = v & LOMASK;
+  return t >= ROADBASE && t <= LASTROAD;
+};
+export const isRail = (v: number): boolean => {
+  const t = v & LOMASK;
+  return (t >= RAIL_LOW && t <= RAIL_HIGH) || t === RAILHPOWERV || t === RAILVPOWERH;
+};
+export const isWire = (v: number): boolean => {
+  const t = v & LOMASK;
+  return (t >= POWER_LOW && t <= POWER_HIGH) || t === HROADPOWER || t === VROADPOWER || (t >= UWPOWER_NE && t <= UWPOWER_NW);
+};
 export const isZoneCenter = (v: number): boolean => (v & ZONEBIT) !== 0;
 export const isPowered = (v: number): boolean => (v & PWRBIT) !== 0;
 export const isConductive = (v: number): boolean => (v & CONDBIT) !== 0;
@@ -258,15 +327,39 @@ export const isBulldozable = (v: number): boolean => (v & BULLBIT) !== 0;
  *  Removing one must leave water behind, never land. */
 export const isOverWater = (v: number): boolean => {
   const t = v & LOMASK;
-  return t === HBRIDGE || t === VBRIDGE || t === BRWH || t === BRWV || isUnderwaterWireId(t)
-    || t === HRAIL || t === VRAIL || (t >= HBRDG0 && t <= HBRDG3) || (t >= VBRDG0 && t <= VBRDG3);
+  return (
+    t === HBRIDGE ||
+    t === VBRIDGE ||
+    t === BRWH ||
+    t === BRWV ||
+    isUnderwaterWireId(t) ||
+    t === HRAIL ||
+    t === VRAIL ||
+    (t >= HBRDG0 && t <= HBRDG3) ||
+    (t >= VBRDG0 && t <= VBRDG3)
+  );
 };
-export const isHouse = (v: number): boolean => { const t = v & LOMASK; return t >= HOUSE && t <= HHTHR; };
+export const isHouse = (v: number): boolean => {
+  const t = v & LOMASK;
+  return t >= HOUSE && t <= HHTHR;
+};
 /** True for any tile that is part of a multi-tile zone/building (240..826, excluding single-tile houses). */
-export const isZoneTile = (v: number): boolean => { const t = v & LOMASK; return (t >= RESBASE && t <= LASTZONE && !(t >= HOUSE && t <= HHTHR)) || (t >= CITYHALLBASE && t <= CUSTOMCENTRE); };
-export const isResZone = (v: number): boolean => { const t = v & LOMASK; return t >= RESBASE && t <= HOSPITALBASE - 1; };
-export const isComZone = (v: number): boolean => { const t = v & LOMASK; return t >= COMBASE && t <= COMLAST; };
-export const isIndZone = (v: number): boolean => { const t = v & LOMASK; return t >= INDBASE && t <= INDLAST; };
+export const isZoneTile = (v: number): boolean => {
+  const t = v & LOMASK;
+  return (t >= RESBASE && t <= LASTZONE && !(t >= HOUSE && t <= HHTHR)) || (t >= CITYHALLBASE && t <= CUSTOMCENTRE);
+};
+export const isResZone = (v: number): boolean => {
+  const t = v & LOMASK;
+  return t >= RESBASE && t <= HOSPITALBASE - 1;
+};
+export const isComZone = (v: number): boolean => {
+  const t = v & LOMASK;
+  return t >= COMBASE && t <= COMLAST;
+};
+export const isIndZone = (v: number): boolean => {
+  const t = v & LOMASK;
+  return t >= INDBASE && t <= INDLAST;
+};
 
 /** Footprint side length of the building whose centre tile id is `t` (3, 4 or 6), or 0 if not a centre-able id. */
 export function zoneSizeForCenter(t: number): number {
@@ -301,5 +394,11 @@ export const indBuildingCenter = (density: number, value: number): number => (va
 export const displayPopulation = (resPop: number, comPop: number, indPop: number): number => (resPop + (comPop + indPop) * 8) * 20;
 
 /** Offshore wind farm tiles: built on water, revert to water (not rubble) when removed. */
-export const isOffshoreTile = (v: number): boolean => { const t = v & LOMASK; return t >= OFFSHOREBASE && t <= LASTOFFSHORE; };
-export const isCustomTile = (v: number): boolean => { const t = v & LOMASK; return t === CUSTOMFILL || t === CUSTOMCENTRE; };
+export const isOffshoreTile = (v: number): boolean => {
+  const t = v & LOMASK;
+  return t >= OFFSHOREBASE && t <= LASTOFFSHORE;
+};
+export const isCustomTile = (v: number): boolean => {
+  const t = v & LOMASK;
+  return t === CUSTOMFILL || t === CUSTOMCENTRE;
+};

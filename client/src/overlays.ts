@@ -2,10 +2,49 @@
 // land value and density. Computed in the browser from the tiles the client already has; one 64x64 image per plot (one
 // pixel per tile) drawn on top of a dimmed map. Rebuilt only when tiles change or the mode changes.
 import {
-  CHUNK, LOMASK, ZONEBIT, PWRBIT, CONDBIT, BURNBIT, FIRESTATION, POLICESTATION, FIRE_STATION_RANGE, POLICE_RANGE, UNIVERSITY_POLICE_FACTOR,
-  CRIME_LAND_VALUE_THRESHOLD, LTRFBASE, HTRFBASE, LASTROAD, isRoad, isWater, isTree, isIndZone, isComZone, isHouse,
-  isZoneTile, chunkKey, parseChunkKey, SCHOOL, SCHOOL_RANGE, CHRISTMAS_TREE_RANGE, pollutionSource, pollutionAt, POLLUTION_HIGH, POLLUTION_SEVERE, POLLUTION_MAX_RADIUS,
-  FREEZ, RZB, HOSPITALBASE, CZB, COMLAST, IZB, INDLAST, resZonePop, comZonePop, indZonePop, displayPopulation,
+  CHUNK,
+  LOMASK,
+  ZONEBIT,
+  PWRBIT,
+  CONDBIT,
+  BURNBIT,
+  FIRESTATION,
+  POLICESTATION,
+  FIRE_STATION_RANGE,
+  POLICE_RANGE,
+  UNIVERSITY_POLICE_FACTOR,
+  CRIME_LAND_VALUE_THRESHOLD,
+  LTRFBASE,
+  HTRFBASE,
+  LASTROAD,
+  isRoad,
+  isWater,
+  isTree,
+  isIndZone,
+  isComZone,
+  isHouse,
+  isZoneTile,
+  chunkKey,
+  parseChunkKey,
+  SCHOOL,
+  SCHOOL_RANGE,
+  CHRISTMAS_TREE_RANGE,
+  pollutionSource,
+  pollutionAt,
+  POLLUTION_HIGH,
+  POLLUTION_SEVERE,
+  POLLUTION_MAX_RADIUS,
+  FREEZ,
+  RZB,
+  HOSPITALBASE,
+  CZB,
+  COMLAST,
+  IZB,
+  INDLAST,
+  resZonePop,
+  comZonePop,
+  indZonePop,
+  displayPopulation,
 } from '@globalcity/shared';
 import type { TileMap } from './map.ts';
 
@@ -13,28 +52,102 @@ export type OverlayMode = 'none' | 'power' | 'fire' | 'crime' | 'traffic' | 'pol
 export const OVERLAY_MODES: readonly OverlayMode[] = ['none', 'power', 'fire', 'crime', 'traffic', 'pollution', 'value', 'density'];
 
 type RGBA = [number, number, number, number];
-export interface LegendItem { color: string; label: string }
+export interface LegendItem {
+  color: string;
+  label: string;
+}
 export const OVERLAY_INFO: Record<OverlayMode, { name: string; icon: string; legend: LegendItem[]; note?: string }> = {
   none: { name: 'Normal', icon: '🗺', legend: [] },
-  power: { name: 'Power', icon: '⚡', legend: [{ color: '#3ad16b', label: 'Powered' }, { color: '#ff4a3d', label: 'No power' }] },
-  fire: { name: 'Fire hazard', icon: '🔥', legend: [{ color: '#4aa8ff', label: 'Fire station coverage' }, { color: '#ff4a3d', label: 'Unprotected buildings' }],
-    note: `Powered fire stations protect ${FIRE_STATION_RANGE} tiles around them: most fires there never start, and the rest spread slower and burn out sooner.` },
-  crime: { name: 'Crime', icon: '👮', legend: [{ color: '#4aa8ff', label: 'Police coverage' }, { color: '#ff8a1e', label: 'Unpatrolled zones' }],
-    note: `Powered police stations cover ${POLICE_RANGE} tiles, or ${POLICE_RANGE * UNIVERSITY_POLICE_FACTOR} in a city with a powered university. In a city with high crime, lots outside that range lose land value.` },
-  traffic: { name: 'Traffic', icon: '🚗', legend: [{ color: '#3ad16b', label: 'Free flowing' }, { color: '#ffd23a', label: 'Busy' }, { color: '#ff4a3d', label: 'Jammed' }],
-    note: 'Rail next to zones takes trips off the roads.' },
-  pollution: { name: 'Pollution', icon: '🏭', legend: [{ color: '#c8b04a', label: 'Some' }, { color: '#a06428', label: 'Heavy' }, { color: '#6e2a1e', label: 'Smog' }, { color: '#3a1410', label: 'Heavy smog' }],
-    note: 'Smog lowers land value and stops homes growing taller. Coal plants pollute far more than anything else. Factories, heavy traffic, airports and seaports pollute too. Wind farms, nuclear plants and parks don\'t.' },
-  value: { name: 'Land value', icon: '💎', legend: [{ color: '#c0392b', label: 'Low' }, { color: '#e67e22', label: '' }, { color: '#d4c63a', label: '' }, { color: '#2ecc71', label: 'High' }],
-    note: 'Parks, forest and water nearby raise value, and so do shops within 8 tiles and a school within 8. Industry within 12 tiles and smog lower it.' },
-  density: { name: 'Density', icon: '🏙', legend: [{ color: '#ffeca0', label: 'Sparse' }, { color: '#ffc45a', label: '' }, { color: '#f58232', label: '' }, { color: '#d73c3c', label: '' }, { color: '#821e5a', label: 'Dense' }],
-    note: 'People living or working on each lot, counted as in your population: a lot of houses holds up to 160, apartment blocks and offices up to 800, factories up to 640.' },
+  power: {
+    name: 'Power',
+    icon: '⚡',
+    legend: [
+      { color: '#3ad16b', label: 'Powered' },
+      { color: '#ff4a3d', label: 'No power' },
+    ],
+  },
+  fire: {
+    name: 'Fire hazard',
+    icon: '🔥',
+    legend: [
+      { color: '#4aa8ff', label: 'Fire station coverage' },
+      { color: '#ff4a3d', label: 'Unprotected buildings' },
+    ],
+    note: `Powered fire stations protect ${FIRE_STATION_RANGE} tiles around them: most fires there never start, and the rest spread slower and burn out sooner.`,
+  },
+  crime: {
+    name: 'Crime',
+    icon: '👮',
+    legend: [
+      { color: '#4aa8ff', label: 'Police coverage' },
+      { color: '#ff8a1e', label: 'Unpatrolled zones' },
+    ],
+    note: `Powered police stations cover ${POLICE_RANGE} tiles, or ${POLICE_RANGE * UNIVERSITY_POLICE_FACTOR} in a city with a powered university. In a city with high crime, lots outside that range lose land value.`,
+  },
+  traffic: {
+    name: 'Traffic',
+    icon: '🚗',
+    legend: [
+      { color: '#3ad16b', label: 'Free flowing' },
+      { color: '#ffd23a', label: 'Busy' },
+      { color: '#ff4a3d', label: 'Jammed' },
+    ],
+    note: 'Rail next to zones takes trips off the roads.',
+  },
+  pollution: {
+    name: 'Pollution',
+    icon: '🏭',
+    legend: [
+      { color: '#c8b04a', label: 'Some' },
+      { color: '#a06428', label: 'Heavy' },
+      { color: '#6e2a1e', label: 'Smog' },
+      { color: '#3a1410', label: 'Heavy smog' },
+    ],
+    note: "Smog lowers land value and stops homes growing taller. Coal plants pollute far more than anything else. Factories, heavy traffic, airports and seaports pollute too. Wind farms, nuclear plants and parks don't.",
+  },
+  value: {
+    name: 'Land value',
+    icon: '💎',
+    legend: [
+      { color: '#c0392b', label: 'Low' },
+      { color: '#e67e22', label: '' },
+      { color: '#d4c63a', label: '' },
+      { color: '#2ecc71', label: 'High' },
+    ],
+    note: 'Parks, forest and water nearby raise value, and so do shops within 8 tiles and a school within 8. Industry within 12 tiles and smog lower it.',
+  },
+  density: {
+    name: 'Density',
+    icon: '🏙',
+    legend: [
+      { color: '#ffeca0', label: 'Sparse' },
+      { color: '#ffc45a', label: '' },
+      { color: '#f58232', label: '' },
+      { color: '#d73c3c', label: '' },
+      { color: '#821e5a', label: 'Dense' },
+    ],
+    note: 'People living or working on each lot, counted as in your population: a lot of houses holds up to 160, apartment blocks and offices up to 800, factories up to 640.',
+  },
 };
 
-const GREEN: RGBA = [58, 209, 107, 200], RED: RGBA = [255, 74, 61, 220], BLUE: RGBA = [74, 168, 255, 70],
-  ORANGE: RGBA = [255, 138, 30, 210], YELLOW: RGBA = [255, 210, 58, 220];
-const VALUE: RGBA[] = [[192, 57, 43, 150], [230, 126, 34, 150], [212, 198, 58, 150], [46, 204, 113, 150]];
-const DENSITY: RGBA[] = [[255, 236, 160, 140], [255, 196, 90, 165], [245, 130, 50, 190], [215, 60, 60, 210], [130, 30, 90, 225]];
+const GREEN: RGBA = [58, 209, 107, 200],
+  RED: RGBA = [255, 74, 61, 220],
+  BLUE: RGBA = [74, 168, 255, 70],
+  ORANGE: RGBA = [255, 138, 30, 210],
+  YELLOW: RGBA = [255, 210, 58, 220];
+const VALUE: RGBA[] = [
+  [192, 57, 43, 150],
+  [230, 126, 34, 150],
+  [212, 198, 58, 150],
+  [46, 204, 113, 150],
+];
+const DENSITY: RGBA[] = [
+  [255, 236, 160, 140],
+  [255, 196, 90, 165],
+  [245, 130, 50, 190],
+  [215, 60, 60, 210],
+  [130, 30, 90, 225],
+];
 const DENSITY_STEP = 160; // people per colour step: a full lot of houses is one step, the densest lots five
 const isBuilding = (v: number): boolean => isZoneTile(v) || isHouse(v);
 
@@ -62,8 +175,16 @@ export class OverlayLayer {
     map.on('tiles', () => this.invalidate());
   }
 
-  setMode(m: OverlayMode): void { if (m !== this.mode) { this.mode = m; this.invalidate(); } }
-  invalidate(): void { this.canvases.clear(); this.coverDirty = true; }
+  setMode(m: OverlayMode): void {
+    if (m !== this.mode) {
+      this.mode = m;
+      this.invalidate();
+    }
+  }
+  invalidate(): void {
+    this.canvases.clear();
+    this.coverDirty = true;
+  }
 
   /** 64x64 overlay image for a plot (null in normal mode or when the plot isn't loaded). */
   canvasFor(cx: number, cy: number): HTMLCanvasElement | null {
@@ -81,7 +202,11 @@ export class OverlayLayer {
 
   private computeCoverage(): void {
     this.coverDirty = false;
-    this.fireCover.clear(); this.policeCover.clear(); this.schoolCover.clear(); this.xmasCover.clear(); this.sources = [];
+    this.fireCover.clear();
+    this.policeCover.clear();
+    this.schoolCover.clear();
+    this.xmasCover.clear();
+    this.sources = [];
     const uni = this.uniOwners();
     const R = CHRISTMAS_TREE_RANGE;
     for (const t of this.xmasTrees()) for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) this.xmasCover.add((t.y + dy) * 65536 + (t.x + dx));
@@ -94,23 +219,32 @@ export class OverlayLayer {
         if (!(v & ZONEBIT) || !(v & PWRBIT)) continue;
         const id = v & LOMASK;
         if (id !== FIRESTATION && id !== POLICESTATION && id !== SCHOOL) continue;
-        const x = cx * CHUNK + (i % CHUNK), y = cy * CHUNK + Math.floor(i / CHUNK);
+        const x = cx * CHUNK + (i % CHUNK),
+          y = cy * CHUNK + Math.floor(i / CHUNK);
         let r = id === FIRESTATION ? FIRE_STATION_RANGE : id === POLICESTATION ? POLICE_RANGE : SCHOOL_RANGE;
-        if (id === POLICESTATION && uni.size) { const o = this.ownerAt(x, y); if (o && uni.has(o)) r *= UNIVERSITY_POLICE_FACTOR; }
+        if (id === POLICESTATION && uni.size) {
+          const o = this.ownerAt(x, y);
+          if (o && uni.has(o)) r *= UNIVERSITY_POLICE_FACTOR;
+        }
         const set = id === FIRESTATION ? this.fireCover : id === POLICESTATION ? this.policeCover : this.schoolCover;
         for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) set.add((y + dy) * 65536 + (x + dx));
       }
     }
   }
 
-  private get(x: number, y: number): number { return this.map.get(x, y) ?? 0; }
+  private get(x: number, y: number): number {
+    return this.map.get(x, y) ?? 0;
+  }
 
   /** Pollution for every tile of the plot at (bx, by), from sources in loaded chunks (shared formula). */
   private pollution(bx: number, by: number): Float32Array {
     const out = new Float32Array(CHUNK * CHUNK);
-    const R = POLLUTION_MAX_RADIUS, src = this.sources;
+    const R = POLLUTION_MAX_RADIUS,
+      src = this.sources;
     for (let k = 0; k < src.length; k += 4) {
-      const sx = src[k], sy = src[k + 1], s = { strength: src[k + 2], radius: src[k + 3] };
+      const sx = src[k],
+        sy = src[k + 1],
+        s = { strength: src[k + 2], radius: src[k + 3] };
       if (sx < bx - R || sx >= bx + CHUNK + R || sy < by - R || sy >= by + CHUNK + R) continue;
       for (let y = Math.max(by, sy - s.radius); y <= Math.min(by + CHUNK - 1, sy + s.radius); y++)
         for (let x = Math.max(bx, sx - s.radius); x <= Math.min(bx + CHUNK - 1, sx + s.radius); x++)
@@ -121,24 +255,34 @@ export class OverlayLayer {
 
   private build(cx: number, cy: number, tiles: Uint32Array): HTMLCanvasElement {
     const c = document.createElement('canvas');
-    c.width = CHUNK; c.height = CHUNK;
+    c.width = CHUNK;
+    c.height = CHUNK;
     const g = c.getContext('2d')!;
     const img = g.createImageData(CHUNK, CHUNK);
-    const put = (i: number, col: RGBA) => { img.data[i * 4] = col[0]; img.data[i * 4 + 1] = col[1]; img.data[i * 4 + 2] = col[2]; img.data[i * 4 + 3] = col[3]; };
-    const bx = cx * CHUNK, by = cy * CHUNK;
+    const put = (i: number, col: RGBA) => {
+      img.data[i * 4] = col[0];
+      img.data[i * 4 + 1] = col[1];
+      img.data[i * 4 + 2] = col[2];
+      img.data[i * 4 + 3] = col[3];
+    };
+    const bx = cx * CHUNK,
+      by = cy * CHUNK;
     const own = this.isOwn(cx, cy);
     const value = this.mode === 'value' ? this.landValues(bx, by) : null;
     const smog = this.mode === 'pollution' ? this.pollution(bx, by) : null;
     const dens = this.mode === 'density' ? this.density(bx, by) : null;
     for (let i = 0; i < tiles.length; i++) {
-      const v = tiles[i], id = v & LOMASK;
-      const x = bx + (i % CHUNK), y = by + Math.floor(i / CHUNK), k = y * 65536 + x;
+      const v = tiles[i],
+        id = v & LOMASK;
+      const x = bx + (i % CHUNK),
+        y = by + Math.floor(i / CHUNK),
+        k = y * 65536 + x;
       switch (this.mode) {
         case 'power':
-          if (v & CONDBIT) put(i, (v & PWRBIT) ? GREEN : RED);
+          if (v & CONDBIT) put(i, v & PWRBIT ? GREEN : RED);
           break;
         case 'fire':
-          if (isBuilding(v) && (v & BURNBIT) && !this.fireCover.has(k)) put(i, RED);
+          if (isBuilding(v) && v & BURNBIT && !this.fireCover.has(k)) put(i, RED);
           else if (this.fireCover.has(k)) put(i, BLUE);
           break;
         case 'crime':
@@ -174,17 +318,20 @@ export class OverlayLayer {
   private density(bx: number, by: number): Uint8Array {
     const out = new Uint8Array(CHUNK * CHUNK);
     // lot centres just outside the plot still cover its edge tiles
-    for (let y = by - 1; y <= by + CHUNK; y++) for (let x = bx - 1; x <= bx + CHUNK; x++) {
-      const v = this.get(x, y);
-      if (!(v & ZONEBIT)) continue;
-      const people = this.lotPeople(v, x, y);
-      if (!people) continue;
-      const step = Math.min(DENSITY.length, Math.ceil(people / DENSITY_STEP));
-      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-        const lx = x + dx - bx, ly = y + dy - by;
-        if (lx >= 0 && lx < CHUNK && ly >= 0 && ly < CHUNK) out[ly * CHUNK + lx] = step;
+    for (let y = by - 1; y <= by + CHUNK; y++)
+      for (let x = bx - 1; x <= bx + CHUNK; x++) {
+        const v = this.get(x, y);
+        if (!(v & ZONEBIT)) continue;
+        const people = this.lotPeople(v, x, y);
+        if (!people) continue;
+        const step = Math.min(DENSITY.length, Math.ceil(people / DENSITY_STEP));
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++) {
+            const lx = x + dx - bx,
+              ly = y + dy - by;
+            if (lx >= 0 && lx < CHUNK && ly >= 0 && ly < CHUNK) out[ly * CHUNK + lx] = step;
+          }
       }
-    }
     return out;
   }
 
@@ -209,30 +356,47 @@ export class OverlayLayer {
    * own city outside police cover. Box sums keep it to O(1) per tile.
    */
   private landValues(bx: number, by: number): Uint8Array {
-    const M = 12, W = CHUNK + 2 * M, x0 = bx - M, y0 = by - M;
-    const nat = new Int32Array((W + 1) * (W + 1)), ind = new Int32Array((W + 1) * (W + 1)), com = new Int32Array((W + 1) * (W + 1));
-    for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {
-      const v = this.get(x0 + x, y0 + y), id = v & LOMASK;
-      const o = (y + 1) * (W + 1) + (x + 1), up = y * (W + 1) + (x + 1), left = o - 1, diag = up - 1;
-      const n = isTree(v) || isWater(v) || (id >= 40 && id <= 43) ? 1 : 0;
-      nat[o] = n + nat[up] + nat[left] - nat[diag];
-      ind[o] = (isIndZone(v) ? 1 : 0) + ind[up] + ind[left] - ind[diag];
-      com[o] = (isComZone(v) ? 1 : 0) + com[up] + com[left] - com[diag];
-    }
+    const M = 12,
+      W = CHUNK + 2 * M,
+      x0 = bx - M,
+      y0 = by - M;
+    const nat = new Int32Array((W + 1) * (W + 1)),
+      ind = new Int32Array((W + 1) * (W + 1)),
+      com = new Int32Array((W + 1) * (W + 1));
+    for (let y = 0; y < W; y++)
+      for (let x = 0; x < W; x++) {
+        const v = this.get(x0 + x, y0 + y),
+          id = v & LOMASK;
+        const o = (y + 1) * (W + 1) + (x + 1),
+          up = y * (W + 1) + (x + 1),
+          left = o - 1,
+          diag = up - 1;
+        const n = isTree(v) || isWater(v) || (id >= 40 && id <= 43) ? 1 : 0;
+        nat[o] = n + nat[up] + nat[left] - nat[diag];
+        ind[o] = (isIndZone(v) ? 1 : 0) + ind[up] + ind[left] - ind[diag];
+        com[o] = (isComZone(v) ? 1 : 0) + com[up] + com[left] - com[diag];
+      }
     const box = (a: Int32Array, x: number, y: number, r: number) => {
-      const xa = x - r, ya = y - r, xb = x + r + 1, yb = y + r + 1;
+      const xa = x - r,
+        ya = y - r,
+        xb = x + r + 1,
+        yb = y + r + 1;
       return a[yb * (W + 1) + xb] - a[ya * (W + 1) + xb] - a[yb * (W + 1) + xa] + a[ya * (W + 1) + xa];
     };
     const out = new Uint8Array(CHUNK * CHUNK);
     const smog = this.pollution(bx, by);
     const highCrime = this.isOwn(Math.floor(bx / CHUNK), Math.floor(by / CHUNK)) && this.ownCrime >= CRIME_LAND_VALUE_THRESHOLD;
     for (let i = 0; i < out.length; i++) {
-      const lx = i % CHUNK, ly = Math.floor(i / CHUNK), x = lx + M, y = ly + M;
+      const lx = i % CHUNK,
+        ly = Math.floor(i / CHUNK),
+        x = lx + M,
+        y = ly + M;
       let val = 0;
       if (box(nat, x, y, 3) > 0) val++;
       if (box(ind, x, y, 12) === 0) val++;
       if (box(com, x, y, 8) > 0) val++;
-      const wx = bx + lx, wy = by + ly;
+      const wx = bx + lx,
+        wy = by + ly;
       if (smog[i] >= POLLUTION_HIGH) val--;
       if (smog[i] >= POLLUTION_SEVERE) val--;
       if (this.schoolCover.has(wy * 65536 + wx)) val++;

@@ -1,9 +1,40 @@
 // Canvas 2D renderer: tile mode (chunk canvases blitted from the sprite sheet) and
 // overview mode (minimap + claim rectangles). Redraws only when invalidated.
 import {
-  CHUNK, CHUNKS_X, CHUNKS_Y, WORLD_W, WORLD_H, TILE_PX, MAX_SUBSCRIBED_CHUNKS,
-  LOMASK, ZONEBIT, PWRBIT, ANIMBIT, LIGHTNINGBOLT, FIRE, LASTFIRE, TOOLS, CUSTOM_BUILDINGS, footprintOrigin, toolW, toolH, chunkKey, parseChunkKey, clamp, inWorld,
-  sheetIndex, Disaster, DISASTERS, TICK_MS, type ActiveDisaster, DIRT, isCustomTile, SLEIGH_TILES, SLEIGH_PX, SLEIGH_NOSE, type Sleigh,
+  CHUNK,
+  CHUNKS_X,
+  CHUNKS_Y,
+  WORLD_W,
+  WORLD_H,
+  TILE_PX,
+  MAX_SUBSCRIBED_CHUNKS,
+  LOMASK,
+  ZONEBIT,
+  PWRBIT,
+  ANIMBIT,
+  LIGHTNINGBOLT,
+  FIRE,
+  LASTFIRE,
+  TOOLS,
+  CUSTOM_BUILDINGS,
+  footprintOrigin,
+  toolW,
+  toolH,
+  chunkKey,
+  parseChunkKey,
+  clamp,
+  inWorld,
+  sheetIndex,
+  Disaster,
+  DISASTERS,
+  TICK_MS,
+  type ActiveDisaster,
+  DIRT,
+  isCustomTile,
+  SLEIGH_TILES,
+  SLEIGH_PX,
+  SLEIGH_NOSE,
+  type Sleigh,
 } from '@globalcity/shared';
 import type { ClaimInfo, Flight, ToolId, Voyage } from '@globalcity/shared';
 import type { SpriteSheet, Minimap } from './assets.ts';
@@ -30,12 +61,30 @@ const LIGHTS_ON = 0.5;
 import { MapTileLayer } from './maptiles.ts';
 import { WORLD_W as FLIGHT_WORLD_W } from '@globalcity/shared';
 
-export interface Camera { x: number; y: number; zoom: number }
-export interface TilePos { x: number; y: number }
-export interface ChunkRect { cx0: number; cy0: number; cx1: number; cy1: number }
+export interface Camera {
+  x: number;
+  y: number;
+  zoom: number;
+}
+export interface TilePos {
+  x: number;
+  y: number;
+}
+export interface ChunkRect {
+  cx0: number;
+  cy0: number;
+  cx1: number;
+  cy1: number;
+}
 
 /** A well-mixed hash of an integer to [0, 1). */
-const hash01 = (n: number): number => { let h = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b); h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
+const hash01 = (n: number): number => {
+  let h = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+};
 export const TILE_MODE_ZOOM = 0.5;
 export const MAX_ZOOM = 3;
 /** Pixels per tile a chunk canvas is drawn at: the sprite size, or half of it when that is all the screen shows
@@ -52,9 +101,20 @@ type RendererEvents = { camera: Camera; settle: Camera; hover: TilePos | null; t
 
 /** `anim`: tile indices in this chunk that animate (ANIMBIT set, or an animated id for old servers);
  *  `frame`: the tile id currently drawn for each of them (advanced through ANI_TILE every ANIM_MS while on screen). */
-interface ChunkCanvas { key: string; canvas: HTMLCanvasElement; g: CanvasRenderingContext2D; lastUse: number; anim: Set<number>; frame: Map<number, number>; res: number }
+interface ChunkCanvas {
+  key: string;
+  canvas: HTMLCanvasElement;
+  g: CanvasRenderingContext2D;
+  lastUse: number;
+  anim: Set<number>;
+  frame: Map<number, number>;
+  res: number;
+}
 
-export function isFireTile(v: number): boolean { const id = v & LOMASK; return id >= FIRE && id <= LASTFIRE; }
+export function isFireTile(v: number): boolean {
+  const id = v & LOMASK;
+  return id >= FIRE && id <= LASTFIRE;
+}
 /** True when the tile value animates: the server flags animated tiles with ANIMBIT; old servers do not, so animated ids count too. */
 /**
  * Ids that sit in a closed animation loop (fire, smoke, traffic, radar, ...). ANI_TILE also holds
@@ -66,12 +126,20 @@ const LOOPING = (() => {
   for (let id = 0; id < ANI_TILE.length; id++) {
     if (!isAnimatedId(id)) continue;
     let cur = id;
-    for (let k = 0; k < 32; k++) { cur = ANI_TILE[cur]; if (cur === id) { set.add(id); break; } }
+    for (let k = 0; k < 32; k++) {
+      cur = ANI_TILE[cur];
+      if (cur === id) {
+        set.add(id);
+        break;
+      }
+    }
   }
   return set;
 })();
 /** Animate when the server flagged it (ANIMBIT), or, for old servers, when the id is in a closed loop. */
-export function isAnimatedTile(v: number): boolean { return (v & ANIMBIT) !== 0 || LOOPING.has(v & LOMASK); }
+export function isAnimatedTile(v: number): boolean {
+  return (v & ANIMBIT) !== 0 || LOOPING.has(v & LOMASK);
+}
 
 function parseHex(hex: string): [number, number, number] | null {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
@@ -94,7 +162,12 @@ export function desaturate(hex: string, keep = 0.25): string {
 }
 
 /** How a claim is drawn: its (possibly greyed) colour, the label, and whether it is abandoned. */
-export interface ClaimStyle { color: string; label: string; idle: ClaimIdle; abandoned: boolean }
+export interface ClaimStyle {
+  color: string;
+  label: string;
+  idle: ClaimIdle;
+  abandoned: boolean;
+}
 export function claimStyle(c: ClaimInfo, own: boolean): ClaimStyle {
   const idle = claimIdleState(c);
   const abandoned = idle === 'abandoned';
@@ -102,7 +175,13 @@ export function claimStyle(c: ClaimInfo, own: boolean): ClaimStyle {
 }
 
 /** Test hook record of a presence marker drawn in the last frame. */
-export interface DrawnPresence { id: string; kind: 'cursor' | 'dot'; x: number; y: number; label: string }
+export interface DrawnPresence {
+  id: string;
+  kind: 'cursor' | 'dot';
+  x: number;
+  y: number;
+  label: string;
+}
 
 export class Renderer extends Emitter<RendererEvents> {
   readonly ctx: CanvasRenderingContext2D;
@@ -113,7 +192,9 @@ export class Renderer extends Emitter<RendererEvents> {
   touchCursor: TilePos | null = null;
   /** touch drawing waiting to be confirmed: every tile it would build (`ok` false where it can't) */
   plan: { tool: ToolId; tiles: readonly (TilePos & { ok: boolean })[] } | null = null;
-  cssW = 1; cssH = 1; dpr = 1;
+  cssW = 1;
+  cssH = 1;
+  dpr = 1;
   /** chunks currently subscribed (for the pending-vs-unsubscribed checker shade) */
   subscribed = new Set<string>();
   /** css px covered by fixed UI along the left / top edges (toolbar, top bar); chunk labels are kept out from under them */
@@ -138,7 +219,12 @@ export class Renderer extends Emitter<RendererEvents> {
   readonly shipLayer = new ShipLayer();
   /** Santa's sleigh in December (see shared/santa.ts) and its sprite */
   readonly santaLayer = new SantaLayer();
-  private readonly sleighImg: HTMLImageElement = (() => { const i = new Image(); i.onload = () => this.invalidate(); i.src = versioned('/assets/vehicles/sleigh.png'); return i; })();
+  private readonly sleighImg: HTMLImageElement = (() => {
+    const i = new Image();
+    i.onload = () => this.invalidate();
+    i.src = versioned('/assets/vehicles/sleigh.png');
+    return i;
+  })();
   /** map overlays (power, fire, crime, traffic, land value), zoomed-in view only */
   overlay!: OverlayLayer;
   /** custom-building layer: non-square buildings drawn as one image */
@@ -195,7 +281,7 @@ export class Renderer extends Emitter<RendererEvents> {
       for (const b of this.customs.ofKind('university')) {
         const v = this.map.get(b.x + 1, b.y + 1);
         const o = this.overlay.ownerAt(b.x + 1, b.y + 1);
-        if (v !== undefined && (v & PWRBIT) && o) out.add(o);
+        if (v !== undefined && v & PWRBIT && o) out.add(o);
       }
       return out;
     };
@@ -204,29 +290,50 @@ export class Renderer extends Emitter<RendererEvents> {
       const out: { x: number; y: number }[] = [];
       for (const b of this.customs.ofKind('christmastree')) {
         const v = this.map.get(b.x + 1, b.y + 1);
-        if (v !== undefined && (v & PWRBIT)) out.push({ x: b.x + 1, y: b.y + 1 });
+        if (v !== undefined && v & PWRBIT) out.push({ x: b.x + 1, y: b.y + 1 });
       }
       return out;
     };
-    try { this.nightLights = new NightLights(sheet); this.nightLights.onReady = () => this.invalidate(); } catch { this.nightLights = null; }
+    try {
+      this.nightLights = new NightLights(sheet);
+      this.nightLights.onReady = () => this.invalidate();
+    } catch {
+      this.nightLights = null;
+    }
     this.customs.onChange = () => this.invalidate();
     // day and night move with the real sun: check once a minute and redraw when the shade changed
-    if (this.animated) setInterval(() => { if (this.night.update()) this.invalidate(); }, NIGHT_REFRESH_MS);
+    if (this.animated)
+      setInterval(() => {
+        if (this.night.update()) this.invalidate();
+      }, NIGHT_REFRESH_MS);
     this.customs.load();
     this.overlay.isOwn = (cx, cy) => this.state.ownsChunk(cx, cy);
     map.on('tiles', () => this.invalidate());
-    map.on('drop', (key) => { this.chunkCanvases.delete(key); this.invalidate(); });
-    state.on('claims', () => { this.claimsVersion++; this.invalidate(); });
+    map.on('drop', (key) => {
+      this.chunkCanvases.delete(key);
+      this.invalidate();
+    });
+    state.on('claims', () => {
+      this.claimsVersion++;
+      this.invalidate();
+    });
     state.on('stats', () => this.invalidate());
     state.on('tool', () => this.invalidate());
-    state.on('me', () => { this.chunkCanvases.clear(); this.claimsVersion++; this.invalidate(); });
+    state.on('me', () => {
+      this.chunkCanvases.clear();
+      this.claimsVersion++;
+      this.invalidate();
+    });
     this.presence = new PresenceTracker(state);
     state.on('presence', () => {
       this.invalidate();
       // when frames stop, one more redraw after the stale timeout removes the markers
       if (this.animated) {
         if (this.presenceTimer) clearTimeout(this.presenceTimer);
-        this.presenceTimer = setTimeout(() => { this.presenceTimer = null; this.invalidate(); }, PRESENCE_STALE_MS + 50);
+        this.presenceTimer = setTimeout(() => {
+          this.presenceTimer = null;
+          this.invalidate();
+        }, PRESENCE_STALE_MS + 50);
       }
     });
   }
@@ -234,7 +341,9 @@ export class Renderer extends Emitter<RendererEvents> {
   // ---------- sizing ----------
   setSize(cssW: number, cssH: number, dpr = 1): void {
     const wasFit = this.cam.zoom <= this.fitZoom() * 1.001;
-    this.cssW = Math.max(1, cssW); this.cssH = Math.max(1, cssH); this.dpr = dpr;
+    this.cssW = Math.max(1, cssW);
+    this.cssH = Math.max(1, cssH);
+    this.dpr = dpr;
     this.canvas.width = Math.round(this.cssW * dpr);
     this.canvas.height = Math.round(this.cssH * dpr);
     if (wasFit) this.cam.zoom = this.fitZoom();
@@ -246,7 +355,8 @@ export class Renderer extends Emitter<RendererEvents> {
     // Measure the canvas itself: on phones window.innerHeight and the CSS height differ while the
     // address bar is visible, and a mismatch stretches the bitmap so taps land on the wrong tile.
     const r = this.canvas.getBoundingClientRect();
-    const w = r.width > 0 ? r.width : window.innerWidth, h = r.height > 0 ? r.height : window.innerHeight;
+    const w = r.width > 0 ? r.width : window.innerWidth,
+      h = r.height > 0 ? r.height : window.innerHeight;
     this.setSize(w, h, Math.min(2, window.devicePixelRatio || 1));
   }
 
@@ -262,16 +372,27 @@ export class Renderer extends Emitter<RendererEvents> {
   }
 
   // ---------- camera ----------
-  tilePx(): number { return TILE_PX * this.cam.zoom; }
-  isTileMode(): boolean { return this.cam.zoom >= TILE_MODE_ZOOM - 1e-9; }
-  fitZoom(): number { return Math.min(this.cssW / (WORLD_W * TILE_PX), this.cssH / (WORLD_H * TILE_PX)); }
-  minZoom(): number { return Math.min(this.fitZoom(), TILE_MODE_ZOOM); }
+  tilePx(): number {
+    return TILE_PX * this.cam.zoom;
+  }
+  isTileMode(): boolean {
+    return this.cam.zoom >= TILE_MODE_ZOOM - 1e-9;
+  }
+  fitZoom(): number {
+    return Math.min(this.cssW / (WORLD_W * TILE_PX), this.cssH / (WORLD_H * TILE_PX));
+  }
+  minZoom(): number {
+    return Math.min(this.fitZoom(), TILE_MODE_ZOOM);
+  }
 
   zoomLevels(): number[] {
     const fit = this.fitZoom();
     const levels = [MAX_ZOOM, 2, 1, TILE_MODE_ZOOM];
     let z = TILE_MODE_ZOOM;
-    while (z / 2 > fit * 1.15) { z /= 2; levels.push(z); }
+    while (z / 2 > fit * 1.15) {
+      z /= 2;
+      levels.push(z);
+    }
     levels.push(fit);
     return [...new Set(levels)].sort((a, b) => a - b);
   }
@@ -289,7 +410,10 @@ export class Renderer extends Emitter<RendererEvents> {
       this.emit('camera', this.cam);
     }
     if (this.settleTimer) clearTimeout(this.settleTimer);
-    this.settleTimer = setTimeout(() => { this.settleTimer = null; this.emit('settle', this.cam); }, SETTLE_MS);
+    this.settleTimer = setTimeout(() => {
+      this.settleTimer = null;
+      this.emit('settle', this.cam);
+    }, SETTLE_MS);
   }
 
   panBy(dxCss: number, dyCss: number): void {
@@ -313,8 +437,13 @@ export class Renderer extends Emitter<RendererEvents> {
     const levels = this.zoomLevels();
     const z = this.cam.zoom;
     let target = z;
-    if (dir > 0) { const next = levels.find((l) => l > z * 1.001); target = next ?? levels[levels.length - 1]; }
-    else { const prev = [...levels].reverse().find((l) => l < z / 1.001); target = prev ?? levels[0]; }
+    if (dir > 0) {
+      const next = levels.find((l) => l > z * 1.001);
+      target = next ?? levels[levels.length - 1];
+    } else {
+      const prev = [...levels].reverse().find((l) => l < z / 1.001);
+      target = prev ?? levels[0];
+    }
     this.zoomAround(cssX, cssY, target);
   }
 
@@ -329,10 +458,15 @@ export class Renderer extends Emitter<RendererEvents> {
     this.flash = { x, y, t0: now };
     this.invalidate();
   }
-  get flashActive(): boolean { return this.flash !== null; }
+  get flashActive(): boolean {
+    return this.flash !== null;
+  }
 
   /** Fit the whole world in the window. */
-  showWorld(): void { this.fly = null; this.setCamera(WORLD_W / 2, WORLD_H / 2, this.fitZoom()); }
+  showWorld(): void {
+    this.fly = null;
+    this.setCamera(WORLD_W / 2, WORLD_H / 2, this.fitZoom());
+  }
 
   screenToTile(cssX: number, cssY: number): { x: number; y: number } {
     const tp = this.tilePx();
@@ -345,20 +479,38 @@ export class Renderer extends Emitter<RendererEvents> {
   /** The plane or ship drawn under a screen point (CSS px), if any: the nearest within reach of its sprite. */
   pickVehicle(cssX: number, cssY: number): { kind: 'plane'; flight: Flight } | { kind: 'ship'; voyage: Voyage } | null {
     const reach = Math.max(14, this.isTileMode() ? this.tilePx() * 1.5 : 10);
-    let best: { kind: 'plane'; flight: Flight } | { kind: 'ship'; voyage: Voyage } | null = null, bestD = reach;
+    let best: { kind: 'plane'; flight: Flight } | { kind: 'ship'; voyage: Voyage } | null = null,
+      bestD = reach;
     const dist = (tx: number, ty: number): number => {
       let d = Infinity;
-      for (const off of [0, -WORLD_W, WORLD_W]) { const p = this.tileToScreen(tx + off, ty); d = Math.min(d, Math.hypot(p.x - cssX, p.y - cssY)); }
+      for (const off of [0, -WORLD_W, WORLD_W]) {
+        const p = this.tileToScreen(tx + off, ty);
+        d = Math.min(d, Math.hypot(p.x - cssX, p.y - cssY));
+      }
       return d;
     };
-    if (this.flightLayer.interCity) for (const f of this.flightLayer.flights()) { const d = dist(f.x, f.y); if (d < bestD) { bestD = d; best = { kind: 'plane', flight: f }; } }
-    for (const v of this.shipLayer.voyages()) { const d = dist(v.x, v.y); if (d < bestD) { bestD = d; best = { kind: 'ship', voyage: v }; } }
+    if (this.flightLayer.interCity)
+      for (const f of this.flightLayer.flights()) {
+        const d = dist(f.x, f.y);
+        if (d < bestD) {
+          bestD = d;
+          best = { kind: 'plane', flight: f };
+        }
+      }
+    for (const v of this.shipLayer.voyages()) {
+      const d = dist(v.x, v.y);
+      if (d < bestD) {
+        bestD = d;
+        best = { kind: 'ship', voyage: v };
+      }
+    }
     return best;
   }
 
   /** Visible world rect in tile units. */
   viewRect(): { x0: number; y0: number; x1: number; y1: number } {
-    const a = this.screenToTile(0, 0), b = this.screenToTile(this.cssW, this.cssH);
+    const a = this.screenToTile(0, 0),
+      b = this.screenToTile(this.cssW, this.cssH);
     return { x0: a.x, y0: a.y, x1: b.x, y1: b.y };
   }
   centerChunk(): { cx: number; cy: number } {
@@ -381,8 +533,9 @@ export class Renderer extends Emitter<RendererEvents> {
     const r = this.visibleChunkRect(1);
     const out: [number, number][] = [];
     for (let cy = r.cy0; cy <= r.cy1; cy++) for (let cx = r.cx0; cx <= r.cx1; cx++) out.push([cx, cy]);
-    const ccx = this.cam.x / CHUNK - 0.5, ccy = this.cam.y / CHUNK - 0.5;
-    out.sort((a, b) => ((a[0] - ccx) ** 2 + (a[1] - ccy) ** 2) - ((b[0] - ccx) ** 2 + (b[1] - ccy) ** 2));
+    const ccx = this.cam.x / CHUNK - 0.5,
+      ccy = this.cam.y / CHUNK - 0.5;
+    out.sort((a, b) => (a[0] - ccx) ** 2 + (a[1] - ccy) ** 2 - ((b[0] - ccx) ** 2 + (b[1] - ccy) ** 2));
     return out.slice(0, MAX_SUBSCRIBED_CHUNKS);
   }
 
@@ -410,7 +563,11 @@ export class Renderer extends Emitter<RendererEvents> {
   invalidate(): void {
     if (this.scheduled) return;
     this.scheduled = true;
-    if (this.animated) requestAnimationFrame(() => { this.scheduled = false; this.render(); });
+    if (this.animated)
+      requestAnimationFrame(() => {
+        this.scheduled = false;
+        this.render();
+      });
     else this.scheduled = false;
   }
 
@@ -422,7 +579,8 @@ export class Renderer extends Emitter<RendererEvents> {
     // interpolate zoom geometrically, position linearly
     const zoom = f.from.zoom * (f.to.zoom / f.from.zoom) ** e;
     this.setCamera(f.from.x + (f.to.x - f.from.x) * e, f.from.y + (f.to.y - f.from.y) * e, zoom);
-    if (t >= 1) this.fly = null; else this.invalidate();
+    if (t >= 1) this.fly = null;
+    else this.invalidate();
   }
 
   /** New list of disasters on the go: tornadoes glide from where they were to where they are now. */
@@ -445,7 +603,8 @@ export class Renderer extends Emitter<RendererEvents> {
 
   /** A quake in view shakes the picture. */
   private quakeShake(): { x: number; y: number } {
-    const v = this.viewRect(), now = Date.now();
+    const v = this.viewRect(),
+      now = Date.now();
     for (const { d } of this.disasters) {
       if (d.kind !== Disaster.Earthquake || now > d.until) continue;
       if (d.x < v.x0 - 64 || d.x > v.x1 + 64 || d.y < v.y0 - 64 || d.y > v.y1 + 64) continue;
@@ -458,18 +617,28 @@ export class Renderer extends Emitter<RendererEvents> {
   /** Tornadoes, snow and rain over the cities they hit; zoomed out, a marker for each disaster. */
   private renderDisasters(g: CanvasRenderingContext2D, now: number): void {
     if (!this.disasters.length) return;
-    const tile = this.isTileMode(), d = this.dpr, W = this.canvas.width, H = this.canvas.height;
+    const tile = this.isTileMode(),
+      d = this.dpr,
+      W = this.canvas.width,
+      H = this.canvas.height;
     let animate = false;
     for (const e of this.disasters) {
-      const p = this.disasterPos(e, now), x = this.dx(p.x), y = this.dy(p.y);
+      const p = this.disasterPos(e, now),
+        x = this.dx(p.x),
+        y = this.dy(p.y);
       const kind = e.d.kind;
       if (!tile) {
         if (x < -40 || y < -40 || x > W + 40 || y > H + 40) continue;
         // a pulsing ring and the disaster's emoji
         const r = (8 + 3 * Math.sin(now / 250)) * d;
-        g.strokeStyle = 'rgba(255,80,40,0.9)'; g.lineWidth = Math.max(1, 2 * d);
-        g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.stroke();
-        g.font = `${Math.round(14 * d)}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.strokeStyle = 'rgba(255,80,40,0.9)';
+        g.lineWidth = Math.max(1, 2 * d);
+        g.beginPath();
+        g.arc(x, y, r, 0, Math.PI * 2);
+        g.stroke();
+        g.font = `${Math.round(14 * d)}px sans-serif`;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
         g.fillText(DISASTERS[kind].emoji, x, y - r - 8 * d);
         animate = true;
         continue;
@@ -477,35 +646,55 @@ export class Renderer extends Emitter<RendererEvents> {
       const tp = this.tilePx() * d;
       if (kind === Disaster.Tornado) {
         if (x < -tp * 6 || y < -tp * 6 || x > W + tp * 6 || y > H + tp * 6) continue;
-        if (this.sprites) this.sprites.drawTornado(g, x, y, tp * 3, now); else { g.fillStyle = 'rgba(200,200,200,0.8)'; g.fillRect(x - tp, y - tp * 2, tp * 2, tp * 2); }
+        if (this.sprites) this.sprites.drawTornado(g, x, y, tp * 3, now);
+        else {
+          g.fillStyle = 'rgba(200,200,200,0.8)';
+          g.fillRect(x - tp, y - tp * 2, tp * 2, tp * 2);
+        }
         animate = true;
       } else if (kind === Disaster.Blizzard || kind === Disaster.Storm) {
         // snow or rain over the city: a deterministic field of flakes/streaks drifting with time
         const span = 48 * tp; // about the size of a city
         if (x < -span || y < -span || x > W + span || y > H + span) continue;
         g.save();
-        g.beginPath(); g.arc(x, y, span, 0, Math.PI * 2); g.clip();
+        g.beginPath();
+        g.arc(x, y, span, 0, Math.PI * 2);
+        g.clip();
         const snow = kind === Disaster.Blizzard;
         // a haze over the city (a whiteout, or grey rain), then the flakes or streaks
         const haze = g.createRadialGradient(x, y, span * 0.2, x, y, span);
         haze.addColorStop(0, snow ? 'rgba(235,242,250,0.38)' : 'rgba(40,55,80,0.32)');
         haze.addColorStop(1, 'rgba(0,0,0,0)');
-        g.fillStyle = haze; g.fillRect(x - span, y - span, span * 2, span * 2);
+        g.fillStyle = haze;
+        g.fillRect(x - span, y - span, span * 2, span * 2);
         g.fillStyle = snow ? 'rgba(255,255,255,0.9)' : 'rgba(170,200,255,0.6)';
-        g.strokeStyle = 'rgba(190,215,255,0.7)'; g.lineWidth = Math.max(1, d);
-        const n = 1100, t = now / 1000, flake = Math.max(2, Math.round(tp / 5));
+        g.strokeStyle = 'rgba(190,215,255,0.7)';
+        g.lineWidth = Math.max(1, d);
+        const n = 1100,
+          t = now / 1000,
+          flake = Math.max(2, Math.round(tp / 5));
         for (let i = 0; i < n; i++) {
-          const fx = hash01(i * 2 + 1), fy = hash01(i * 2 + 2); // independent positions, no stripes
+          const fx = hash01(i * 2 + 1),
+            fy = hash01(i * 2 + 2); // independent positions, no stripes
           const px = x - span + ((fx * 2 * span + t * (snow ? 30 : 160) * d) % (2 * span));
           const py = y - span + ((fy * 2 * span + t * (snow ? 60 : 420) * d) % (2 * span));
           if (snow) g.fillRect(px, py, flake, flake);
-          else { g.beginPath(); g.moveTo(px, py); g.lineTo(px - 3 * d, py + 9 * d); g.stroke(); }
+          else {
+            g.beginPath();
+            g.moveTo(px, py);
+            g.lineTo(px - 3 * d, py + 9 * d);
+            g.stroke();
+          }
         }
         g.restore();
         animate = true;
       }
     }
-    if (animate && this.animated && !this.disasterTimer) this.disasterTimer = setTimeout(() => { this.disasterTimer = null; this.invalidate(); }, 80);
+    if (animate && this.animated && !this.disasterTimer)
+      this.disasterTimer = setTimeout(() => {
+        this.disasterTimer = null;
+        this.invalidate();
+      }, 80);
   }
 
   // ---------- rendering ----------
@@ -522,7 +711,11 @@ export class Renderer extends Emitter<RendererEvents> {
     this.processDirty();
     this.visibleAnim.length = 0;
     this.drawnClaims.clear();
-    if (this.isTileMode()) { this.ovCache = null; this.ovLastZoom = NaN; this.renderTiles(g, now); } else this.renderOverview(g);
+    if (this.isTileMode()) {
+      this.ovCache = null;
+      this.ovLastZoom = NaN;
+      this.renderTiles(g, now);
+    } else this.renderOverview(g);
     this.renderFlights(g);
     this.renderDisasters(g, now);
     this.renderPresence(g, now);
@@ -534,13 +727,20 @@ export class Renderer extends Emitter<RendererEvents> {
 
   // ---------- tile animation ----------
   /** True when at least one animated tile (fire, smoke, traffic, ...) was blitted in the last frame. */
-  get animVisible(): boolean { return this.visibleAnim.length > 0; }
+  get animVisible(): boolean {
+    return this.visibleAnim.length > 0;
+  }
   /** True when a tile animation timer is pending (test hook: must be false while nothing animated is on screen). */
-  get animTimerPending(): boolean { return this.animTimer !== null; }
+  get animTimerPending(): boolean {
+    return this.animTimer !== null;
+  }
 
   private scheduleAnim(): void {
     if (this.animTimer) return;
-    this.animTimer = setTimeout(() => { this.animTimer = null; this.stepAnim(); }, ANIM_MS);
+    this.animTimer = setTimeout(() => {
+      this.animTimer = null;
+      this.stepAnim();
+    }, ANIM_MS);
   }
 
   /** Advance every animated tile of the on-screen chunks one frame through ANI_TILE, redraw just those tiles, invalidate. */
@@ -554,7 +754,7 @@ export class Renderer extends Emitter<RendererEvents> {
       if (!tiles) continue;
       const own = this.state.ownsChunk(cx, cy);
       for (const idx of cc.anim) {
-        const cur = cc.frame.get(idx) ?? (tiles[idx] & LOMASK);
+        const cur = cc.frame.get(idx) ?? tiles[idx] & LOMASK;
         const next = ANI_TILE[cur];
         if (next === undefined || next === cur) continue;
         cc.frame.set(idx, next);
@@ -566,21 +766,25 @@ export class Renderer extends Emitter<RendererEvents> {
 
   /** Test hook: the tile id currently drawn for world tile (x,y), or undefined if its chunk canvas is not built. */
   frameAt(x: number, y: number): number | undefined {
-    const cx = Math.floor(x / CHUNK), cy = Math.floor(y / CHUNK);
+    const cx = Math.floor(x / CHUNK),
+      cy = Math.floor(y / CHUNK);
     const cc = this.chunkCanvases.get(chunkKey(cx, cy));
     if (!cc) return undefined;
     const idx = (y - cy * CHUNK) * CHUNK + (x - cx * CHUNK);
-    return cc.frame.get(idx) ?? ((this.map.getChunk(cx, cy)?.[idx] ?? 0) & LOMASK);
+    return cc.frame.get(idx) ?? (this.map.getChunk(cx, cy)?.[idx] ?? 0) & LOMASK;
   }
 
   /** Test hook: number of animated tiles tracked in a chunk's canvas. */
-  animCount(cx: number, cy: number): number { return this.chunkCanvases.get(chunkKey(cx, cy))?.anim.size ?? 0; }
+  animCount(cx: number, cy: number): number {
+    return this.chunkCanvases.get(chunkKey(cx, cy))?.anim.size ?? 0;
+  }
 
   // ---------- sprites ----------
   private renderSprites(g: CanvasRenderingContext2D, now: number): void {
     const s = this.sprites;
     if (!s) return;
-    const v = this.viewRect(), r = this.visibleChunkRect(0);
+    const v = this.viewRect(),
+      r = this.visibleChunkRect(0);
     const more = s.frame(now, { ...v, ...r });
     s.draw(g, (tx, ty) => ({ x: this.dx(tx), y: this.dy(ty) }), this.tilePx() * this.dpr);
     if (more && this.animated) this.invalidate();
@@ -590,13 +794,19 @@ export class Renderer extends Emitter<RendererEvents> {
     const flights = this.flightLayer.interCity ? this.flightLayer.flights() : [];
     const ships = this.shipLayer.voyages();
     const sleigh = this.santaLayer.sleigh();
-    if (!flights.length && !ships.length && !sleigh) { if (this.flightLayer.interCity || this.shipLayer.routes.length || this.santaLayer.active) this.scheduleFlights(2000); return; }
-    const W = this.canvas.width, H = this.canvas.height, d = this.dpr;
+    if (!flights.length && !ships.length && !sleigh) {
+      if (this.flightLayer.interCity || this.shipLayer.routes.length || this.santaLayer.active) this.scheduleFlights(2000);
+      return;
+    }
+    const W = this.canvas.width,
+      H = this.canvas.height,
+      d = this.dpr;
     const tile = this.isTileMode();
     // the world wraps at the date line: try the position and its copies one world-width either side
     const toPx = (tx: number, ty: number) => {
       for (const off of [0, -FLIGHT_WORLD_W, FLIGHT_WORLD_W]) {
-        const x = this.dx(tx + off), y = this.dy(ty);
+        const x = this.dx(tx + off),
+          y = this.dy(ty);
         if (x > -64 * d && x < W + 64 * d && y > -64 * d && y < H + 64 * d) return { x, y };
       }
       return null;
@@ -620,46 +830,67 @@ export class Renderer extends Emitter<RendererEvents> {
       g.strokeStyle = 'rgba(255,255,255,0.35)';
       for (const f of flights) {
         const curX = f.fromX + (f.toX - f.fromX) * f.progress;
-        for (const off of [0, -FLIGHT_WORLD_W, FLIGHT_WORLD_W]) { g.beginPath(); g.moveTo(this.dx(f.fromX + off), this.dy(f.fromY)); g.lineTo(this.dx(curX + off), this.dy(f.y)); g.stroke(); }
+        for (const off of [0, -FLIGHT_WORLD_W, FLIGHT_WORLD_W]) {
+          g.beginPath();
+          g.moveTo(this.dx(f.fromX + off), this.dy(f.fromY));
+          g.lineTo(this.dx(curX + off), this.dy(f.y));
+          g.stroke();
+        }
       }
       g.strokeStyle = 'rgba(160,220,255,0.45)';
-      for (const v of ships) for (const off of [0, -FLIGHT_WORLD_W, FLIGHT_WORLD_W]) {
-        g.beginPath(); g.moveTo(this.dx(v.trail[0] + off), this.dy(v.trail[1]));
-        for (let i = 2; i < v.trail.length; i += 2) g.lineTo(this.dx(v.trail[i] + off), this.dy(v.trail[i + 1]));
-        g.stroke();
-      }
+      for (const v of ships)
+        for (const off of [0, -FLIGHT_WORLD_W, FLIGHT_WORLD_W]) {
+          g.beginPath();
+          g.moveTo(this.dx(v.trail[0] + off), this.dy(v.trail[1]));
+          for (let i = 2; i < v.trail.length; i += 2) g.lineTo(this.dx(v.trail[i] + off), this.dy(v.trail[i + 1]));
+          g.stroke();
+        }
       g.setLineDash([]);
       const r = Math.round(5 * d);
       for (const f of flights) {
-        const at = toPx(f.x, f.y); if (!at) continue;
+        const at = toPx(f.x, f.y);
+        if (!at) continue;
         // plane: a white arrowhead pointing where it flies
-        const len = Math.hypot(f.vx, f.vy) || 1, ux = f.vx / len, uy = f.vy / len;
-        g.fillStyle = '#ffffff'; g.strokeStyle = 'rgba(0,0,0,0.75)';
+        const len = Math.hypot(f.vx, f.vy) || 1,
+          ux = f.vx / len,
+          uy = f.vy / len;
+        g.fillStyle = '#ffffff';
+        g.strokeStyle = 'rgba(0,0,0,0.75)';
         g.beginPath();
         g.moveTo(at.x + ux * r * 1.6, at.y + uy * r * 1.6);
         g.lineTo(at.x - ux * r + uy * r, at.y - uy * r - ux * r);
         g.lineTo(at.x - ux * r * 0.4, at.y - uy * r * 0.4);
         g.lineTo(at.x - ux * r - uy * r, at.y - uy * r + ux * r);
-        g.closePath(); g.fill(); g.stroke();
+        g.closePath();
+        g.fill();
+        g.stroke();
       }
       for (const v of ships) {
-        const at = toPx(v.x, v.y); if (!at) continue;
+        const at = toPx(v.x, v.y);
+        if (!at) continue;
         // ship: a small hull along its heading
-        const ux = v.vx, uy = v.vy, hw = r * 0.55;
-        g.fillStyle = '#e8eef5'; g.strokeStyle = 'rgba(0,30,80,0.9)';
+        const ux = v.vx,
+          uy = v.vy,
+          hw = r * 0.55;
+        g.fillStyle = '#e8eef5';
+        g.strokeStyle = 'rgba(0,30,80,0.9)';
         g.beginPath();
         g.moveTo(at.x + ux * r * 1.4, at.y + uy * r * 1.4);
         g.lineTo(at.x + ux * r * 0.3 + uy * hw, at.y + uy * r * 0.3 - ux * hw);
         g.lineTo(at.x - ux * r * 1.1 + uy * hw, at.y - uy * r * 1.1 - ux * hw);
         g.lineTo(at.x - ux * r * 1.1 - uy * hw, at.y - uy * r * 1.1 + ux * hw);
         g.lineTo(at.x + ux * r * 0.3 - uy * hw, at.y + uy * r * 0.3 + ux * hw);
-        g.closePath(); g.fill(); g.stroke();
+        g.closePath();
+        g.fill();
+        g.stroke();
       }
       g.restore();
       if (sleigh) this.drawSleigh(g, sleigh, toPx, Math.round(30 * d));
     }
     if (visible > 0) {
-      if (tile) { if (this.animated) this.invalidate(); } else this.scheduleFlights(100);
+      if (tile) {
+        if (this.animated) this.invalidate();
+      } else this.scheduleFlights(100);
     } else this.scheduleFlights(1000);
   }
 
@@ -669,78 +900,109 @@ export class Renderer extends Emitter<RendererEvents> {
     const at = toPx(s.x, s.y);
     const img = this.sleighImg;
     if (!at || !img.complete || !img.naturalWidth) return;
-    const h = w * SLEIGH_PX.h / SLEIGH_PX.w;
-    const x0 = Math.round(at.x - w / 2), y0 = Math.round(at.y - h * 0.9); // riding just above the tree top
+    const h = (w * SLEIGH_PX.h) / SLEIGH_PX.w;
+    const x0 = Math.round(at.x - w / 2),
+      y0 = Math.round(at.y - h * 0.9); // riding just above the tree top
     g.imageSmoothingEnabled = false;
     g.globalAlpha = s.alpha;
     g.drawImage(img, x0, y0, Math.round(w), Math.round(h));
-    if (this.nightAtChunk(Math.floor(s.x / CHUNK), Math.floor(s.y / CHUNK)) < LIGHTS_ON) { g.globalAlpha = 1; return; }
-    const nx = x0 + (SLEIGH_NOSE.x + 0.5) * w / SLEIGH_PX.w, ny = y0 + (SLEIGH_NOSE.y + 0.5) * h / SLEIGH_PX.h;
+    if (this.nightAtChunk(Math.floor(s.x / CHUNK), Math.floor(s.y / CHUNK)) < LIGHTS_ON) {
+      g.globalAlpha = 1;
+      return;
+    }
+    const nx = x0 + ((SLEIGH_NOSE.x + 0.5) * w) / SLEIGH_PX.w,
+      ny = y0 + ((SLEIGH_NOSE.y + 0.5) * h) / SLEIGH_PX.h;
     const r = Math.max(3 * this.dpr, w * 0.07) * (0.85 + 0.15 * Math.sin(performance.now() / 180));
     const glow = g.createRadialGradient(nx, ny, 0, nx, ny, r);
-    glow.addColorStop(0, 'rgba(255,80,60,0.95)'); glow.addColorStop(0.35, 'rgba(255,60,40,0.5)'); glow.addColorStop(1, 'rgba(255,40,30,0)');
-    g.fillStyle = glow; g.fillRect(nx - r, ny - r, r * 2, r * 2);
+    glow.addColorStop(0, 'rgba(255,80,60,0.95)');
+    glow.addColorStop(0.35, 'rgba(255,60,40,0.5)');
+    glow.addColorStop(1, 'rgba(255,40,30,0)');
+    g.fillStyle = glow;
+    g.fillRect(nx - r, ny - r, r * 2, r * 2);
     g.globalAlpha = 1;
   }
 
   /** Redraw later for flights (overview needs ~10 fps; off-screen flights only a slow check). */
   private scheduleFlights(ms: number): void {
     if (!this.animated || this.flightTimer) return;
-    this.flightTimer = setTimeout(() => { this.flightTimer = null; this.invalidate(); }, ms);
+    this.flightTimer = setTimeout(() => {
+      this.flightTimer = null;
+      this.invalidate();
+    }, ms);
   }
 
   private renderFlash(g: CanvasRenderingContext2D, now: number): void {
     const f = this.flash;
     if (!f) return;
     const t = (now - f.t0) / FLASH_MS;
-    if (t >= 1) { this.flash = null; return; }
-    const cxp = (this.dx(f.x) + this.dx(f.x + 1)) / 2, cyp = (this.dy(f.y) + this.dy(f.y + 1)) / 2;
-    const pulse = (now - f.t0) % 600 / 600; // 0..1 three times
+    if (t >= 1) {
+      this.flash = null;
+      return;
+    }
+    const cxp = (this.dx(f.x) + this.dx(f.x + 1)) / 2,
+      cyp = (this.dy(f.y) + this.dy(f.y + 1)) / 2;
+    const pulse = ((now - f.t0) % 600) / 600; // 0..1 three times
     const base = Math.max(this.tilePx() * this.dpr * 0.7, 8 * this.dpr);
     const rad = base + pulse * base * 1.6;
     g.lineWidth = Math.max(2, Math.round(3 * this.dpr));
     g.strokeStyle = `rgba(255,70,50,${(1 - pulse) * (1 - t * 0.5)})`;
-    g.beginPath(); g.arc(cxp, cyp, rad, 0, Math.PI * 2); g.stroke();
+    g.beginPath();
+    g.arc(cxp, cyp, rad, 0, Math.PI * 2);
+    g.stroke();
     g.strokeStyle = 'rgba(255,200,80,0.9)';
     g.lineWidth = Math.max(1, Math.round(1.5 * this.dpr));
-    g.beginPath(); g.arc(cxp, cyp, base * 0.6, 0, Math.PI * 2); g.stroke();
+    g.beginPath();
+    g.arc(cxp, cyp, base * 0.6, 0, Math.PI * 2);
+    g.stroke();
     if (this.animated) this.invalidate();
   }
 
   /** device-pixel x of a world tile x coordinate */
-  private dx(tx: number): number { return Math.round(((tx - this.cam.x) * this.tilePx() + this.cssW / 2) * this.dpr); }
-  private dy(ty: number): number { return Math.round(((ty - this.cam.y) * this.tilePx() + this.cssH / 2) * this.dpr); }
+  private dx(tx: number): number {
+    return Math.round(((tx - this.cam.x) * this.tilePx() + this.cssW / 2) * this.dpr);
+  }
+  private dy(ty: number): number {
+    return Math.round(((ty - this.cam.y) * this.tilePx() + this.cssH / 2) * this.dpr);
+  }
 
   private getChecker(g: CanvasRenderingContext2D): CanvasPattern | null {
     if (this.checker) return this.checker;
     const c = document.createElement('canvas');
     c.width = c.height = 32;
     const cg = c.getContext('2d')!;
-    cg.fillStyle = '#0c1018'; cg.fillRect(0, 0, 32, 32);
-    cg.fillStyle = '#121824'; cg.fillRect(0, 0, 16, 16); cg.fillRect(16, 16, 16, 16);
+    cg.fillStyle = '#0c1018';
+    cg.fillRect(0, 0, 32, 32);
+    cg.fillStyle = '#121824';
+    cg.fillRect(0, 0, 16, 16);
+    cg.fillRect(16, 16, 16, 16);
     this.checker = g.createPattern(c, 'repeat');
     return this.checker;
   }
 
   private renderTiles(g: CanvasRenderingContext2D, now: number): void {
     const r = this.visibleChunkRect(0);
-    const W = this.canvas.width, H = this.canvas.height;
+    const W = this.canvas.width,
+      H = this.canvas.height;
     const res = chunkRes(this.tilePx() * this.dpr);
     this.pendingBuilds = 0;
     let built = 0;
     // 1. chunk blits
     for (let cy = r.cy0; cy <= r.cy1; cy++) {
       for (let cx = r.cx0; cx <= r.cx1; cx++) {
-        const x0 = this.dx(cx * CHUNK), x1 = this.dx((cx + 1) * CHUNK);
-        const y0 = this.dy(cy * CHUNK), y1 = this.dy((cy + 1) * CHUNK);
+        const x0 = this.dx(cx * CHUNK),
+          x1 = this.dx((cx + 1) * CHUNK);
+        const y0 = this.dy(cy * CHUNK),
+          y1 = this.dy((cy + 1) * CHUNK);
         if (x1 <= 0 || y1 <= 0 || x0 >= W || y0 >= H) continue;
         const key = chunkKey(cx, cy);
         let cc = this.chunkCanvases.get(key);
         if (!cc || cc.res < res) {
           // missing, or too coarse for this zoom (the coarse one stands in until the sharper one is built)
           const tiles = this.map.getChunk(cx, cy);
-          if (tiles && built < CHUNK_BUILD_BUDGET) { cc = this.buildChunkCanvas(key, cx, cy, tiles, res); built++; }
-          else if (tiles) this.pendingBuilds++;
+          if (tiles && built < CHUNK_BUILD_BUDGET) {
+            cc = this.buildChunkCanvas(key, cx, cy, tiles, res);
+            built++;
+          } else if (tiles) this.pendingBuilds++;
         }
         if (cc) {
           cc.lastUse = this.frame;
@@ -752,7 +1014,8 @@ export class Renderer extends Emitter<RendererEvents> {
           if (this.subscribed.has(key)) {
             g.fillStyle = 'rgba(255,255,255,0.35)';
             g.font = `${Math.round(11 * this.dpr)}px ui-monospace, monospace`;
-            g.textBaseline = 'middle'; g.textAlign = 'center';
+            g.textBaseline = 'middle';
+            g.textAlign = 'center';
             g.fillText('loading…', (x0 + x1) / 2, (y0 + y1) / 2);
           }
         }
@@ -765,7 +1028,10 @@ export class Renderer extends Emitter<RendererEvents> {
       g.imageSmoothingEnabled = false;
       for (const b of this.customs.within(Math.floor(v.x0), Math.floor(v.y0), Math.ceil(v.x1), Math.ceil(v.y1))) {
         const img = this.customs.ready(b.kind);
-        const x0 = this.dx(b.x), y0 = this.dy(b.y), x1 = this.dx(b.x + b.w), y1 = this.dy(b.y + b.h);
+        const x0 = this.dx(b.x),
+          y0 = this.dy(b.y),
+          x1 = this.dx(b.x + b.w),
+          y1 = this.dy(b.y + b.h);
         const def = CUSTOM_BUILDINGS[b.kind];
         if (img && def?.frames && def.frameMs) {
           // animated building: a strip of frames, all players see the same frame (wall clock)
@@ -775,39 +1041,58 @@ export class Renderer extends Emitter<RendererEvents> {
           customAnimMs = Math.min(customAnimMs, def.frameMs - (Date.now() % def.frameMs) + 5);
         } else if (img) g.drawImage(img, x0, y0, x1 - x0, y1 - y0);
         const cv = this.map.get(b.x + 1, b.y + 1);
-        if (cv !== undefined && (cv & ZONEBIT) && !(cv & PWRBIT) && this.state.ownsChunk(Math.floor((b.x + 1) / CHUNK), Math.floor((b.y + 1) / CHUNK))) {
+        if (cv !== undefined && cv & ZONEBIT && !(cv & PWRBIT) && this.state.ownsChunk(Math.floor((b.x + 1) / CHUNK), Math.floor((b.y + 1) / CHUNK))) {
           const t = this.tilePx() * this.dpr;
           drawTile(g, this.sheet, LIGHTNINGBOLT, this.dx(b.x + 1), this.dy(b.y + 1), t, t);
         }
       }
     }
     if (customAnimMs < Infinity && this.animated && !this.customAnimTimer) {
-      this.customAnimTimer = setTimeout(() => { this.customAnimTimer = null; this.invalidate(); }, customAnimMs);
+      this.customAnimTimer = setTimeout(() => {
+        this.customAnimTimer = null;
+        this.invalidate();
+      }, customAnimMs);
     }
     // 1b. night: the real-time shade over the city (dimmed, never dark), then the lit windows of plots in the dark
     this.night.update();
     {
       const v = this.viewRect();
-      const x0w = Math.max(0, v.x0), y0w = Math.max(0, v.y0), x1w = Math.min(WORLD_W, v.x1), y1w = Math.min(WORLD_H, v.y1);
+      const x0w = Math.max(0, v.x0),
+        y0w = Math.max(0, v.y0),
+        x1w = Math.min(WORLD_W, v.x1),
+        y1w = Math.min(WORLD_H, v.y1);
       const nc = this.night.canvas;
       if (x1w > x0w && y1w > y0w) {
         g.imageSmoothingEnabled = true;
         g.globalAlpha = NIGHT_CITY_DIM;
-        g.drawImage(nc, (x0w / WORLD_W) * nc.width, (y0w / WORLD_H) * nc.height, ((x1w - x0w) / WORLD_W) * nc.width, ((y1w - y0w) / WORLD_H) * nc.height,
-          this.dx(x0w), this.dy(y0w), this.dx(x1w) - this.dx(x0w), this.dy(y1w) - this.dy(y0w));
+        g.drawImage(
+          nc,
+          (x0w / WORLD_W) * nc.width,
+          (y0w / WORLD_H) * nc.height,
+          ((x1w - x0w) / WORLD_W) * nc.width,
+          ((y1w - y0w) / WORLD_H) * nc.height,
+          this.dx(x0w),
+          this.dy(y0w),
+          this.dx(x1w) - this.dx(x0w),
+          this.dy(y1w) - this.dy(y0w),
+        );
         g.globalAlpha = 1;
         g.imageSmoothingEnabled = false;
       }
       if (this.nightLights) {
-        for (let cy = r.cy0; cy <= r.cy1; cy++) for (let cx = r.cx0; cx <= r.cx1; cx++) {
-          if (!this.lightsOnAt(cx, cy)) continue;
-          const tiles = this.map.getChunk(cx, cy);
-          if (!tiles) continue;
-          const x0 = this.dx(cx * CHUNK), x1 = this.dx((cx + 1) * CHUNK), y0 = this.dy(cy * CHUNK), y1 = this.dy((cy + 1) * CHUNK);
-          if (x1 <= 0 || y1 <= 0 || x0 >= W || y0 >= H) continue;
-          const im = this.nightLights.canvasFor(chunkKey(cx, cy), tiles, this.frame);
-          if (im) this.drawNightImage(g, im, x0, y0, x1 - x0, y1 - y0);
-        }
+        for (let cy = r.cy0; cy <= r.cy1; cy++)
+          for (let cx = r.cx0; cx <= r.cx1; cx++) {
+            if (!this.lightsOnAt(cx, cy)) continue;
+            const tiles = this.map.getChunk(cx, cy);
+            if (!tiles) continue;
+            const x0 = this.dx(cx * CHUNK),
+              x1 = this.dx((cx + 1) * CHUNK),
+              y0 = this.dy(cy * CHUNK),
+              y1 = this.dy((cy + 1) * CHUNK);
+            if (x1 <= 0 || y1 <= 0 || x0 >= W || y0 >= H) continue;
+            const im = this.nightLights.canvasFor(chunkKey(cx, cy), tiles, this.frame);
+            if (im) this.drawNightImage(g, im, x0, y0, x1 - x0, y1 - y0);
+          }
         for (const b of this.customs.within(Math.floor(v.x0), Math.floor(v.y0), Math.ceil(v.x1), Math.ceil(v.y1))) {
           const def = CUSTOM_BUILDINGS[b.kind];
           if (!def || !this.lightsOnAt(Math.floor(b.x / CHUNK), Math.floor(b.y / CHUNK)) || !((this.map.get(b.x + 1, b.y + 1) ?? 0) & PWRBIT)) continue; // no power, no lights
@@ -824,12 +1109,16 @@ export class Renderer extends Emitter<RendererEvents> {
       g.fillStyle = 'rgba(6,8,14,0.55)';
       g.fillRect(0, 0, W, H);
       g.imageSmoothingEnabled = false;
-      for (let cy = r.cy0; cy <= r.cy1; cy++) for (let cx = r.cx0; cx <= r.cx1; cx++) {
-        const x0 = this.dx(cx * CHUNK), x1 = this.dx((cx + 1) * CHUNK), y0 = this.dy(cy * CHUNK), y1 = this.dy((cy + 1) * CHUNK);
-        if (x1 <= 0 || y1 <= 0 || x0 >= W || y0 >= H) continue;
-        const oc = this.overlay.canvasFor(cx, cy);
-        if (oc) g.drawImage(oc, x0, y0, x1 - x0, y1 - y0);
-      }
+      for (let cy = r.cy0; cy <= r.cy1; cy++)
+        for (let cx = r.cx0; cx <= r.cx1; cx++) {
+          const x0 = this.dx(cx * CHUNK),
+            x1 = this.dx((cx + 1) * CHUNK),
+            y0 = this.dy(cy * CHUNK),
+            y1 = this.dy((cy + 1) * CHUNK);
+          if (x1 <= 0 || y1 <= 0 || x0 >= W || y0 >= H) continue;
+          const oc = this.overlay.canvasFor(cx, cy);
+          if (oc) g.drawImage(oc, x0, y0, x1 - x0, y1 - y0);
+        }
     }
     // 1b. sprites above the tiles, below outlines / labels / cursor
     if (this.overlay.mode === 'none') this.renderSprites(g, now);
@@ -840,8 +1129,10 @@ export class Renderer extends Emitter<RendererEvents> {
     const labelled = new Set<string>();
     for (let cy = r.cy0; cy <= r.cy1; cy++) {
       for (let cx = r.cx0; cx <= r.cx1; cx++) {
-        const x0 = this.dx(cx * CHUNK), x1 = this.dx((cx + 1) * CHUNK);
-        const y0 = this.dy(cy * CHUNK), y1 = this.dy((cy + 1) * CHUNK);
+        const x0 = this.dx(cx * CHUNK),
+          x1 = this.dx((cx + 1) * CHUNK);
+        const y0 = this.dy(cy * CHUNK),
+          y1 = this.dy((cy + 1) * CHUNK);
         const claim = this.state.claimAt(cx, cy);
         if (claim) {
           const own = !!me && claim.ownerId === me.id;
@@ -864,8 +1155,13 @@ export class Renderer extends Emitter<RendererEvents> {
               [1, st.abandoned ? 'rgba(200,200,200,0.9)' : withAlpha(st.color, own ? 1 : 0.85), bw],
             ] as [number, string, number][]) {
               void pass;
-              g.strokeStyle = style; g.lineWidth = lw; g.beginPath();
-              for (const [ax, ay, bx, by] of edges) { g.moveTo(ax, ay); g.lineTo(bx, by); }
+              g.strokeStyle = style;
+              g.lineWidth = lw;
+              g.beginPath();
+              for (const [ax, ay, bx, by] of edges) {
+                g.moveTo(ax, ay);
+                g.lineTo(bx, by);
+              }
               g.stroke();
             }
             g.setLineDash([]);
@@ -874,10 +1170,14 @@ export class Renderer extends Emitter<RendererEvents> {
             // one label per city: on the first (top-left-most) visible plot, in the visible part of it
             // and out from under the toolbar / top bar, so partially scrolled plots stay identifiable
             labelled.add(claim.ownerId);
-            g.font = labelFont; g.textBaseline = 'top'; g.textAlign = 'left';
+            g.font = labelFont;
+            g.textBaseline = 'top';
+            g.textAlign = 'left';
             const tw = g.measureText(st.label).width;
-            const px = Math.round(6 * this.dpr), py = Math.round(4 * this.dpr);
-            const insetL = Math.round(this.overlayInset.left * this.dpr), insetT = Math.round(this.overlayInset.top * this.dpr);
+            const px = Math.round(6 * this.dpr),
+              py = Math.round(4 * this.dpr);
+            const insetL = Math.round(this.overlayInset.left * this.dpr),
+              insetT = Math.round(this.overlayInset.top * this.dpr);
             const lx = x1 - insetL >= tw + 3 * px ? Math.max(x0, insetL) : Math.max(x0, 0);
             const ly = y1 - insetT >= 40 * this.dpr ? Math.max(y0, insetT) : Math.max(y0, 0);
             g.fillStyle = 'rgba(0,0,0,0.55)';
@@ -905,14 +1205,22 @@ export class Renderer extends Emitter<RendererEvents> {
     if (!h || !inWorld(h.x, h.y)) return;
     const tool = TOOLS[this.state.tool];
     const { x0, y0 } = footprintOrigin(tool, h.x, h.y);
-    const fw = toolW(tool), fh = toolH(tool);
+    const fw = toolW(tool),
+      fh = toolH(tool);
     let ok = this.state.funds >= tool.cost;
     if (tool.id !== 'query') {
-      for (let y = y0; y < y0 + fh && ok; y++) for (let x = x0; x < x0 + fw; x++) {
-        if (!inWorld(x, y) || !this.state.ownsChunk(Math.floor(x / CHUNK), Math.floor(y / CHUNK))) { ok = false; break; }
-      }
+      for (let y = y0; y < y0 + fh && ok; y++)
+        for (let x = x0; x < x0 + fw; x++) {
+          if (!inWorld(x, y) || !this.state.ownsChunk(Math.floor(x / CHUNK), Math.floor(y / CHUNK))) {
+            ok = false;
+            break;
+          }
+        }
     }
-    const px0 = this.dx(x0), py0 = this.dy(y0), px1 = this.dx(x0 + fw), py1 = this.dy(y0 + fh);
+    const px0 = this.dx(x0),
+      py0 = this.dy(y0),
+      px1 = this.dx(x0 + fw),
+      py1 = this.dy(y0 + fh);
     g.fillStyle = ok ? 'rgba(255,255,255,0.12)' : 'rgba(255,60,60,0.18)';
     g.fillRect(px0, py0, px1 - px0, py1 - py0);
     g.lineWidth = Math.max(2, Math.round(2 * this.dpr));
@@ -924,11 +1232,16 @@ export class Renderer extends Emitter<RendererEvents> {
   private renderPlan(g: CanvasRenderingContext2D): void {
     const plan = this.plan;
     if (!plan || !plan.tiles.length) return;
-    const tool = TOOLS[plan.tool], fw = toolW(tool), fh = toolH(tool);
+    const tool = TOOLS[plan.tool],
+      fw = toolW(tool),
+      fh = toolH(tool);
     g.lineWidth = Math.max(1, Math.round(this.dpr));
     for (const t of plan.tiles) {
       const { x0, y0 } = footprintOrigin(tool, t.x, t.y);
-      const px0 = this.dx(x0), py0 = this.dy(y0), px1 = this.dx(x0 + fw), py1 = this.dy(y0 + fh);
+      const px0 = this.dx(x0),
+        py0 = this.dy(y0),
+        px1 = this.dx(x0 + fw),
+        py1 = this.dy(y0 + fh);
       g.fillStyle = t.ok ? 'rgba(255,255,255,0.35)' : 'rgba(255,60,60,0.35)';
       g.fillRect(px0, py0, px1 - px0, py1 - py0);
       g.strokeStyle = t.ok ? 'rgba(255,255,255,0.8)' : 'rgba(255,70,70,0.8)';
@@ -945,23 +1258,37 @@ export class Renderer extends Emitter<RendererEvents> {
   private renderOverview(g: CanvasRenderingContext2D): void {
     this.mapTiles.maybeRefresh();
     this.night.update();
-    const W = this.canvas.width, H = this.canvas.height;
-    const left = this.dx(0), top = this.dy(0), right = this.dx(WORLD_W), bottom = this.dy(WORLD_H);
-    const vx0 = Math.max(0, left), vy0 = Math.max(0, top), vx1 = Math.min(W, right), vy1 = Math.min(H, bottom);
-    const zoom = this.cam.zoom, zooming = zoom !== this.ovLastZoom;
+    const W = this.canvas.width,
+      H = this.canvas.height;
+    const left = this.dx(0),
+      top = this.dy(0),
+      right = this.dx(WORLD_W),
+      bottom = this.dy(WORLD_H);
+    const vx0 = Math.max(0, left),
+      vy0 = Math.max(0, top),
+      vx1 = Math.min(W, right),
+      vy1 = Math.min(H, bottom);
+    const zoom = this.cam.zoom,
+      zooming = zoom !== this.ovLastZoom;
     this.ovLastZoom = zoom;
     const key = `${zoom}|${this.dpr}|${W}x${H}|${this.claimsVersion}|${this.mapTiles.version}|${this.night.version}|${this.state.me?.id ?? ''}`;
     let c = this.ovCache;
     // the cache's position is kept relative to the world's top-left corner, so it moves with the map
-    const fits = !!c && c.key === key && vx0 - left >= c.x && vy0 - top >= c.y
-      && vx1 - left <= c.x + c.canvas.width && vy1 - top <= c.y + c.canvas.height;
+    const fits = !!c && c.key === key && vx0 - left >= c.x && vy0 - top >= c.y && vx1 - left <= c.x + c.canvas.width && vy1 - top <= c.y + c.canvas.height;
     if (!fits) {
       // while zooming every frame differs: draw straight to the screen, cache once the zoom holds still
-      if (zooming || vx1 <= vx0 || vy1 <= vy0) { this.drawOverview(g, vx0, vy0, vx1, vy1); return; }
+      if (zooming || vx1 <= vx0 || vy1 <= vy0) {
+        this.drawOverview(g, vx0, vy0, vx1, vy1);
+        return;
+      }
       const m = Math.round(Math.min(W, H) * 0.3);
-      const x0 = Math.max(left, vx0 - m), y0 = Math.max(top, vy0 - m), x1 = Math.min(right, vx1 + m), y1 = Math.min(bottom, vy1 + m);
+      const x0 = Math.max(left, vx0 - m),
+        y0 = Math.max(top, vy0 - m),
+        x1 = Math.min(right, vx1 + m),
+        y1 = Math.min(bottom, vy1 + m);
       const canvas = c?.canvas ?? document.createElement('canvas');
-      canvas.width = x1 - x0; canvas.height = y1 - y0; // also clears it and resets its context state
+      canvas.width = x1 - x0;
+      canvas.height = y1 - y0; // also clears it and resets its context state
       const cg = canvas.getContext('2d', { alpha: false })!;
       cg.setTransform(1, 0, 0, 1, -x0, -y0);
       this.drawOverview(cg, x0, y0, x1, y1);
@@ -978,27 +1305,49 @@ export class Renderer extends Emitter<RendererEvents> {
    * (device pixels), using only the part of it under that rectangle. Zoomed in, the whole world is wider than the
    * largest image a canvas will draw (32,768 pixels), and such a drawImage is silently skipped.
    */
-  private drawWorldImage(g: CanvasRenderingContext2D, img: CanvasImageSource, iw: number, ih: number, rx0: number, ry0: number, rx1: number, ry1: number): void {
-    const left = this.dx(0), top = this.dy(0), right = this.dx(WORLD_W), bottom = this.dy(WORLD_H);
-    const x0 = Math.max(rx0, left), y0 = Math.max(ry0, top), x1 = Math.min(rx1, right), y1 = Math.min(ry1, bottom);
+  private drawWorldImage(
+    g: CanvasRenderingContext2D,
+    img: CanvasImageSource,
+    iw: number,
+    ih: number,
+    rx0: number,
+    ry0: number,
+    rx1: number,
+    ry1: number,
+  ): void {
+    const left = this.dx(0),
+      top = this.dy(0),
+      right = this.dx(WORLD_W),
+      bottom = this.dy(WORLD_H);
+    const x0 = Math.max(rx0, left),
+      y0 = Math.max(ry0, top),
+      x1 = Math.min(rx1, right),
+      y1 = Math.min(ry1, bottom);
     if (x1 <= x0 || y1 <= y0) return;
-    const sx = (v: number) => ((v - left) / (right - left)) * iw, sy = (v: number) => ((v - top) / (bottom - top)) * ih;
+    const sx = (v: number) => ((v - left) / (right - left)) * iw,
+      sy = (v: number) => ((v - top) / (bottom - top)) * ih;
     g.drawImage(img, sx(x0), sy(y0), sx(x1) - sx(x0), sy(y1) - sy(y0), x0, y0, x1 - x0, y1 - y0);
   }
 
   /** Chunks under a rectangle of the screen (device pixels). */
   private chunkRectOf(x0: number, y0: number, x1: number, y1: number): ChunkRect {
     const s = this.tilePx() * this.dpr;
-    const tx = (x: number) => this.cam.x + (x - (this.cssW / 2) * this.dpr) / s, ty = (y: number) => this.cam.y + (y - (this.cssH / 2) * this.dpr) / s;
+    const tx = (x: number) => this.cam.x + (x - (this.cssW / 2) * this.dpr) / s,
+      ty = (y: number) => this.cam.y + (y - (this.cssH / 2) * this.dpr) / s;
     return {
-      cx0: clamp(Math.floor(tx(x0) / CHUNK), 0, CHUNKS_X - 1), cy0: clamp(Math.floor(ty(y0) / CHUNK), 0, CHUNKS_Y - 1),
-      cx1: clamp(Math.floor((tx(x1) - 1e-6) / CHUNK), 0, CHUNKS_X - 1), cy1: clamp(Math.floor((ty(y1) - 1e-6) / CHUNK), 0, CHUNKS_Y - 1),
+      cx0: clamp(Math.floor(tx(x0) / CHUNK), 0, CHUNKS_X - 1),
+      cy0: clamp(Math.floor(ty(y0) / CHUNK), 0, CHUNKS_Y - 1),
+      cx1: clamp(Math.floor((tx(x1) - 1e-6) / CHUNK), 0, CHUNKS_X - 1),
+      cy1: clamp(Math.floor((ty(y1) - 1e-6) / CHUNK), 0, CHUNKS_Y - 1),
     };
   }
 
   /** Draw the zoomed-out map for the screen rectangle (rx0, ry0)-(rx1, ry1), in device pixels. */
   private drawOverview(g: CanvasRenderingContext2D, rx0: number, ry0: number, rx1: number, ry1: number): void {
-    const left = this.dx(0), top = this.dy(0), right = this.dx(WORLD_W), bottom = this.dy(WORLD_H);
+    const left = this.dx(0),
+      top = this.dy(0),
+      right = this.dx(WORLD_W),
+      bottom = this.dy(WORLD_H);
     const tpx = this.tilePx() * this.dpr;
     const vr = this.chunkRectOf(rx0, ry0, rx1, ry1);
     const level = MapTileLayer.levelFor(tpx);
@@ -1011,8 +1360,11 @@ export class Renderer extends Emitter<RendererEvents> {
     g.imageSmoothingEnabled = true;
     this.drawWorldImage(g, this.night.canvas, this.night.canvas.width, this.night.canvas.height, rx0, ry0, rx1, ry1);
     if (this.mapTiles.ready && rx1 > rx0 && ry1 > ry0) {
-      const lc = this.lightsLayer ??= document.createElement('canvas');
-      if (lc.width !== rx1 - rx0 || lc.height !== ry1 - ry0) { lc.width = rx1 - rx0; lc.height = ry1 - ry0; } else lc.getContext('2d')!.clearRect(0, 0, lc.width, lc.height);
+      const lc = (this.lightsLayer ??= document.createElement('canvas'));
+      if (lc.width !== rx1 - rx0 || lc.height !== ry1 - ry0) {
+        lc.width = rx1 - rx0;
+        lc.height = ry1 - ry0;
+      } else lc.getContext('2d')!.clearRect(0, 0, lc.width, lc.height);
       const lg = lc.getContext('2d')!;
       lg.setTransform(1, 0, 0, 1, -rx0, -ry0);
       lg.imageSmoothingEnabled = level > 0; // far out the lights are a glow: let it blur
@@ -1034,8 +1386,16 @@ export class Renderer extends Emitter<RendererEvents> {
       g.strokeStyle = 'rgba(255,255,255,0.06)';
       g.lineWidth = 1;
       g.beginPath();
-      for (let cx = r.cx0; cx <= r.cx1 + 1; cx++) { const x = this.dx(cx * CHUNK) + 0.5; g.moveTo(x, ry0); g.lineTo(x, ry1); }
-      for (let cy = r.cy0; cy <= r.cy1 + 1; cy++) { const y = this.dy(cy * CHUNK) + 0.5; g.moveTo(rx0, y); g.lineTo(rx1, y); }
+      for (let cx = r.cx0; cx <= r.cx1 + 1; cx++) {
+        const x = this.dx(cx * CHUNK) + 0.5;
+        g.moveTo(x, ry0);
+        g.lineTo(x, ry1);
+      }
+      for (let cy = r.cy0; cy <= r.cy1 + 1; cy++) {
+        const y = this.dy(cy * CHUNK) + 0.5;
+        g.moveTo(rx0, y);
+        g.lineTo(rx1, y);
+      }
       g.stroke();
     }
     // claims
@@ -1045,35 +1405,49 @@ export class Renderer extends Emitter<RendererEvents> {
     const levels = this.zoomLevels();
     const farOut = this.cam.zoom <= (levels[1] ?? levels[0]) + 1e-9;
     const v = vr;
-    g.textBaseline = 'middle'; g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.textAlign = 'center';
     // Group visible plots by city so multi-plot cities render as one shape with one name.
     const cities = new Map<string, ClaimInfo[]>();
     for (const claim of this.state.claims.values()) {
       if (claim.cx < v.cx0 || claim.cx > v.cx1 || claim.cy < v.cy0 || claim.cy > v.cy1) continue;
       const list = cities.get(claim.ownerId);
-      if (list) list.push(claim); else cities.set(claim.ownerId, [claim]);
+      if (list) list.push(claim);
+      else cities.set(claim.ownerId, [claim]);
     }
     for (const plots of cities.values()) {
       const first = plots[0];
       const own = !!me && first.ownerId === me.id;
       const st = claimStyle(first, own);
-      let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity, w = 1, h = 1;
+      let bx0 = Infinity,
+        by0 = Infinity,
+        bx1 = -Infinity,
+        by1 = -Infinity,
+        w = 1,
+        h = 1;
       // With a pixel image of the plot, tint only when fully zoomed out (a plot is then a few pixels wide and
       // the owner colour is what makes cities findable); without one (snapshot not loaded yet) fill as before.
       const tpxNow = this.tilePx() * this.dpr;
       for (const claim of plots) {
         this.drawnClaims.set(chunkKey(claim.cx, claim.cy), st);
-        const x0 = this.dx(claim.cx * CHUNK), x1 = this.dx((claim.cx + 1) * CHUNK);
-        const y0 = this.dy(claim.cy * CHUNK), y1 = this.dy((claim.cy + 1) * CHUNK);
-        w = Math.max(1, x1 - x0); h = Math.max(1, y1 - y0);
+        const x0 = this.dx(claim.cx * CHUNK),
+          x1 = this.dx((claim.cx + 1) * CHUNK);
+        const y0 = this.dy(claim.cy * CHUNK),
+          y1 = this.dy((claim.cy + 1) * CHUNK);
+        w = Math.max(1, x1 - x0);
+        h = Math.max(1, y1 - y0);
         const hasImg = this.mapTiles.ready;
         // at night the owner tint fades so the city lights (drawn underneath) show through
-        const alpha = (!hasImg ? (st.abandoned ? 0.45 : own ? 0.7 : 0.5) : farOut ? 0 : tpxNow < 0.5 ? 0.55 : tpxNow < 1 ? 0.3 : 0)
-          * (1 - 0.85 * this.nightAtChunk(claim.cx, claim.cy));
+        const alpha =
+          (!hasImg ? (st.abandoned ? 0.45 : own ? 0.7 : 0.5) : farOut ? 0 : tpxNow < 0.5 ? 0.55 : tpxNow < 1 ? 0.3 : 0) *
+          (1 - 0.85 * this.nightAtChunk(claim.cx, claim.cy));
         if (alpha <= 0) continue;
         g.fillStyle = withAlpha(st.color, alpha);
         g.fillRect(x0, y0, w, h);
-        bx0 = Math.min(bx0, x0); by0 = Math.min(by0, y0); bx1 = Math.max(bx1, x1); by1 = Math.max(by1, y1);
+        bx0 = Math.min(bx0, x0);
+        by0 = Math.min(by0, y0);
+        bx1 = Math.max(bx1, x1);
+        by1 = Math.max(by1, y1);
       }
       if (w >= 6 && !farOut) {
         // outline only the outer edges of the city: white for yours, the owner's colour for everyone else
@@ -1082,30 +1456,52 @@ export class Renderer extends Emitter<RendererEvents> {
         g.setLineDash(st.abandoned ? [3, 3] : []);
         g.beginPath();
         for (const claim of plots) {
-          const x0 = this.dx(claim.cx * CHUNK) + 0.5, x1 = this.dx((claim.cx + 1) * CHUNK) - 0.5;
-          const y0 = this.dy(claim.cy * CHUNK) + 0.5, y1 = this.dy((claim.cy + 1) * CHUNK) - 0.5;
-          if (!this.sameOwner(claim.cx, claim.cy - 1, claim.ownerId)) { g.moveTo(x0, y0); g.lineTo(x1, y0); }
-          if (!this.sameOwner(claim.cx, claim.cy + 1, claim.ownerId)) { g.moveTo(x0, y1); g.lineTo(x1, y1); }
-          if (!this.sameOwner(claim.cx - 1, claim.cy, claim.ownerId)) { g.moveTo(x0, y0); g.lineTo(x0, y1); }
-          if (!this.sameOwner(claim.cx + 1, claim.cy, claim.ownerId)) { g.moveTo(x1, y0); g.lineTo(x1, y1); }
+          const x0 = this.dx(claim.cx * CHUNK) + 0.5,
+            x1 = this.dx((claim.cx + 1) * CHUNK) - 0.5;
+          const y0 = this.dy(claim.cy * CHUNK) + 0.5,
+            y1 = this.dy((claim.cy + 1) * CHUNK) - 0.5;
+          if (!this.sameOwner(claim.cx, claim.cy - 1, claim.ownerId)) {
+            g.moveTo(x0, y0);
+            g.lineTo(x1, y0);
+          }
+          if (!this.sameOwner(claim.cx, claim.cy + 1, claim.ownerId)) {
+            g.moveTo(x0, y1);
+            g.lineTo(x1, y1);
+          }
+          if (!this.sameOwner(claim.cx - 1, claim.cy, claim.ownerId)) {
+            g.moveTo(x0, y0);
+            g.lineTo(x0, y1);
+          }
+          if (!this.sameOwner(claim.cx + 1, claim.cy, claim.ownerId)) {
+            g.moveTo(x1, y0);
+            g.lineTo(x1, y1);
+          }
         }
-        g.stroke(); g.setLineDash([]);
+        g.stroke();
+        g.setLineDash([]);
       }
       if (showNames && w >= 48 * this.dpr) {
         // one name per city, on the plot nearest the centre of the city's visible bounding box
-        const mx = (bx0 + bx1) / 2, my = (by0 + by1) / 2;
-        let best = first, bd = Infinity;
+        const mx = (bx0 + bx1) / 2,
+          my = (by0 + by1) / 2;
+        let best = first,
+          bd = Infinity;
         for (const claim of plots) {
-          const cxp = this.dx(claim.cx * CHUNK + CHUNK / 2), cyp = this.dy(claim.cy * CHUNK + CHUNK / 2);
+          const cxp = this.dx(claim.cx * CHUNK + CHUNK / 2),
+            cyp = this.dy(claim.cy * CHUNK + CHUNK / 2);
           const d = Math.hypot(cxp - mx, cyp - my);
-          if (d < bd) { bd = d; best = claim; }
+          if (d < bd) {
+            bd = d;
+            best = claim;
+          }
         }
         const name = claimShortLabel(best);
         const span = Math.min(bx1 - bx0, 3 * w); // allow wider text across a multi-plot city
         const fs = clamp(Math.floor(span / 9), 9 * this.dpr, 14 * this.dpr);
         g.font = `${fs}px ui-monospace, Menlo, Consolas, monospace`;
         const tw = g.measureText(name).width;
-        const cxp = this.dx(best.cx * CHUNK + CHUNK / 2), cyp = this.dy(best.cy * CHUNK + CHUNK / 2);
+        const cxp = this.dx(best.cx * CHUNK + CHUNK / 2),
+          cyp = this.dy(best.cy * CHUNK + CHUNK / 2);
         // fits inside the plot, or inside the city's horizontal extent when the row is contiguous
         const rowW = plots.filter((c) => c.cy === best.cy).length * w;
         if (tw <= Math.max(w, rowW) - 6 * this.dpr) {
@@ -1133,7 +1529,8 @@ export class Renderer extends Emitter<RendererEvents> {
 
   /** How dark it is (0..1) at the centre of plot (cx, cy) right now. */
   private nightAtChunk(cx: number, cy: number): number {
-    const lat = 90 - ((cy + 0.5) * CHUNK / WORLD_H) * 180, lon = ((cx + 0.5) * CHUNK / WORLD_W) * 360 - 180;
+    const lat = 90 - (((cy + 0.5) * CHUNK) / WORLD_H) * 180,
+      lon = (((cx + 0.5) * CHUNK) / WORLD_W) * 360 - 180;
     return this.night.levelAt(lat, lon);
   }
 
@@ -1151,14 +1548,21 @@ export class Renderer extends Emitter<RendererEvents> {
   private drawChip(g: CanvasRenderingContext2D, x: number, y: number, text: string, color: string): number {
     const d = this.dpr;
     g.font = `${Math.round(11 * d)}px ui-monospace, Menlo, Consolas, monospace`;
-    g.textBaseline = 'middle'; g.textAlign = 'left';
-    const padX = Math.round(5 * d), h = Math.round(16 * d);
+    g.textBaseline = 'middle';
+    g.textAlign = 'left';
+    const padX = Math.round(5 * d),
+      h = Math.round(16 * d);
     const tw = Math.ceil(g.measureText(text).width);
     const w = tw + padX * 2;
     g.fillStyle = 'rgba(8,10,16,0.78)';
-    g.beginPath(); g.roundRect(x, y, w, h, Math.round(3 * d)); g.fill();
-    g.strokeStyle = withAlpha(color, 0.6); g.lineWidth = 1;
-    g.beginPath(); g.roundRect(x + 0.5, y + 0.5, w - 1, h - 1, Math.round(3 * d)); g.stroke();
+    g.beginPath();
+    g.roundRect(x, y, w, h, Math.round(3 * d));
+    g.fill();
+    g.strokeStyle = withAlpha(color, 0.6);
+    g.lineWidth = 1;
+    g.beginPath();
+    g.roundRect(x + 0.5, y + 0.5, w - 1, h - 1, Math.round(3 * d));
+    g.stroke();
     g.fillStyle = color;
     g.fillText(text, x + padX, y + h / 2 + 0.5);
     return w;
@@ -1168,7 +1572,9 @@ export class Renderer extends Emitter<RendererEvents> {
     this.drawnPresence.length = 0;
     const markers = this.presence.markers(now);
     if (!markers.length) return;
-    const W = this.canvas.width, H = this.canvas.height, d = this.dpr;
+    const W = this.canvas.width,
+      H = this.canvas.height,
+      d = this.dpr;
     const onScreen = (px: number, py: number, m = 0) => px >= -m && py >= -m && px < W + m && py < H + m;
     const tp = this.tilePx() * d;
     if (this.isTileMode()) {
@@ -1182,13 +1588,21 @@ export class Renderer extends Emitter<RendererEvents> {
           if (onScreen(px, py, tp)) {
             g.fillStyle = withAlpha(color, 0.25);
             g.fillRect(px, py, Math.round(tp), Math.round(tp));
-            g.strokeStyle = withAlpha(color, 0.95); g.lineWidth = Math.max(1, Math.round(1.5 * d));
+            g.strokeStyle = withAlpha(color, 0.95);
+            g.lineWidth = Math.max(1, Math.round(1.5 * d));
             g.strokeRect(px + 0.5, py + 0.5, Math.round(tp) - 1, Math.round(tp) - 1);
             // pointer: a small arrow with its tip on the tile's top-left corner
             const s = Math.round(7 * d);
-            g.fillStyle = color; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.lineWidth = Math.max(1, Math.round(d));
-            g.beginPath(); g.moveTo(px, py); g.lineTo(px + s * 1.6, py + s * 0.6); g.lineTo(px + s * 0.6, py + s * 1.6); g.closePath();
-            g.fill(); g.stroke();
+            g.fillStyle = color;
+            g.strokeStyle = 'rgba(0,0,0,0.7)';
+            g.lineWidth = Math.max(1, Math.round(d));
+            g.beginPath();
+            g.moveTo(px, py);
+            g.lineTo(px + s * 1.6, py + s * 0.6);
+            g.lineTo(px + s * 0.6, py + s * 1.6);
+            g.closePath();
+            g.fill();
+            g.stroke();
             this.drawChip(g, px + Math.round(12 * d), py - Math.round(18 * d), label, color);
             this.drawnPresence.push({ id: m.p.id, kind: 'cursor', x: px, y: py, label });
             continue;
@@ -1199,8 +1613,14 @@ export class Renderer extends Emitter<RendererEvents> {
         const py = Math.round(((m.y - this.cam.y) * this.tilePx() + this.cssH / 2) * d);
         if (!onScreen(px, py)) continue;
         const r = Math.round(4 * d);
-        g.fillStyle = 'rgba(0,0,0,0.6)'; g.beginPath(); g.arc(px, py, r + Math.round(1.5 * d), 0, Math.PI * 2); g.fill();
-        g.fillStyle = withAlpha(color, 0.9); g.beginPath(); g.arc(px, py, r, 0, Math.PI * 2); g.fill();
+        g.fillStyle = 'rgba(0,0,0,0.6)';
+        g.beginPath();
+        g.arc(px, py, r + Math.round(1.5 * d), 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = withAlpha(color, 0.9);
+        g.beginPath();
+        g.arc(px, py, r, 0, Math.PI * 2);
+        g.fill();
         this.drawChip(g, px + r + Math.round(4 * d), py - Math.round(8 * d), label, color);
         this.drawnPresence.push({ id: m.p.id, kind: 'dot', x: px, y: py, label });
       }
@@ -1210,11 +1630,18 @@ export class Renderer extends Emitter<RendererEvents> {
       for (const m of markers) {
         const label = presenceLabel(m.p);
         const color = m.p.color || '#ffffff';
-        const cxp = this.dx(m.x), cyp = this.dy(m.y);
+        const cxp = this.dx(m.x),
+          cyp = this.dy(m.y);
         if (!onScreen(cxp, cyp)) continue;
         const r = Math.round(3.5 * d);
-        g.fillStyle = 'rgba(0,0,0,0.6)'; g.beginPath(); g.arc(cxp, cyp, r + Math.round(1.5 * d), 0, Math.PI * 2); g.fill();
-        g.fillStyle = withAlpha(color, 0.95); g.beginPath(); g.arc(cxp, cyp, r, 0, Math.PI * 2); g.fill();
+        g.fillStyle = 'rgba(0,0,0,0.6)';
+        g.beginPath();
+        g.arc(cxp, cyp, r + Math.round(1.5 * d), 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = withAlpha(color, 0.95);
+        g.beginPath();
+        g.arc(cxp, cyp, r, 0, Math.PI * 2);
+        g.fill();
         const chipY = clamp(cyp - Math.round(19 * d), Math.round(2 * d), H - Math.round(18 * d));
         const chipX = clamp(cxp + Math.round(8 * d), Math.round(2 * d), W - Math.round(60 * d));
         this.drawChip(g, chipX, chipY, label, color);
@@ -1231,7 +1658,9 @@ export class Renderer extends Emitter<RendererEvents> {
 
   /** Blit sprite `frameId` (plus the power-bolt overlay for tile value `v`) at chunk index `idx`. */
   private drawFrame(cc: ChunkCanvas, v: number, idx: number, frameId: number, own: boolean): void {
-    const r = cc.res, tx = (idx % CHUNK) * r, ty = Math.floor(idx / CHUNK) * r;
+    const r = cc.res,
+      tx = (idx % CHUNK) * r,
+      ty = Math.floor(idx / CHUNK) * r;
     // the tile in its look (biome, ice, border); the plain sheet until the skins sheet is there. A custom
     // building's tiles show the bare ground of their biome: its image is drawn on top, and where the image is
     // transparent (the Christmas tree's grounds) the local sand, grass or snow shows through.
@@ -1245,8 +1674,13 @@ export class Renderer extends Emitter<RendererEvents> {
   private drawTileAt(cc: ChunkCanvas, tiles: Uint32Array, idx: number, own: boolean): void {
     const v = tiles[idx];
     this.drawFrame(cc, v, idx, v & LOMASK, own);
-    if (isAnimatedTile(v)) { cc.anim.add(idx); cc.frame.set(idx, v & LOMASK); }
-    else if (cc.anim.size) { cc.anim.delete(idx); cc.frame.delete(idx); }
+    if (isAnimatedTile(v)) {
+      cc.anim.add(idx);
+      cc.frame.set(idx, v & LOMASK);
+    } else if (cc.anim.size) {
+      cc.anim.delete(idx);
+      cc.frame.delete(idx);
+    }
   }
 
   private buildChunkCanvas(key: string, cx: number, cy: number, tiles: Uint32Array, res = TILE_PX): ChunkCanvas {
@@ -1268,30 +1702,47 @@ export class Renderer extends Emitter<RendererEvents> {
       this.nightLights?.markDirty(key);
       const cc = this.chunkCanvases.get(key);
       if (!cc) continue;
-      if (idxs.length && idxs[0] === DIRTY_ALL) { this.chunkCanvases.delete(key); continue; }
+      if (idxs.length && idxs[0] === DIRTY_ALL) {
+        this.chunkCanvases.delete(key);
+        continue;
+      }
       const { cx, cy } = parseChunkKey(key);
       const tiles = this.map.getChunk(cx, cy);
-      if (!tiles) { this.chunkCanvases.delete(key); continue; }
+      if (!tiles) {
+        this.chunkCanvases.delete(key);
+        continue;
+      }
       const own = this.state.ownsChunk(cx, cy);
       for (const idx of idxs) this.drawTileAt(cc, tiles, idx, own);
     }
   }
 
   /** Re-render chunk canvases whose ownership changed (power-bolt overlay depends on it). */
-  rebuildChunk(cx: number, cy: number): void { this.chunkCanvases.delete(chunkKey(cx, cy)); this.invalidate(); }
+  rebuildChunk(cx: number, cy: number): void {
+    this.chunkCanvases.delete(chunkKey(cx, cy));
+    this.invalidate();
+  }
 
   private evictCanvases(): void {
     if (this.chunkCanvases.size <= MAX_CHUNK_CANVASES) return;
-    const ccx = this.cam.x / CHUNK, ccy = this.cam.y / CHUNK;
+    const ccx = this.cam.x / CHUNK,
+      ccy = this.cam.y / CHUNK;
     const entries = [...this.chunkCanvases.entries()]
       .filter(([, cc]) => cc.lastUse !== this.frame)
-      .map(([key, cc]) => { const { cx, cy } = parseChunkKey(key); return { key, cc, d: (cx + 0.5 - ccx) ** 2 + (cy + 0.5 - ccy) ** 2 }; })
+      .map(([key, cc]) => {
+        const { cx, cy } = parseChunkKey(key);
+        return { key, cc, d: (cx + 0.5 - ccx) ** 2 + (cy + 0.5 - ccy) ** 2 };
+      })
       .sort((a, b) => b.d - a.d);
     const n = this.chunkCanvases.size - MAX_CHUNK_CANVASES;
     for (let i = 0; i < n && i < entries.length; i++) this.chunkCanvases.delete(entries[i].key);
   }
 
-  get chunkCanvasCount(): number { return this.chunkCanvases.size; }
+  get chunkCanvasCount(): number {
+    return this.chunkCanvases.size;
+  }
   /** Test hook: the offscreen canvas for a chunk, if built. */
-  chunkCanvasFor(cx: number, cy: number): HTMLCanvasElement | undefined { return this.chunkCanvases.get(chunkKey(cx, cy))?.canvas; }
+  chunkCanvasFor(cx: number, cy: number): HTMLCanvasElement | undefined {
+    return this.chunkCanvases.get(chunkKey(cx, cy))?.canvas;
+  }
 }

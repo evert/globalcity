@@ -58,14 +58,25 @@ const players = new Players(world, places, { dayMs });
 const persist = new Persist(world, players, saveDir);
 const hadState = persist.loadState();
 const chunksLoaded = timed('Overlay saved chunks', () => persist.loadChunks());
-log(`State: ${hadState ? `${players.players.size} players, ${players.claims.size} claims` : 'fresh'}; ${chunksLoaded} saved chunk(s); clock ${players.time.year}-${String(players.time.month + 1).padStart(2, '0')}`);
+log(
+  `State: ${hadState ? `${players.players.size} players, ${players.claims.size} claims` : 'fresh'}; ${chunksLoaded} saved chunk(s); clock ${players.time.year}-${String(players.time.month + 1).padStart(2, '0')}`,
+);
 
-const worldId = (() => { try { return String(JSON.parse(fs.readFileSync(path.join(worldDir, 'base.json'), 'utf8')).generatedAt); } catch { return 'fallback'; } })();
+const worldId = (() => {
+  try {
+    return String(JSON.parse(fs.readFileSync(path.join(worldDir, 'base.json'), 'utf8')).generatedAt);
+  } catch {
+    return 'fallback';
+  }
+})();
 const mapTiles = timed('Map tiles', () => new MapTiles(world, worldId));
 // which disasters can strike where (a byte per chunk) and the elevation of every tile, from the world generator
 const hazards = (() => {
   const f = path.join(worldDir, 'hazards.bin');
-  if (!fs.existsSync(f)) { warn(`${f} not found: no natural disasters (regenerate the world)`); return undefined; }
+  if (!fs.existsSync(f)) {
+    warn(`${f} not found: no natural disasters (regenerate the world)`);
+    return undefined;
+  }
   return new Uint8Array(fs.readFileSync(f));
 })();
 const elevation = new Elevation(path.join(worldDir, 'elevation.bin'));
@@ -89,6 +100,7 @@ const tickTimer = setInterval(() => {
   if (dt > tickMs / 2) warn(`Slow tick #${sim.tickCount}: ${dt.toFixed(0)} ms`);
 }, tickMs);
 const flushTimer = setInterval(() => net.flushTiles(), TILE_FLUSH_MS);
+// oxlint-disable-next-line no-unused-vars -- never cleared in shutdown(), unlike the other timers (left as is in the oxc PR)
 const mapTimer = setInterval(() => mapTiles.refresh(), MAP_REFRESH_MS);
 
 let shuttingDown = false;
@@ -119,7 +131,9 @@ console.log(`
   Listening  ${host}:${port}
   WebSocket  ws://localhost:${port}/ws
   HTTP       http://localhost:${port}/  (health: /health, /ATTRIBUTION.md)
-${lanUrls().map((u) => `  LAN        ${u}`).join('\n')}
+${lanUrls()
+  .map((u) => `  LAN        ${u}`)
+  .join('\n')}
   Save dir   ${saveDir}
   Tick       every ${tickMs} ms = one simulation step (${Number(process.env.STEPS_PER_MONTH) || STEPS_PER_MONTH} to a game month)${devHooks ? '\n  DEV_HOOKS  enabled (devIgnite/devFunds accepted, random fires off)' : ''}${dayMs !== 86_400_000 ? `\n  Day        ${dayMs} ms (ABANDON_DAY_MS)` : ''}
 `);

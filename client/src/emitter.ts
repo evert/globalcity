@@ -6,9 +6,14 @@ export class Emitter<E extends Record<string, unknown>> {
 
   on<K extends keyof E>(event: K, fn: Listener<E[K]>): () => void {
     let set = this.listeners.get(event);
-    if (!set) { set = new Set(); this.listeners.set(event, set); }
+    if (!set) {
+      set = new Set();
+      this.listeners.set(event, set);
+    }
     set.add(fn);
-    return () => { set!.delete(fn); };
+    return () => {
+      set!.delete(fn);
+    };
   }
 
   off<K extends keyof E>(event: K, fn: Listener<E[K]>): void {
@@ -19,7 +24,11 @@ export class Emitter<E extends Record<string, unknown>> {
     const set = this.listeners.get(event);
     if (!set) return;
     for (const fn of [...set]) {
-      try { fn(payload); } catch (err) { console.error(`[emitter] listener for ${String(event)} failed`, err); }
+      try {
+        fn(payload);
+      } catch (err) {
+        console.error(`[emitter] listener for ${String(event)} failed`, err);
+      }
     }
   }
 }

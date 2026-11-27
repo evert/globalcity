@@ -6,11 +6,42 @@
 
 import WebSocket from 'ws';
 import {
-  DEFAULT_PORT, CHUNK, TICK_MS, LOMASK, ANIMBIT, ZONEBIT, LTRFBASE, LASTROAD, POLICE_RANGE,
-  COALSMOKE1, COALSMOKE4, RADAR0, NUKESWIRL1, FULLSTADIUM, STADIUM, IZB, SMOKEBASE, COALBASE, POWERPLANT,
-  lonLatToTile, chunkOf, chunkKey, decodeChunk, isWater, isRoad, isRubble, roadPiece, IND_SMOKE, ANI_TILE,
-  type ClientMsg, type ServerMsg, type PlayerStats, type QueryInfo, type ToolId,
-  COAL_POWER, NUCLEAR_POWER,
+  DEFAULT_PORT,
+  CHUNK,
+  TICK_MS,
+  LOMASK,
+  ANIMBIT,
+  ZONEBIT,
+  LTRFBASE,
+  LASTROAD,
+  POLICE_RANGE,
+  COALSMOKE1,
+  COALSMOKE4,
+  RADAR0,
+  NUKESWIRL1,
+  FULLSTADIUM,
+  STADIUM,
+  IZB,
+  SMOKEBASE,
+  COALBASE,
+  POWERPLANT,
+  lonLatToTile,
+  chunkOf,
+  chunkKey,
+  decodeChunk,
+  isWater,
+  isRoad,
+  isRubble,
+  roadPiece,
+  IND_SMOKE,
+  ANI_TILE,
+  type ClientMsg,
+  type ServerMsg,
+  type PlayerStats,
+  type QueryInfo,
+  type ToolId,
+  COAL_POWER,
+  NUCLEAR_POWER,
 } from '@globalcity/shared';
 
 const port = Number(process.env.PORT) || DEFAULT_PORT;
@@ -22,7 +53,11 @@ const ticks = (n: number): number => n * TICK + 500;
 
 function fail(msg: string): never {
   console.error(`FAIL: ${msg}`);
-  for (const c of clients) console.error(`${c.name} toasts:`, c.toasts.map((t) => `${t.kind}: ${t.msg}`));
+  for (const c of clients)
+    console.error(
+      `${c.name} toasts:`,
+      c.toasts.map((t) => `${t.kind}: ${t.msg}`),
+    );
   process.exit(1);
 }
 
@@ -41,11 +76,16 @@ class TestClient {
   seen = new Map<string, Set<number>>();
   watch = new Set<string>();
 
-  constructor(readonly name: string) { clients.push(this); }
+  constructor(readonly name: string) {
+    clients.push(this);
+  }
 
   async connect(): Promise<void> {
     this.ws = new WebSocket(url);
-    await new Promise<void>((res, rej) => { this.ws.on('open', res); this.ws.on('error', rej); });
+    await new Promise<void>((res, rej) => {
+      this.ws.on('open', res);
+      this.ws.on('error', rej);
+    });
     const welcome = new Promise<void>((resolve) => {
       this.ws.on('message', (data, isBinary) => {
         if (isBinary) {
@@ -58,27 +98,47 @@ class TestClient {
         }
         const msg = JSON.parse(data.toString()) as ServerMsg;
         switch (msg.t) {
-          case 'welcome': this.id = msg.player.id; this.stats = msg.stats; resolve(); break;
-          case 'stats': this.stats = msg.stats; break;
-          case 'toast': this.toasts.push({ kind: msg.kind, msg: msg.msg, at: msg.at }); break;
-          case 'freeSpot': this.freeSpot = msg; break;
-          case 'claim': if (msg.claim.ownerId === this.id) this.claims.add(chunkKey(msg.claim.cx, msg.claim.cy)); break;
-          case 'query': this.queries.push(msg.info); break;
+          case 'welcome':
+            this.id = msg.player.id;
+            this.stats = msg.stats;
+            resolve();
+            break;
+          case 'stats':
+            this.stats = msg.stats;
+            break;
+          case 'toast':
+            this.toasts.push({ kind: msg.kind, msg: msg.msg, at: msg.at });
+            break;
+          case 'freeSpot':
+            this.freeSpot = msg;
+            break;
+          case 'claim':
+            if (msg.claim.ownerId === this.id) this.claims.add(chunkKey(msg.claim.cx, msg.claim.cy));
+            break;
+          case 'query':
+            this.queries.push(msg.info);
+            break;
           case 'tiles':
             for (let k = 0; k < msg.u.length; k += 3) {
-              const x = msg.u[k], y = msg.u[k + 1], v = msg.u[k + 2];
+              const x = msg.u[k],
+                y = msg.u[k + 1],
+                v = msg.u[k + 2];
               const c = chunkOf(x, y);
               const tiles = this.chunks.get(chunkKey(c.cx, c.cy));
               if (tiles) tiles[(y - c.cy * CHUNK) * CHUNK + (x - c.cx * CHUNK)] = v;
               const key = `${x},${y}`;
               if (this.watch.has(key)) {
                 let s = this.seen.get(key);
-                if (!s) { s = new Set(); this.seen.set(key, s); }
+                if (!s) {
+                  s = new Set();
+                  this.seen.set(key, s);
+                }
                 s.add(v);
               }
             }
             break;
-          default: break;
+          default:
+            break;
         }
       });
     });
@@ -86,8 +146,12 @@ class TestClient {
     await welcome;
   }
 
-  send(m: ClientMsg): void { this.ws.send(JSON.stringify(m)); }
-  sendRaw(m: unknown): void { this.ws.send(JSON.stringify(m)); }
+  send(m: ClientMsg): void {
+    this.ws.send(JSON.stringify(m));
+  }
+  sendRaw(m: unknown): void {
+    this.ws.send(JSON.stringify(m));
+  }
   private builds = 0;
   /** Build, pacing below the server's 40 builds/s token bucket (excess builds are silently dropped). */
   async build(tool: ToolId, x: number, y: number): Promise<void> {
@@ -114,7 +178,9 @@ class TestClient {
     return waitFor(() => this.queries[n], 'query reply');
   }
 
-  hasToast(re: RegExp): boolean { return this.toasts.some((t) => re.test(`${t.kind}: ${t.msg}`)); }
+  hasToast(re: RegExp): boolean {
+    return this.toasts.some((t) => re.test(`${t.kind}: ${t.msg}`));
+  }
 }
 
 const waitFor = <T>(pred: () => T | null | undefined | false, label: string, ms = 5000): Promise<T> =>
@@ -122,15 +188,37 @@ const waitFor = <T>(pred: () => T | null | undefined | false, label: string, ms 
     const t0 = Date.now();
     const iv = setInterval(() => {
       const v = pred();
-      if (v) { clearInterval(iv); resolve(v); }
-      else if (Date.now() - t0 > ms) { clearInterval(iv); reject(new Error(`timeout waiting for ${label}`)); }
+      if (v) {
+        clearInterval(iv);
+        resolve(v);
+      } else if (Date.now() - t0 > ms) {
+        clearInterval(iv);
+        reject(new Error(`timeout waiting for ${label}`));
+      }
     }, 25);
   });
 
 const SEEDS: [number, number][] = [
-  [-0.1, 51.5], [2.35, 48.85], [13.4, 52.5], [-3.7, 40.4], [21.0, 52.2], [30.5, 50.45], [37.6, 55.75],
-  [-94.6, 39.1], [-87.6, 41.9], [-104.9, 39.7], [-46.6, -23.5], [151.2, -33.9], [116.4, 39.9], [77.2, 28.6],
-  [3.4, 6.5], [28.0, -26.2], [-99.1, 19.4], [-58.4, -34.6], [105.8, 21.0], [44.4, 33.3],
+  [-0.1, 51.5],
+  [2.35, 48.85],
+  [13.4, 52.5],
+  [-3.7, 40.4],
+  [21.0, 52.2],
+  [30.5, 50.45],
+  [37.6, 55.75],
+  [-94.6, 39.1],
+  [-87.6, 41.9],
+  [-104.9, 39.7],
+  [-46.6, -23.5],
+  [151.2, -33.9],
+  [116.4, 39.9],
+  [77.2, 28.6],
+  [3.4, 6.5],
+  [28.0, -26.2],
+  [-99.1, 19.4],
+  [-58.4, -34.6],
+  [105.8, 21.0],
+  [44.4, 33.3],
 ];
 
 // Layout, origin (X,Y) = top-left of a 25 x 13 land rectangle. Everything is powered from the coal plant through
@@ -139,15 +227,17 @@ const SEEDS: [number, number][] = [
 //   rows Y+4..Y+6 : wire column at X+1 from the plant down to the zones
 //   rows Y+7..Y+9 : res X..X+2 | com X+3..X+5 | res X+6..X+8 | com X+9..X+11 | wires X+12..X+14 (row Y+8) | ind X+15..X+17 | nuclear X+19..X+22 (rows Y+7..Y+10)
 //   row Y+11      : road X..X+24 ; row Y+12 free (a branch road is added during the test)
-const RW = 25, RH = 13;
+const RW = 25,
+  RH = 13;
 
 function findRect(tiles: Uint32Array): { ox: number; oy: number } | null {
   for (let oy = 1; oy + RH < CHUNK - 1; oy++) {
     cols: for (let ox = 1; ox + RW < CHUNK - 1; ox++) {
-      for (let dy = 0; dy < RH; dy++) for (let dx = 0; dx < RW; dx++) {
-        const v = tiles[(oy + dy) * CHUNK + ox + dx];
-        if (isWater(v) || (v & ZONEBIT) || isRoad(v)) continue cols;
-      }
+      for (let dy = 0; dy < RH; dy++)
+        for (let dx = 0; dx < RW; dx++) {
+          const v = tiles[(oy + dy) * CHUNK + ox + dx];
+          if (isWater(v) || v & ZONEBIT || isRoad(v)) continue cols;
+        }
       return { ox, oy };
     }
   }
@@ -197,18 +287,35 @@ async function main(): Promise<void> {
   // Positions of interest (centres = footprint top-left + (1,1)).
   const coal = { x: X + 1, y: Y + 1 };
   const airport = { x: X + 6, y: Y + 1 };
-  const stadiums = [{ x: X + 13, y: Y + 1 }, { x: X + 18, y: Y + 1 }];
+  const stadiums = [
+    { x: X + 13, y: Y + 1 },
+    { x: X + 18, y: Y + 1 },
+  ];
   const police = { x: X + 23, y: Y + 1 };
-  const zones = [{ tool: 'residential', x: X + 1 }, { tool: 'commercial', x: X + 4 }, { tool: 'residential', x: X + 7 }, { tool: 'commercial', x: X + 10 }] as const;
+  const zones = [
+    { tool: 'residential', x: X + 1 },
+    { tool: 'commercial', x: X + 4 },
+    { tool: 'residential', x: X + 7 },
+    { tool: 'commercial', x: X + 10 },
+  ] as const;
   const ZY = Y + 8;
   const ind = { x: X + 16, y: ZY };
   const indWire = { x: X + 13, y: ZY };
   const nuclear = { x: X + 20, y: ZY };
   const ROAD_Y = Y + 11;
-  const smokeCells = [{ x: coal.x + 1, y: coal.y - 1 }, { x: coal.x + 2, y: coal.y - 1 }, { x: coal.x + 1, y: coal.y }, { x: coal.x + 2, y: coal.y }];
+  const smokeCells = [
+    { x: coal.x + 1, y: coal.y - 1 },
+    { x: coal.x + 2, y: coal.y - 1 },
+    { x: coal.x + 1, y: coal.y },
+    { x: coal.x + 2, y: coal.y },
+  ];
   const radar = { x: airport.x + 1, y: airport.y - 1 };
   const swirl = { x: nuclear.x, y: nuclear.y + 1 };
-  for (const s of stadiums) { A.watch.add(`${s.x},${s.y}`); A.watch.add(`${s.x + 1},${s.y}`); A.watch.add(`${s.x + 1},${s.y + 1}`); }
+  for (const s of stadiums) {
+    A.watch.add(`${s.x},${s.y}`);
+    A.watch.add(`${s.x + 1},${s.y}`);
+    A.watch.add(`${s.x + 1},${s.y + 1}`);
+  }
 
   // ---- build ----
   await A.build('coal', coal.x, coal.y);
@@ -232,14 +339,24 @@ async function main(): Promise<void> {
 
   // ---- (a) coal smoke, radar, swirl, specials, police ----
   console.log('waiting for animation tiles...');
-  await waitFor(() => smokeCells.every((c) => anim(A.tile(c.x, c.y)) && idOf(A.tile(c.x, c.y)) >= COALSMOKE1 && idOf(A.tile(c.x, c.y)) <= COALSMOKE4 + 3), 'coal smoke tiles', ticks(3));
+  await waitFor(
+    () => smokeCells.every((c) => anim(A.tile(c.x, c.y)) && idOf(A.tile(c.x, c.y)) >= COALSMOKE1 && idOf(A.tile(c.x, c.y)) <= COALSMOKE4 + 3),
+    'coal smoke tiles',
+    ticks(3),
+  );
   console.log(`coal smoke: ${smokeCells.map((c) => idOf(A.tile(c.x, c.y))).join(',')}`);
   await waitFor(() => anim(A.tile(radar.x, radar.y)) && idOf(A.tile(radar.x, radar.y)) === RADAR0, 'airport radar tile', ticks(3));
   await waitFor(() => anim(A.tile(swirl.x, swirl.y)) && idOf(A.tile(swirl.x, swirl.y)) === NUKESWIRL1, 'nuclear swirl tile', ticks(3));
-  await waitFor(() => A.stats?.policeStations === 1 && A.stats.specials.airport <= 1 && A.stats.specials.stadium === 2, 'stats.policeStations/specials', ticks(3));
+  await waitFor(
+    () => A.stats?.policeStations === 1 && A.stats.specials.airport <= 1 && A.stats.specials.stadium === 2,
+    'stats.policeStations/specials',
+    ticks(3),
+  );
   // the airport only counts when another mayor has one to fly to (smoke:flights covers that), so 0 or 1 here
   const s0 = A.stats!;
-  console.log(`stats: police=${s0.policeStations} specials=${JSON.stringify(s0.specials)} crime=${s0.crime} demand=${JSON.stringify(s0.demand)} supply=${s0.powerSupply}`);
+  console.log(
+    `stats: police=${s0.policeStations} specials=${JSON.stringify(s0.specials)} crime=${s0.crime} demand=${JSON.stringify(s0.demand)} supply=${s0.powerSupply}`,
+  );
   // one coal plant + one nuclear plant
   if (s0.powerSupply !== COAL_POWER + NUCLEAR_POWER) fail(`power supply ${s0.powerSupply}, expected ${COAL_POWER + NUCLEAR_POWER}`);
   if (s0.specials.seaport !== 0) fail('no seaport was built');
@@ -253,7 +370,9 @@ async function main(): Promise<void> {
   const roadTiles = (): number[] => Array.from({ length: RW }, (_, dx) => A.tile(X + dx, ROAD_Y));
   // A test town is far too small to jam its roads under the real trip rules, so pump density in through
   // the dev hook (one burst per tick) until section (d), where the zones go and the roads must clear.
-  const pump = setInterval(() => { for (let dx = 0; dx < RW; dx++) A.sendRaw({ t: 'devTraffic', x: X + dx, y: ROAD_Y, amount: 255 }); }, TICK);
+  const pump = setInterval(() => {
+    for (let dx = 0; dx < RW; dx++) A.sendRaw({ t: 'devTraffic', x: X + dx, y: ROAD_Y, amount: 255 });
+  }, TICK);
   await waitFor(() => roadTiles().some((v) => isTrafficTile(v)) && (A.stats?.traffic ?? 0) > 0, 'traffic tiles and stats.traffic > 0', ticks(15));
   let tr = roadTiles();
   const trafficCount = tr.filter(isTrafficTile).length;
@@ -287,7 +406,11 @@ async function main(): Promise<void> {
     await waitFor(() => cells.every((c) => anim(A.tile(c.x, c.y)) && idOf(A.tile(c.x, c.y)) === c.on), 'industrial smoke tiles', ticks(3));
     console.log(`industrial smoke: ${cells.map((c) => idOf(A.tile(c.x, c.y))).join(',')}`);
     await A.build('bulldozer', indWire.x, indWire.y);
-    await waitFor(() => cells.every((c) => !anim(A.tile(c.x, c.y)) && idOf(A.tile(c.x, c.y)) < SMOKEBASE), 'industrial smoke off after the wire was cut', ticks(4));
+    await waitFor(
+      () => cells.every((c) => !anim(A.tile(c.x, c.y)) && idOf(A.tile(c.x, c.y)) < SMOKEBASE),
+      'industrial smoke off after the wire was cut',
+      ticks(4),
+    );
     console.log(`unpowered: ${cells.map((c) => idOf(A.tile(c.x, c.y))).join(',')}`);
   } else {
     await A.build('bulldozer', indWire.x, indWire.y);
@@ -300,7 +423,11 @@ async function main(): Promise<void> {
   await sleep(300);
   for (const z of zones) if (!isRubble(A.tile(z.x, ZY))) fail(`zone at ${z.x},${ZY} not bulldozed`);
   console.log('zones bulldozed; waiting for traffic to decay...');
-  await waitFor(() => roadTiles().every((v) => isRoad(v) && !isTrafficTile(v) && !anim(v)) && A.stats?.traffic === 0, 'plain roads and stats.traffic = 0', ticks(45));
+  await waitFor(
+    () => roadTiles().every((v) => isRoad(v) && !isTrafficTile(v) && !anim(v)) && A.stats?.traffic === 0,
+    'plain roads and stats.traffic = 0',
+    ticks(45),
+  );
   tr = roadTiles();
   console.log(`roads plain again: ids ${tr.map(idOf).join(' ')}`);
   console.log('traffic decay OK');
@@ -314,7 +441,8 @@ async function main(): Promise<void> {
   console.log(`stadium centres now: ${current.join(',')} (${STADIUM} empty, ${FULLSTADIUM} game on)`);
   // The game tiles (932 and 940, ANIMBIT) must have been placed with every game; a game lasts ~8 ticks so check the history.
   const played = stadiums.find((s) => [...(A.seen.get(`${s.x},${s.y}`) ?? [])].some((v) => idOf(v) === FULLSTADIUM))!;
-  const seenGame = (dx: number, dy: number, id: number): boolean => [...(A.seen.get(`${played.x + dx},${played.y + dy}`) ?? [])].some((v) => idOf(v) === id && anim(v));
+  const seenGame = (dx: number, dy: number, id: number): boolean =>
+    [...(A.seen.get(`${played.x + dx},${played.y + dy}`) ?? [])].some((v) => idOf(v) === id && anim(v));
   if (!seenGame(1, 0, 932) || !seenGame(1, 1, 940)) fail('FOOTBALLGAME tiles with ANIMBIT were not placed with the game');
   const full = stadiums.find((s) => idOf(A.tile(s.x, s.y)) === FULLSTADIUM);
   if (full) {

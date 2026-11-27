@@ -11,11 +11,24 @@ const hex = (h: number): RGB => [(h >> 16) & 255, (h >> 8) & 255, h & 255];
 
 /** The Micropolis colours that make up the landscape. */
 export const MP = {
-  dirt: 0xcc7f66, speck: 0x3f3f3f, speck2: 0x000000, bank: 0x997f4c,
-  water: 0x6666e6, waterDark: 0x0000e6, leaf: 0x00e600, leafDark: 0x007f00,
+  dirt: 0xcc7f66,
+  speck: 0x3f3f3f,
+  speck2: 0x000000,
+  bank: 0x997f4c,
+  water: 0x6666e6,
+  waterDark: 0x0000e6,
+  leaf: 0x00e600,
+  leafDark: 0x007f00,
 } as const;
 
-export interface GroundPalette { dirt: number; speck: number; speck2: number; bank: number; leaf: number; leafDark: number }
+export interface GroundPalette {
+  dirt: number;
+  speck: number;
+  speck2: number;
+  bank: number;
+  leaf: number;
+  leafDark: number;
+}
 
 export const GROUND_PALETTES: Record<Biome, GroundPalette> = {
   [Biome.Temperate]: { dirt: MP.dirt, speck: MP.speck, speck2: MP.speck2, bank: MP.bank, leaf: MP.leaf, leafDark: MP.leafDark },
@@ -34,14 +47,25 @@ export function onWaterId(id: number): boolean {
 
 /** Per variant, a colour map for one tile id: source RGB (packed) -> replacement, or undefined for no change. */
 function swapsFor(variant: number, id: number): Map<number, number> {
-  const biome = Math.floor(variant / 2) as Biome, frozen = (variant & 1) === 1;
+  const biome = Math.floor(variant / 2) as Biome,
+    frozen = (variant & 1) === 1;
   const p = GROUND_PALETTES[biome] ?? GROUND_PALETTES[Biome.Temperate];
   const m = new Map<number, number>();
   m.set(MP.dirt, p.dirt);
-  if (id === T.DIRT || id === 1) { m.set(MP.speck, p.speck); m.set(MP.speck2, p.speck2); }
+  if (id === T.DIRT || id === 1) {
+    m.set(MP.speck, p.speck);
+    m.set(MP.speck2, p.speck2);
+  }
   if (id >= T.REDGE && id <= T.LASTRIVEDGE) m.set(MP.bank, p.bank);
-  if (id >= T.WOODS_LOW && id <= T.WOODS5) { m.set(MP.leaf, p.leaf); m.set(MP.leafDark, p.leafDark); m.set(MP.bank, p.bank); }
-  if (frozen && onWaterId(id)) { m.set(MP.water, ICE.water); m.set(MP.waterDark, ICE.waterDark); }
+  if (id >= T.WOODS_LOW && id <= T.WOODS5) {
+    m.set(MP.leaf, p.leaf);
+    m.set(MP.leafDark, p.leafDark);
+    m.set(MP.bank, p.bank);
+  }
+  if (frozen && onWaterId(id)) {
+    m.set(MP.water, ICE.water);
+    m.set(MP.waterDark, ICE.waterDark);
+  }
   for (const [k, v] of m) if (k === v) m.delete(k);
   return m;
 }
@@ -52,21 +76,25 @@ function swapsFor(variant: number, id: number): Map<number, number> {
  */
 export function recolourSheet(px: Uint8ClampedArray | Uint8Array, width: number, height: number, tile: number, variant: number): void {
   if (variant <= 0 || variant >= TERRAIN_VARIANTS) return;
-  const cols = Math.floor(width / tile), rows = Math.floor(height / tile);
-  for (let ty = 0; ty < rows; ty++) for (let tx = 0; tx < cols; tx++) {
-    const id = ty * cols + tx;
-    const swaps = swapsFor(variant, id);
-    if (!swaps.size) continue;
-    for (let y = ty * tile; y < ty * tile + tile; y++) {
-      let o = (y * width + tx * tile) * 4;
-      for (let x = 0; x < tile; x++, o += 4) {
-        const c = (px[o] << 16) | (px[o + 1] << 8) | px[o + 2];
-        const r = swaps.get(c);
-        if (r === undefined) continue;
-        px[o] = (r >> 16) & 255; px[o + 1] = (r >> 8) & 255; px[o + 2] = r & 255;
+  const cols = Math.floor(width / tile),
+    rows = Math.floor(height / tile);
+  for (let ty = 0; ty < rows; ty++)
+    for (let tx = 0; tx < cols; tx++) {
+      const id = ty * cols + tx;
+      const swaps = swapsFor(variant, id);
+      if (!swaps.size) continue;
+      for (let y = ty * tile; y < ty * tile + tile; y++) {
+        let o = (y * width + tx * tile) * 4;
+        for (let x = 0; x < tile; x++, o += 4) {
+          const c = (px[o] << 16) | (px[o + 1] << 8) | px[o + 2];
+          const r = swaps.get(c);
+          if (r === undefined) continue;
+          px[o] = (r >> 16) & 255;
+          px[o + 1] = (r >> 8) & 255;
+          px[o + 2] = r & 255;
+        }
       }
     }
-  }
 }
 
 /** Flat colours for the zoomed-out map: ground, its speck, and trees per biome; open water and ice. */

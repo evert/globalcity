@@ -7,7 +7,13 @@
 import fs from 'node:fs';
 import { log, warn } from './util.ts';
 
-export interface Place { name: string; x: number; y: number; pop: number; country: string }
+export interface Place {
+  name: string;
+  x: number;
+  y: number;
+  pop: number;
+  country: string;
+}
 
 /** Only places within this many tiles of the chunk centre are candidates (else: nearest regardless). */
 const NAME_RADIUS = 160;
@@ -18,7 +24,10 @@ export class Places {
   readonly places: Place[] = [];
 
   load(file: string): void {
-    if (!fs.existsSync(file)) { warn(`${file} not found; new cities will be named "Settlement cx,cy" (run the places generator in tools/)`); return; }
+    if (!fs.existsSync(file)) {
+      warn(`${file} not found; new cities will be named "Settlement cx,cy" (run the places generator in tools/)`);
+      return;
+    }
     try {
       const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as { places?: unknown[] };
       if (!Array.isArray(raw.places)) throw new Error('no places array');
@@ -40,15 +49,24 @@ export class Places {
    * dist - 0.5*log10(pop+1); if none in range, the nearest place; null if there are no places at all.
    */
   nearestName(x: number, y: number): string | null {
-    let best: Place | null = null, bestScore = Infinity;
-    let nearest: Place | null = null, nearestD = Infinity;
+    let best: Place | null = null,
+      bestScore = Infinity;
+    let nearest: Place | null = null,
+      nearestD = Infinity;
     for (const pl of this.places) {
-      const dx = pl.x - x, dy = pl.y - y;
+      const dx = pl.x - x,
+        dy = pl.y - y;
       const d = Math.sqrt(dx * dx + dy * dy);
-      if (d < nearestD) { nearestD = d; nearest = pl; }
+      if (d < nearestD) {
+        nearestD = d;
+        nearest = pl;
+      }
       if (d > NAME_RADIUS) continue;
       const score = d - POP_WEIGHT * Math.log10(pl.pop + 1);
-      if (score < bestScore) { bestScore = score; best = pl; }
+      if (score < bestScore) {
+        bestScore = score;
+        best = pl;
+      }
     }
     const pick = best ?? nearest;
     return pick && pick.name ? pick.name : null;

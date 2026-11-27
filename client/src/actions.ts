@@ -6,10 +6,15 @@ import type { Renderer } from './renderer.ts';
 import type { AppState } from './state.ts';
 
 export class Actions {
-  constructor(readonly state: AppState, readonly net: Net, readonly renderer: Renderer) {}
+  constructor(
+    readonly state: AppState,
+    readonly net: Net,
+    readonly renderer: Renderer,
+  ) {}
 
   flyToChunk(cx: number, cy: number, zoom = 1, ms = 700): void {
-    cx = clamp(cx, 0, CHUNKS_X - 1); cy = clamp(cy, 0, CHUNKS_Y - 1);
+    cx = clamp(cx, 0, CHUNKS_X - 1);
+    cy = clamp(cy, 0, CHUNKS_Y - 1);
     this.renderer.flyTo((cx + 0.5) * CHUNK, (cy + 0.5) * CHUNK, zoom, ms);
   }
 
@@ -45,13 +50,19 @@ export class Actions {
   }
 
   /** Ask for the emergency lifeline loan (the server checks eligibility). */
-  lifeline(): boolean { return this.net.send({ t: 'lifeline' }); }
+  lifeline(): boolean {
+    return this.net.send({ t: 'lifeline' });
+  }
 
   /** Retire my city as a monument and start over (the server checks the population). */
-  monument(): boolean { return this.net.send({ t: 'monument' }); }
+  monument(): boolean {
+    return this.net.send({ t: 'monument' });
+  }
 
   /** Give up my broke city and start over (the server checks funds and the lifeline). */
-  abandon(): boolean { return this.net.send({ t: 'abandon' }); }
+  abandon(): boolean {
+    return this.net.send({ t: 'abandon' });
+  }
 
   rename(name: string): boolean {
     name = name.trim().slice(0, 24);

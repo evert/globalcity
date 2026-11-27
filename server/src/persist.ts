@@ -16,7 +16,11 @@ export class Persist {
   private readonly buildingsFile: string;
   private timer: NodeJS.Timeout | null = null;
 
-  constructor(private readonly world: World, private readonly players: Players, saveDir: string) {
+  constructor(
+    private readonly world: World,
+    private readonly players: Players,
+    saveDir: string,
+  ) {
     this.chunksDir = path.join(saveDir, 'chunks');
     this.stateFile = path.join(saveDir, 'state.json');
     this.buildingsFile = path.join(saveDir, 'buildings.json');
@@ -36,10 +40,14 @@ export class Persist {
     for (const name of fs.readdirSync(this.chunksDir)) {
       const m = /^(\d+)_(\d+)\.bin$/.exec(name);
       if (!m) continue;
-      const cx = Number(m[1]), cy = Number(m[2]);
+      const cx = Number(m[1]),
+        cy = Number(m[2]);
       if (!validChunk(cx, cy)) continue;
       const buf = fs.readFileSync(path.join(this.chunksDir, name));
-      if (buf.length !== expected) { warn(`Skipping ${name}: size ${buf.length} != ${expected}`); continue; }
+      if (buf.length !== expected) {
+        warn(`Skipping ${name}: size ${buf.length} != ${expected}`);
+        continue;
+      }
       const data = new Uint32Array(CHUNK * CHUNK);
       for (let i = 0; i < data.length; i++) data[i] = buf.readUInt16LE(i * 2);
       this.world.loadChunk(cx, cy, data);
@@ -50,8 +58,11 @@ export class Persist {
 
   loadState(): boolean {
     if (fs.existsSync(this.buildingsFile)) {
-      try { this.world.buildings.load(JSON.parse(fs.readFileSync(this.buildingsFile, 'utf8'))); }
-      catch (e) { warn(`Could not load ${this.buildingsFile}: ${(e as Error).message}`); }
+      try {
+        this.world.buildings.load(JSON.parse(fs.readFileSync(this.buildingsFile, 'utf8')));
+      } catch (e) {
+        warn(`Could not load ${this.buildingsFile}: ${(e as Error).message}`);
+      }
     }
     if (!fs.existsSync(this.stateFile)) return false;
     try {

@@ -5,9 +5,30 @@
 
 import WebSocket from 'ws';
 import {
-  DEFAULT_PORT, CHUNK, TICK_MS, MAX_CHUNKS_PER_PLAYER, ABANDON_IDLE_DAYS, ABANDON_FREE_DAYS, CHUNKS_X, CHUNKS_Y, WORLD_H,
-  lonLatToTile, chunkOf, chunkKey, decodeChunk, isWater, isRubble, isRoad, isZoneTile, isHouse,
-  type ClientMsg, type ServerMsg, type PlayerStats, type ClaimInfo, type Presence, type QueryInfo,
+  DEFAULT_PORT,
+  CHUNK,
+  TICK_MS,
+  MAX_CHUNKS_PER_PLAYER,
+  ABANDON_IDLE_DAYS,
+  ABANDON_FREE_DAYS,
+  CHUNKS_X,
+  CHUNKS_Y,
+  WORLD_H,
+  lonLatToTile,
+  chunkOf,
+  chunkKey,
+  decodeChunk,
+  isWater,
+  isRubble,
+  isRoad,
+  isZoneTile,
+  isHouse,
+  type ClientMsg,
+  type ServerMsg,
+  type PlayerStats,
+  type ClaimInfo,
+  type Presence,
+  type QueryInfo,
 } from '@globalcity/shared';
 
 const port = Number(process.env.PORT) || DEFAULT_PORT;
@@ -20,7 +41,11 @@ const ticks = (n: number): number => n * TICK + 500;
 
 function fail(msg: string): never {
   console.error(`FAIL: ${msg}`);
-  for (const c of clients) console.error(`${c.name} toasts:`, c.toasts.map((t) => `${t.kind}: ${t.msg}`));
+  for (const c of clients)
+    console.error(
+      `${c.name} toasts:`,
+      c.toasts.map((t) => `${t.kind}: ${t.msg}`),
+    );
   process.exit(1);
 }
 
@@ -40,11 +65,16 @@ class TestClient {
   presence: { at: number; players: Presence[] }[] = [];
   queries: QueryInfo[] = [];
 
-  constructor(readonly name: string) { clients.push(this); }
+  constructor(readonly name: string) {
+    clients.push(this);
+  }
 
   async connect(): Promise<void> {
     this.ws = new WebSocket(url);
-    await new Promise<void>((res, rej) => { this.ws.on('open', res); this.ws.on('error', rej); });
+    await new Promise<void>((res, rej) => {
+      this.ws.on('open', res);
+      this.ws.on('error', rej);
+    });
     const welcome = new Promise<void>((resolve) => {
       this.ws.on('message', (data, isBinary) => {
         if (isBinary) {
@@ -58,27 +88,49 @@ class TestClient {
         const msg = JSON.parse(data.toString()) as ServerMsg;
         switch (msg.t) {
           case 'welcome':
-            this.id = msg.player.id; this.cityName = msg.player.cityName; this.stats = msg.stats;
+            this.id = msg.player.id;
+            this.cityName = msg.player.cityName;
+            this.stats = msg.stats;
             for (const c of msg.claims) this.claims.set(chunkKey(c.cx, c.cy), c);
             resolve();
             break;
-          case 'stats': this.stats = msg.stats; break;
-          case 'toast': this.toasts.push({ kind: msg.kind, msg: msg.msg, at: msg.at }); break;
-          case 'freeSpot': this.freeSpot = msg; break;
-          case 'claim': this.claims.set(chunkKey(msg.claim.cx, msg.claim.cy), msg.claim); break;
-          case 'claims': for (const c of msg.claims) this.claims.set(chunkKey(c.cx, c.cy), c); break;
-          case 'unclaim': this.claims.delete(chunkKey(msg.cx, msg.cy)); this.unclaims.push(chunkKey(msg.cx, msg.cy)); break;
-          case 'presence': this.presence.push({ at: Date.now(), players: msg.players }); break;
-          case 'query': this.queries.push(msg.info); break;
+          case 'stats':
+            this.stats = msg.stats;
+            break;
+          case 'toast':
+            this.toasts.push({ kind: msg.kind, msg: msg.msg, at: msg.at });
+            break;
+          case 'freeSpot':
+            this.freeSpot = msg;
+            break;
+          case 'claim':
+            this.claims.set(chunkKey(msg.claim.cx, msg.claim.cy), msg.claim);
+            break;
+          case 'claims':
+            for (const c of msg.claims) this.claims.set(chunkKey(c.cx, c.cy), c);
+            break;
+          case 'unclaim':
+            this.claims.delete(chunkKey(msg.cx, msg.cy));
+            this.unclaims.push(chunkKey(msg.cx, msg.cy));
+            break;
+          case 'presence':
+            this.presence.push({ at: Date.now(), players: msg.players });
+            break;
+          case 'query':
+            this.queries.push(msg.info);
+            break;
           case 'tiles':
             for (let k = 0; k < msg.u.length; k += 3) {
-              const x = msg.u[k], y = msg.u[k + 1], v = msg.u[k + 2];
+              const x = msg.u[k],
+                y = msg.u[k + 1],
+                v = msg.u[k + 2];
               const c = chunkOf(x, y);
               const tiles = this.chunks.get(chunkKey(c.cx, c.cy));
               if (tiles) tiles[(y - c.cy * CHUNK) * CHUNK + (x - c.cx * CHUNK)] = v;
             }
             break;
-          default: break;
+          default:
+            break;
         }
       });
     });
@@ -86,8 +138,12 @@ class TestClient {
     await welcome;
   }
 
-  send(m: ClientMsg): void { this.ws.send(JSON.stringify(m)); }
-  sendRaw(m: unknown): void { this.ws.send(JSON.stringify(m)); }
+  send(m: ClientMsg): void {
+    this.ws.send(JSON.stringify(m));
+  }
+  sendRaw(m: unknown): void {
+    this.ws.send(JSON.stringify(m));
+  }
 
   tile(x: number, y: number): number | undefined {
     const c = chunkOf(x, y);
@@ -120,8 +176,12 @@ class TestClient {
     return r === 'ok';
   }
 
-  myClaims(): ClaimInfo[] { return [...this.claims.values()].filter((c) => c.ownerId === this.id); }
-  hasToast(re: RegExp): boolean { return this.toasts.some((t) => re.test(`${t.kind}: ${t.msg}`)); }
+  myClaims(): ClaimInfo[] {
+    return [...this.claims.values()].filter((c) => c.ownerId === this.id);
+  }
+  hasToast(re: RegExp): boolean {
+    return this.toasts.some((t) => re.test(`${t.kind}: ${t.msg}`));
+  }
   async toastAfter(n: number, re: RegExp, ms = 3000): Promise<void> {
     await waitFor(() => this.toasts.slice(n).some((t) => re.test(`${t.kind}: ${t.msg}`)), `toast ${re}`, ms);
   }
@@ -132,35 +192,69 @@ const waitFor = <T>(pred: () => T | null | undefined | false, label: string, ms 
     const t0 = Date.now();
     const iv = setInterval(() => {
       const v = pred();
-      if (v) { clearInterval(iv); resolve(v); }
-      else if (Date.now() - t0 > ms) { clearInterval(iv); reject(new Error(`timeout waiting for ${label}`)); }
+      if (v) {
+        clearInterval(iv);
+        resolve(v);
+      } else if (Date.now() - t0 > ms) {
+        clearInterval(iv);
+        reject(new Error(`timeout waiting for ${label}`));
+      }
     }, 25);
   });
 
 // Seed locations to look for free chunks with enough flat land.
 const SEEDS: [number, number][] = [
-  [-0.1, 51.5], [2.35, 48.85], [13.4, 52.5], [-3.7, 40.4], [21.0, 52.2], [30.5, 50.45], [37.6, 55.75],
-  [-94.6, 39.1], [-87.6, 41.9], [-104.9, 39.7], [-46.6, -23.5], [151.2, -33.9], [116.4, 39.9], [77.2, 28.6],
-  [3.4, 6.5], [28.0, -26.2], [-99.1, 19.4], [-58.4, -34.6], [105.8, 21.0], [44.4, 33.3],
+  [-0.1, 51.5],
+  [2.35, 48.85],
+  [13.4, 52.5],
+  [-3.7, 40.4],
+  [21.0, 52.2],
+  [30.5, 50.45],
+  [37.6, 55.75],
+  [-94.6, 39.1],
+  [-87.6, 41.9],
+  [-104.9, 39.7],
+  [-46.6, -23.5],
+  [151.2, -33.9],
+  [116.4, 39.9],
+  [77.2, 28.6],
+  [3.4, 6.5],
+  [28.0, -26.2],
+  [-99.1, 19.4],
+  [-58.4, -34.6],
+  [105.8, 21.0],
+  [44.4, 33.3],
 ];
 /** Interior seeds with lots of land around, for the 10-plot city and the abandoned town. */
-const INTERIOR: [number, number][] = [[65.0, 48.0], [-100.0, 45.0], [25.0, 55.0], [-60.0, -30.0], [135.0, -25.0], [90.0, 55.0]];
+const INTERIOR: [number, number][] = [
+  [65.0, 48.0],
+  [-100.0, 45.0],
+  [25.0, 55.0],
+  [-60.0, -30.0],
+  [135.0, -25.0],
+  [90.0, 55.0],
+];
 
 // Layout for A (chunk cx,cy; its last 6 columns) and B (chunk cx+1,cy; its first 8 columns), rows Y..:
 //   A: coal plant cols AX..AX+3 rows Y..Y+3; wires AX+4, AX+5 row Y+1; res zone AX..AX+2 rows Y+4..Y+6;
 //      road row Y+7 cols AX..AX+5; rail row Y+5 cols AX+3..AX+5
 //   B: wires BX, BX+1 row Y+1; res zone BX+2..BX+4 rows Y..Y+2; road row Y+3 cols BX+3..BX+6;
 //      rail row Y+5 cols BX..BX+2 then north BX+2 rows Y+4, Y+3 (touching the zone's bottom row Y+2)
-const A_COLS = 6, A_ROWS = 8, B_COLS = 8, B_ROWS = 6;
+const A_COLS = 6,
+  A_ROWS = 8,
+  B_COLS = 8,
+  B_ROWS = 6;
 
 function findRow(aTiles: Uint32Array, bTiles: Uint32Array): number | null {
   rows: for (let y = 1; y + A_ROWS < CHUNK - 1; y++) {
-    for (let dy = 0; dy < A_ROWS; dy++) for (let dx = 0; dx < A_COLS; dx++) {
-      if (isWater(aTiles[(y + dy) * CHUNK + CHUNK - A_COLS + dx])) continue rows;
-    }
-    for (let dy = 0; dy < B_ROWS; dy++) for (let dx = 0; dx < B_COLS; dx++) {
-      if (isWater(bTiles[(y + dy) * CHUNK + dx])) continue rows;
-    }
+    for (let dy = 0; dy < A_ROWS; dy++)
+      for (let dx = 0; dx < A_COLS; dx++) {
+        if (isWater(aTiles[(y + dy) * CHUNK + CHUNK - A_COLS + dx])) continue rows;
+      }
+    for (let dy = 0; dy < B_ROWS; dy++)
+      for (let dx = 0; dx < B_COLS; dx++) {
+        if (isWater(bTiles[(y + dy) * CHUNK + dx])) continue rows;
+      }
     return y;
   }
   return null;
@@ -232,7 +326,10 @@ async function main(): Promise<void> {
     if (!a || a.cx + 1 >= CHUNKS_X) continue;
     const b = await B.findFree(a.cx + 1, a.cy);
     if (!b || b.cx !== a.cx + 1 || b.cy !== a.cy) continue;
-    await B.subscribe([[a.cx, a.cy], [b.cx, b.cy]]);
+    await B.subscribe([
+      [a.cx, a.cy],
+      [b.cx, b.cy],
+    ]);
     const y = findRow(B.chunks.get(chunkKey(a.cx, a.cy))!, B.chunks.get(chunkKey(b.cx, b.cy))!);
     if (y === null) continue;
     site = { cx: a.cx, cy: a.cy, Y: a.cy * CHUNK + y };
@@ -240,12 +337,18 @@ async function main(): Promise<void> {
   }
   if (!site) fail('no pair of adjacent free chunks with enough land found');
   const { cx, cy, Y } = site;
-  const AX = (cx + 1) * CHUNK - A_COLS, BX = (cx + 1) * CHUNK;
+  const AX = (cx + 1) * CHUNK - A_COLS,
+    BX = (cx + 1) * CHUNK;
   console.log(`site: A chunk ${cx},${cy}; B chunk ${cx + 1},${cy}; rows from ${Y}`);
   if (!(await A.tryClaim(cx, cy))) fail('A claim failed');
   if (!(await B.tryClaim(cx + 1, cy))) fail('B claim failed');
-  await A.subscribe([[cx, cy], [cx + 1, cy], [dSite.cx, dSite.cy]]);
-  const aClaim = A.claims.get(chunkKey(cx, cy))!, bClaim = B.claims.get(chunkKey(cx + 1, cy))!;
+  await A.subscribe([
+    [cx, cy],
+    [cx + 1, cy],
+    [dSite.cx, dSite.cy],
+  ]);
+  const aClaim = A.claims.get(chunkKey(cx, cy))!,
+    bClaim = B.claims.get(chunkKey(cx + 1, cy))!;
   console.log(`city names: A="${aClaim.cityName}" B="${bClaim.cityName}" (idleDays ${aClaim.idleDays}/${bClaim.idleDays})`);
   if (!aClaim.cityName || !bClaim.cityName) fail('empty cityName in claim broadcast');
   if (aClaim.cityName === bClaim.cityName) fail('both cities got the same name');
@@ -276,7 +379,8 @@ async function main(): Promise<void> {
   // =========================================================================
   // (2) Presence
   // =========================================================================
-  const vx = AX + 2.5, vy = Y + 3.25;
+  const vx = AX + 2.5,
+    vy = Y + 3.25;
   const sentAt = Date.now();
   A.send({ t: 'view', x: vx, y: vy, zoom: 2, cx: AX, cy: Y });
   const frame = await waitFor(() => B.presence.find((f) => f.players.some((p) => p.id === A.id)), 'presence frame with A at B', 1500);
@@ -315,7 +419,11 @@ async function main(): Promise<void> {
   await sleep(500);
   for (const c of [A, B]) if (c.toasts.slice(toastsBeforeBuild.get(c)).some((t) => t.kind === 'error')) fail(`${c.name} got an error toast while building`);
   console.log('waiting for rail links...');
-  await waitFor(() => A.stats?.railLinks === 1 && B.stats?.railLinks === 1 && A.stats.railDemand > 0 && B.stats.railDemand > 0, 'railLinks === 1 and railDemand > 0 on both', ticks(10));
+  await waitFor(
+    () => A.stats?.railLinks === 1 && B.stats?.railLinks === 1 && A.stats.railDemand > 0 && B.stats.railDemand > 0,
+    'railLinks === 1 and railDemand > 0 on both',
+    ticks(10),
+  );
   console.log(`rail: A links=${A.stats!.railLinks} demand=${A.stats!.railDemand}; B links=${B.stats!.railLinks} demand=${B.stats!.railDemand}`);
   // the first rail link unlocks Grand Central for good, with a toast naming the other city
   await waitFor(() => A.stats?.unlocked?.includes('grandcentral') && B.stats?.unlocked?.includes('grandcentral'), 'Grand Central unlocked on both', ticks(3));
@@ -328,12 +436,14 @@ async function main(): Promise<void> {
   A.send({ t: 'query', x: AX + 4, y: Y + 5 });
   const rq = await waitFor(() => A.queries[0], 'rail query');
   console.log(`rail query: "${rq.name}"`);
-  if (!/^Rail \(links 2 cities\)/.test(rq.name)) fail(`rail query name "${rq.name}"`);
+  if (!rq.name.startsWith('Rail (links 2 cities)')) fail(`rail query name "${rq.name}"`);
   console.log('waiting for neighbour demand (needs resPop > 0 next door)...');
   await waitFor(() => (A.stats?.resPop ?? 0) > 0 && (B.stats?.resPop ?? 0) > 0, 'both resPop > 0', ticks(40));
   await waitFor(() => (A.stats?.neighbourDemand.c ?? 0) > 0 && (B.stats?.neighbourDemand.c ?? 0) > 0, 'neighbourDemand.c > 0 on both', ticks(3));
-  console.log(`neighbours: A resPop=${A.stats!.resPop} nd=${JSON.stringify(A.stats!.neighbourDemand)} demand=${JSON.stringify(A.stats!.demand)}; B resPop=${B.stats!.resPop} nd=${JSON.stringify(B.stats!.neighbourDemand)}`);
-  if (A.stats!.neighbourDemand.c !== Math.round(B.stats!.resPop / 800 * 1e4) / 1e4 && Math.abs(A.stats!.neighbourDemand.c - B.stats!.resPop / 800) > 0.01) {
+  console.log(
+    `neighbours: A resPop=${A.stats!.resPop} nd=${JSON.stringify(A.stats!.neighbourDemand)} demand=${JSON.stringify(A.stats!.demand)}; B resPop=${B.stats!.resPop} nd=${JSON.stringify(B.stats!.neighbourDemand)}`,
+  );
+  if (A.stats!.neighbourDemand.c !== Math.round((B.stats!.resPop / 800) * 1e4) / 1e4 && Math.abs(A.stats!.neighbourDemand.c - B.stats!.resPop / 800) > 0.01) {
     console.log('note: neighbourDemand.c lags resPop by a tick (fine)');
   }
   console.log('neighbours + rail OK');
@@ -358,21 +468,38 @@ async function main(): Promise<void> {
   const owned = [start];
   const tried = new Set<string>([chunkKey(start.cx, start.cy)]);
   outer: for (let k = 0; k < owned.length && owned.length < MAX_CHUNKS_PER_PLAYER; k++) {
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const nx = owned[k].cx + dx, ny = owned[k].cy + dy;
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ]) {
+      const nx = owned[k].cx + dx,
+        ny = owned[k].cy + dy;
       const key = chunkKey(nx, ny);
       if (tried.has(key) || nx < 0 || ny < 0 || nx >= CHUNKS_X || ny >= CHUNKS_Y || key === dKey) continue;
       tried.add(key);
-      if (await C.tryClaim(nx, ny)) { owned.push({ cx: nx, cy: ny }); if (owned.length >= MAX_CHUNKS_PER_PLAYER) break outer; }
+      if (await C.tryClaim(nx, ny)) {
+        owned.push({ cx: nx, cy: ny });
+        if (owned.length >= MAX_CHUNKS_PER_PLAYER) break outer;
+      }
     }
   }
   if (owned.length !== MAX_CHUNKS_PER_PLAYER) fail(`C could only claim ${owned.length} chunks (need ${MAX_CHUNKS_PER_PLAYER})`);
   if (C.stats!.chunks !== MAX_CHUNKS_PER_PLAYER) fail(`C stats.chunks ${C.stats!.chunks}`);
   let eleventh: { cx: number; cy: number } | null = null;
   for (const o of owned) {
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ]) {
       const key = chunkKey(o.cx + dx, o.cy + dy);
-      if (!tried.has(key) && key !== dKey && o.cx + dx >= 0 && o.cy + dy >= 0 && o.cx + dx < CHUNKS_X && o.cy + dy < CHUNKS_Y) { eleventh = { cx: o.cx + dx, cy: o.cy + dy }; break; }
+      if (!tried.has(key) && key !== dKey && o.cx + dx >= 0 && o.cy + dy >= 0 && o.cx + dx < CHUNKS_X && o.cy + dy < CHUNKS_Y) {
+        eleventh = { cx: o.cx + dx, cy: o.cy + dy };
+        break;
+      }
     }
     if (eleventh) break;
   }
@@ -418,11 +545,12 @@ async function main(): Promise<void> {
   const E = new TestClient('Eve');
   await E.connect();
   if (E.claims.has(dKey)) fail("new client's welcome still lists D's chunk");
-  const eFunds = E.stats!.funds, nE = E.toasts.length;
+  const eFunds = E.stats!.funds,
+    nE = E.toasts.length;
   if (!(await E.tryClaim(dSite.cx, dSite.cy))) fail('E could not claim the released chunk');
   await E.toastAfter(nE, /^success: Welcome, Mayor!.*with the 6 zones and buildings already standing there/);
   await sleep(ticks(6));
-  intact("after E claimed it");
+  intact('after E claimed it');
   if (E.stats!.chunks !== 1) fail(`E should own 1 plot, has ${E.stats!.chunks}`);
   // the first plot is free and the buildings cost nothing extra (E's new road and zone upkeep aside: frozen
   // or not, a few ticks of an unpowered city cost at most a few dollars)

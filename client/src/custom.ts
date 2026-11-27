@@ -24,7 +24,8 @@ export class CustomLayer {
     this.onChange();
   }
   apply(op: 'add' | 'remove', b: CustomBuilding): void {
-    if (op === 'add' && CUSTOM_BUILDINGS[b.kind]) this.byKey.set(`${b.x},${b.y}`, b); else this.byKey.delete(`${b.x},${b.y}`);
+    if (op === 'add' && CUSTOM_BUILDINGS[b.kind]) this.byKey.set(`${b.x},${b.y}`, b);
+    else this.byKey.delete(`${b.x},${b.y}`);
     this.onChange();
   }
   /** Buildings overlapping the tile rectangle [x0,x1) x [y0,y1). */

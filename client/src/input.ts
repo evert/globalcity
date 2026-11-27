@@ -30,9 +30,20 @@ export interface InputHooks {
 }
 
 /** A touch drawing waiting to be confirmed: what it would build and roughly what it costs. */
-export interface TouchPlan { tool: ToolId; count: number; cost: number }
+export interface TouchPlan {
+  tool: ToolId;
+  count: number;
+  cost: number;
+}
 
-interface PointerInfo { x: number; y: number; sx: number; sy: number; button: number; type: string }
+interface PointerInfo {
+  x: number;
+  y: number;
+  sx: number;
+  sy: number;
+  button: number;
+  type: string;
+}
 type Mode = 'none' | 'maybe-click' | 'maybe-draw' | 'draw' | 'pan' | 'paint' | 'pinch';
 
 const DRAG_THRESHOLD = 4;
@@ -83,13 +94,17 @@ export class Input {
     c.addEventListener('pointercancel', this.onPointerUp);
     // Mouse leaving the canvas clears the hover cursor; a finger lifting also fires pointerleave,
     // but on touch the cursor is the aimed footprint and must stay until confirmed or cancelled.
-    c.addEventListener('pointerleave', (e) => { if (e.pointerType !== 'touch' && this.pointers.size === 0) this.renderer.setHover(null); });
+    c.addEventListener('pointerleave', (e) => {
+      if (e.pointerType !== 'touch' && this.pointers.size === 0) this.renderer.setHover(null);
+    });
     c.addEventListener('wheel', this.onWheel, { passive: false });
     c.addEventListener('dblclick', this.onDblClick);
     c.addEventListener('contextmenu', (e) => e.preventDefault());
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
-    window.addEventListener('blur', () => { this.spaceHeld = false; });
+    window.addEventListener('blur', () => {
+      this.spaceHeld = false;
+    });
   }
 
   private tileAt(cssX: number, cssY: number): { x: number; y: number } {
@@ -98,14 +113,21 @@ export class Input {
   }
 
   private updateHover(cssX: number, cssY: number): void {
-    if (!this.renderer.isTileMode()) { this.renderer.setHover(null); return; }
+    if (!this.renderer.isTileMode()) {
+      this.renderer.setHover(null);
+      return;
+    }
     const t = this.tileAt(cssX, cssY);
     this.renderer.setHover(inWorld(t.x, t.y) ? t : null);
   }
 
   private onPointerDown = (e: PointerEvent): void => {
     const c = this.renderer.canvas;
-    try { c.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    try {
+      c.setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
     this.renderer.syncSize(); // a stale canvas size would put this tap on the wrong tile
     this.hooks.onInteract();
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, button: e.button, type: e.pointerType });
@@ -135,11 +157,15 @@ export class Input {
     // left button, tile mode, build tool
     this.updateHover(e.clientX, e.clientY);
     const t = this.tileAt(e.clientX, e.clientY);
-    if (!inWorld(t.x, t.y)) { this.mode = 'none'; return; }
+    if (!inWorld(t.x, t.y)) {
+      this.mode = 'none';
+      return;
+    }
     if (PAINT_TOOLS.has(tool) || ZONE_TOOLS.has(tool)) {
       this.mode = 'paint';
       this.lastPaint = t;
-      this.paintStart = t; this.axis = null;
+      this.paintStart = t;
+      this.axis = null;
       this.enqueueBuild(t.x, t.y, true);
     } else {
       this.mode = 'none';
@@ -149,13 +175,19 @@ export class Input {
 
   private onPointerMove = (e: PointerEvent): void => {
     const p = this.pointers.get(e.pointerId);
-    if (!p) { this.updateHover(e.clientX, e.clientY); return; }
-    const dx = e.clientX - p.x, dy = e.clientY - p.y;
-    p.x = e.clientX; p.y = e.clientY;
+    if (!p) {
+      this.updateHover(e.clientX, e.clientY);
+      return;
+    }
+    const dx = e.clientX - p.x,
+      dy = e.clientY - p.y;
+    p.x = e.clientX;
+    p.y = e.clientY;
     if (this.mode === 'pinch' && this.pointers.size >= 2 && this.pinch) {
       const [a, b] = [...this.pointers.values()];
       const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
-      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      const mx = (a.x + b.x) / 2,
+        my = (a.y + b.y) / 2;
       this.renderer.zoomAround(mx, my, this.pinch.zoom * (dist / this.pinch.dist));
       // pan by half the moved pointer's delta (midpoint movement)
       this.renderer.panBy(dx / 2, dy / 2);
@@ -176,7 +208,10 @@ export class Input {
       this.lastPaint = this.paintStart;
       this.addToPlan(this.paintStart!.x, this.paintStart!.y);
     }
-    if (this.mode === 'draw') { this.extendPlan(this.tileAt(e.clientX, e.clientY)); return; }
+    if (this.mode === 'draw') {
+      this.extendPlan(this.tileAt(e.clientX, e.clientY));
+      return;
+    }
     if (this.mode === 'pan') {
       this.renderer.panBy(dx, dy);
       if (p.type === 'touch') this.touchAt(this.tileAt(e.clientX, e.clientY));
@@ -198,21 +233,34 @@ export class Input {
   private onPointerUp = (e: PointerEvent): void => {
     const p = this.pointers.get(e.pointerId);
     this.pointers.delete(e.pointerId);
-    try { this.renderer.canvas.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    try {
+      this.renderer.canvas.releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
     if (e.pointerType === 'touch' && this.pointers.size === 0) this.lingerTouchCursor();
     if (this.mode === 'pinch') {
-      if (this.pointers.size < 2) { this.pinch = null; this.mode = this.pointers.size === 1 ? 'pan' : 'none'; }
+      if (this.pointers.size < 2) {
+        this.pinch = null;
+        this.mode = this.pointers.size === 1 ? 'pan' : 'none';
+      }
       return;
     }
     if (this.mode === 'maybe-draw') {
       // no drag: a tap. With a drawing waiting it only cancels that; otherwise it aims (or builds) one tile.
-      if (this.plan) { this.clearPlan(); this.mode = 'none'; this.paintStart = null; return; }
+      if (this.plan) {
+        this.clearPlan();
+        this.mode = 'none';
+        this.paintStart = null;
+        return;
+      }
       this.mode = 'maybe-click';
     }
     if (this.mode === 'draw') {
       // the drawing stays on the map until the player confirms or cancels it
       this.drafting = false;
-      const plan = this.plan!, ok = plan.tiles.filter((t) => t.ok).length;
+      const plan = this.plan!,
+        ok = plan.tiles.filter((t) => t.ok).length;
       this.hooks.onTouchPlan({ tool: plan.tool, count: ok, cost: ok * TOOLS[plan.tool].cost });
     }
     if (this.mode === 'maybe-click' && p && p.button === 2 && this.state.tool !== 'query') {
@@ -221,8 +269,12 @@ export class Input {
       this.renderer.setHover(null);
     } else if (this.mode === 'maybe-click' && p && p.button === 2 && this.hooks.onClearOverlay()) {
       // right-click in query mode with a map view on: back to the normal map
-    } else if (this.mode === 'maybe-click' && p && (this.state.tool === 'query' || !this.renderer.isTileMode())
-      && this.renderer.pickVehicle(e.clientX, e.clientY)) {
+    } else if (
+      this.mode === 'maybe-click' &&
+      p &&
+      (this.state.tool === 'query' || !this.renderer.isTileMode()) &&
+      this.renderer.pickVehicle(e.clientX, e.clientY)
+    ) {
       this.hooks.onVehicleClick(this.renderer.pickVehicle(e.clientX, e.clientY)!, e.clientX, e.clientY);
     } else if (this.mode === 'maybe-click' && p && this.renderer.isTileMode()) {
       const t = this.tileAt(e.clientX, e.clientY);
@@ -249,8 +301,12 @@ export class Input {
     const wasGesture = this.mode === 'pan' || this.mode === 'paint' || this.mode === 'draw';
     this.mode = 'none';
     this.lastPaint = null;
-    this.paintStart = null; this.axis = null;
-    if (e.pointerType === 'touch' && wasGesture) { this.renderer.setHover(null); this.hooks.onTouchTarget(null); }
+    this.paintStart = null;
+    this.axis = null;
+    if (e.pointerType === 'touch' && wasGesture) {
+      this.renderer.setHover(null);
+      this.hooks.onTouchTarget(null);
+    }
   };
 
   /**
@@ -260,7 +316,8 @@ export class Input {
   private lockToAxis(t: { x: number; y: number }, free: boolean): { x: number; y: number } {
     const s = this.paintStart;
     if (!s || free || !LINE_TOOLS.has(this.state.tool)) return t;
-    const dx = t.x - s.x, dy = t.y - s.y;
+    const dx = t.x - s.x,
+      dy = t.y - s.y;
     let axis = this.axis;
     if (!axis) {
       axis = Math.abs(dx) >= Math.abs(dy) ? 'h' : 'v';
@@ -278,14 +335,16 @@ export class Input {
 
   /** A zone centred at (x, y) would fit: every tile in a plot we own, and clear (as the server checks it). */
   private zoneFits(x: number, y: number): boolean {
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-      const tx = x + dx, ty = y + dy;
-      if (!inWorld(tx, ty) || !this.state.ownsChunk(Math.floor(tx / CHUNK), Math.floor(ty / CHUNK))) return false;
-      const v = this.renderer.map.get(tx, ty);
-      if (v === undefined) return false;
-      const id = v & LOMASK;
-      if (!isDirt(v) && !isTree(v) && !isRubble(v) && !(id >= LHPOWER && id <= LVPOWER10)) return false;
-    }
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) {
+        const tx = x + dx,
+          ty = y + dy;
+        if (!inWorld(tx, ty) || !this.state.ownsChunk(Math.floor(tx / CHUNK), Math.floor(ty / CHUNK))) return false;
+        const v = this.renderer.map.get(tx, ty);
+        if (v === undefined) return false;
+        const id = v & LOMASK;
+        if (!isDirt(v) && !isTree(v) && !isRubble(v) && !(id >= LHPOWER && id <= LVPOWER10)) return false;
+      }
     return true;
   }
 
@@ -303,11 +362,18 @@ export class Input {
     this.renderer.setHover(null);
     this.hooks.onTouchTarget(null);
   }
-  clearTouchTarget(): void { this.clearPlan(); this.renderer.setHover(null); this.hooks.onTouchTarget(null); }
+  clearTouchTarget(): void {
+    this.clearPlan();
+    this.renderer.setHover(null);
+    this.hooks.onTouchTarget(null);
+  }
 
   // ---------- touch cursor (what other players see of a phone player) ----------
   private touchAt(t: { x: number; y: number }): void {
-    if (this.touchCursorTimer) { clearTimeout(this.touchCursorTimer); this.touchCursorTimer = null; }
+    if (this.touchCursorTimer) {
+      clearTimeout(this.touchCursorTimer);
+      this.touchCursorTimer = null;
+    }
     this.renderer.setTouchCursor(inWorld(t.x, t.y) ? { x: t.x, y: t.y } : null);
   }
   /** After the finger lifts the cursor stays a while, and as long as a drawing waits for confirmation. */
@@ -335,11 +401,13 @@ export class Input {
    *  finger's main direction (redrawn as it moves); zones follow the finger on their 3x3 grid, parks and the
    *  bulldozer tile by tile. */
   private extendPlan(t: { x: number; y: number }): void {
-    const plan = this.plan, s = this.paintStart;
+    const plan = this.plan,
+      s = this.paintStart;
     if (!plan || !s || !this.lastPaint) return;
     if (LINE_TOOLS.has(plan.tool)) {
       const end = Math.abs(t.x - s.x) >= Math.abs(t.y - s.y) ? { x: t.x, y: s.y } : { x: s.x, y: t.y };
-      plan.tiles = []; this.planKeys.clear();
+      plan.tiles = [];
+      this.planKeys.clear();
       this.addToPlan(s.x, s.y);
       this.paintLine(s, end, 1, (x, y) => this.addToPlan(x, y));
       this.touchAt(end);
@@ -395,21 +463,55 @@ export class Input {
   private onKeyDown = (e: KeyboardEvent): void => {
     if (this.isTyping(e) || e.ctrlKey || e.metaKey || e.altKey) return;
     const key = e.key.toLowerCase();
-    if (key === ' ') { this.spaceHeld = true; e.preventDefault(); return; }
-    if (key === 'escape') { this.state.setTool('query'); this.hooks.onInteract(); return; }
+    if (key === ' ') {
+      this.spaceHeld = true;
+      e.preventDefault();
+      return;
+    }
+    if (key === 'escape') {
+      this.state.setTool('query');
+      this.hooks.onInteract();
+      return;
+    }
     const tool = this.hotkeys.get(key);
-    if (tool) { this.state.setTool(tool); return; }
+    if (tool) {
+      this.state.setTool(tool);
+      return;
+    }
     const step = 64;
     switch (key) {
-      case 'arrowleft': case 'a': this.renderer.panBy(step, 0); break;
-      case 'arrowright': case 'd': this.renderer.panBy(-step, 0); break;
-      case 'arrowup': case 'w': this.renderer.panBy(0, step); break;
-      case 'arrowdown': case 's': this.renderer.panBy(0, -step); break;
-      case '+': case '=': this.renderer.zoomStep(1); break;
-      case '-': case '_': this.renderer.zoomStep(-1); break;
-      case 'h': this.renderer.showWorld(); break;
-      case 'g': this.actions.goToMyCity(); break;
-      default: return;
+      case 'arrowleft':
+      case 'a':
+        this.renderer.panBy(step, 0);
+        break;
+      case 'arrowright':
+      case 'd':
+        this.renderer.panBy(-step, 0);
+        break;
+      case 'arrowup':
+      case 'w':
+        this.renderer.panBy(0, step);
+        break;
+      case 'arrowdown':
+      case 's':
+        this.renderer.panBy(0, -step);
+        break;
+      case '+':
+      case '=':
+        this.renderer.zoomStep(1);
+        break;
+      case '-':
+      case '_':
+        this.renderer.zoomStep(-1);
+        break;
+      case 'h':
+        this.renderer.showWorld();
+        break;
+      case 'g':
+        this.actions.goToMyCity();
+        break;
+      default:
+        return;
     }
     e.preventDefault();
   };
@@ -423,19 +525,30 @@ export class Input {
   private paintLine(a: { x: number; y: number }, b: { x: number; y: number }, step: number, visit: (x: number, y: number) => void): void {
     // Bresenham (in grid cells) so fast drags do not skip tiles
     const o = this.paintStart ?? a;
-    const ax = (a.x - o.x) / step, ay = (a.y - o.y) / step;
-    let x0 = ax, y0 = ay;
-    const x1 = (b.x - o.x) / step, y1 = (b.y - o.y) / step;
-    const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0);
-    const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+    const ax = (a.x - o.x) / step,
+      ay = (a.y - o.y) / step;
+    let x0 = ax,
+      y0 = ay;
+    const x1 = (b.x - o.x) / step,
+      y1 = (b.y - o.y) / step;
+    const dx = Math.abs(x1 - x0),
+      dy = -Math.abs(y1 - y0);
+    const sx = x0 < x1 ? 1 : -1,
+      sy = y0 < y1 ? 1 : -1;
     let err = dx + dy;
     let guard = 0;
     while (guard++ < 4096) {
       if (x0 !== ax || y0 !== ay) visit(o.x + x0 * step, o.y + y0 * step);
       if (x0 === x1 && y0 === y1) break;
       const e2 = 2 * err;
-      if (e2 >= dy) { err += dy; x0 += sx; }
-      if (e2 <= dx) { err += dx; y0 += sy; }
+      if (e2 >= dy) {
+        err += dy;
+        x0 += sx;
+      }
+      if (e2 <= dx) {
+        err += dx;
+        y0 += sy;
+      }
     }
   }
 
@@ -464,5 +577,7 @@ export class Input {
     }, wait);
   }
 
-  private flushPaint(): void { /* queued builds keep draining; nothing else to do */ }
+  private flushPaint(): void {
+    /* queued builds keep draining; nothing else to do */
+  }
 }
