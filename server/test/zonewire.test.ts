@@ -2,6 +2,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { ZONEBIT } from '@globalcity/shared';
 import { TestClient, resetServer, settle, sleep, TICK } from './support/client.ts';
+import { at } from './support/fixture.ts';
 
 describe('zones over power lines', () => {
   let c: TestClient;
@@ -15,7 +16,7 @@ describe('zones over power lines', () => {
 
   it('runs a power line from a coal plant', async () => {
     // a dry 30x8 area
-    const site = await settle(c, [[132, 28]], 30, 8, { x0: 2, x1: 29, y0: 4, y1: 49 });
+    const site = await settle(c, [at('inland')], 30, 8, { x0: 2, x1: 29, y0: 4, y1: 49 });
     X = site.x;
     Y = site.y;
     await sleep(300);

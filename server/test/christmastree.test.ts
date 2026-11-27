@@ -3,6 +3,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { LOMASK, ZONEBIT, CUSTOMFILL, CUSTOMCENTRE } from '@globalcity/shared';
 import { TestClient, resetServer, settle, sleep, TICK } from './support/client.ts';
+import { at } from './support/fixture.ts';
 
 const toastsText = (r: { toasts: { kind: string; msg: string }[] }): string => r.toasts.map((t) => `${t.kind}: ${t.msg}`).join(' | ');
 
@@ -16,18 +17,7 @@ function climbToTheTree(month: number): { A: () => TestClient; at: () => { X: nu
   });
 
   it(`knows whether the tree is in season (month ${month})`, async () => {
-    const site = await settle(
-      A,
-      [
-        [144, 30],
-        [160, 36],
-        [120, 44],
-        [200, 40],
-      ],
-      12,
-      8,
-      { x0: 2, x1: 49, y0: 2, y1: 49 },
-    );
+    const site = await settle(A, [at('inland'), at('east')], 12, 8, { x0: 2, x1: 49, y0: 2, y1: 49 });
     X = site.x;
     Y = site.y;
     A.sendRaw({ t: 'devFunds', amount: 100000 });

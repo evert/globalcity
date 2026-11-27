@@ -3,6 +3,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import type { SantaTree } from '@globalcity/shared';
 import { TestClient, resetServer, settle, sleep, waitFor, TICK } from './support/client.ts';
+import { at } from './support/fixture.ts';
 
 for (const month of [12, 11]) {
   describe(`Santa's stops (month ${month})`, () => {
@@ -20,18 +21,7 @@ for (const month of [12, 11]) {
     });
 
     it('needs at least 4 trees', async () => {
-      const site = await settle(
-        c,
-        [
-          [144, 30],
-          [160, 36],
-          [120, 44],
-          [200, 40],
-        ],
-        16,
-        6,
-        { x0: 2, x1: 39, y0: 2, y1: 49 },
-      );
+      const site = await settle(c, [at('inland'), at('east')], 16, 6, { x0: 2, x1: 39, y0: 2, y1: 49 });
       X = site.x;
       Y = site.y;
       c.sendRaw({ t: 'devFunds', amount: 100000 });

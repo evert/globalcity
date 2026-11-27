@@ -4,6 +4,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { CHUNK } from '@globalcity/shared';
 import { TestClient, resetServer, sleep, TICK } from './support/client.ts';
+import { at } from './support/fixture.ts';
 
 const WAIT = 3000;
 
@@ -27,8 +28,8 @@ describe('small city release', () => {
   });
 
   it('releases the small city of a mayor who left, not the bigger one', async () => {
-    s = await settleAt(S, 140, 28);
-    b = await settleAt(B, 180, 40);
+    s = await settleAt(S, ...at('inland'));
+    b = await settleAt(B, ...at('east'));
     // Small builds 3 road tiles; Builder builds 6
     for (let k = 0; k < 3; k++) expect((await S.build('road', s.cx * CHUNK + 10 + k, s.cy * CHUNK + 10)).ok).toBe(true);
     for (let k = 0; k < 6; k++) expect((await B.build('road', b.cx * CHUNK + 10 + k, b.cy * CHUNK + 10)).ok).toBe(true);

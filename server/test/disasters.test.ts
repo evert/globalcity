@@ -5,6 +5,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { CHUNK, LOMASK, Disaster, isWater, type ActiveDisaster } from '@globalcity/shared';
 import { TestClient, resetServer, sleep, TICK } from './support/client.ts';
+import { at } from './support/fixture.ts';
 
 const isRubble = (t: number): boolean => t >= 44 && t <= 47,
   isFlood = (t: number): boolean => t >= 48 && t <= 51,
@@ -50,8 +51,8 @@ describe('disasters', () => {
   });
 
   it('builds a town on a coastal plot, next to a neighbour', async () => {
-    // a coastal plot west of Amsterdam: low land by the sea, for the flood
-    s = (await A.findFree(131, 26))!; // Zandvoort, on the Dutch coast
+    // a coastal plot: low land by the sea, for the flood
+    s = (await A.findFree(...at('coast')))!;
     await A.subscribe([
       [s.cx, s.cy],
       [s.cx + 1, s.cy],

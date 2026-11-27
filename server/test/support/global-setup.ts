@@ -1,6 +1,6 @@
-// Boots one game server per Vitest worker, each on its own port with its own empty save, on the real generated
-// world (several tests look for land and water at real places: npm run gen:world). Loading the world takes a few
-// seconds, so it happens once per worker; every test file then starts with resetServer() (the devReset hook).
+// Boots one game server per Vitest worker, each on its own port with its own empty save, on the fixture world
+// (fixture.ts: written to the work directory first, in milliseconds; the tests ask for its named sites). Every test
+// file then starts with resetServer() (the devReset hook).
 //
 //   TEST_PORT     first port (default 8791); worker i plays on TEST_PORT + i - 1
 //   TEST_WORKERS  number of workers and servers (default in vitest.config.ts)
@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { TestProject } from 'vitest/node';
+import { writeFixture } from './fixture.ts';
 
 const TICK_MS = 500;
 /** Settings the tests set themselves (devConfig): never inherited from the shell running the tests. */
@@ -45,7 +46,16 @@ export default async function setup(project: TestProject): Promise<() => Promise
   const ports = Array.from({ length: n }, (_, i) => base + i);
   for (const port of ports) if (await up(port)) throw new Error(`Something is already listening on port ${port}; set TEST_PORT to a free range.`);
 
-  const env: NodeJS.ProcessEnv = { ...process.env, DEV_HOOKS: '1', TICK_MS: String(TICK_MS), STEPS_PER_MONTH: '1', HOST: '127.0.0.1' };
+  const worldDir = path.join(work, 'world');
+  writeFixture(worldDir);
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    DEV_HOOKS: '1',
+    TICK_MS: String(TICK_MS),
+    STEPS_PER_MONTH: '1',
+    HOST: '127.0.0.1',
+    WORLD_DIR: worldDir,
+  };
   for (const k of CONFIG_ENV) if (k !== 'HOST') delete env[k];
   const procs: ChildProcess[] = [];
   const servers = ports.map((port, i) => {

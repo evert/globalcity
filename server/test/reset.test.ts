@@ -6,6 +6,7 @@ import path from 'node:path';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { CHUNK, START_YEAR, STARTING_FUNDS, CITY_FREEZE_MS, MONUMENT_MIN_POP, type ServerMsg } from '@globalcity/shared';
 import { TestClient, resetServer, configure, settle, server, httpUrl, waitFor, sleep } from './support/client.ts';
+import { at } from './support/fixture.ts';
 
 const health = async (): Promise<{ online: number; players: number; claims: number; tick: number }> => (await fetch(`${httpUrl()}/health`)).json();
 
@@ -25,7 +26,7 @@ describe('devReset', () => {
   });
 
   it('lets a mayor build, and the server saves it', { timeout: 30_000 }, async () => {
-    site = await settle(a, [[144, 30]], 18, 12, { claim: false });
+    site = await settle(a, [at('inland')], 18, 12, { claim: false });
     pristine = a.chunk(site.cx, site.cy).slice();
     await a.claim(site.cx, site.cy);
     a.sendRaw({ t: 'devFunds', amount: 100_000 });

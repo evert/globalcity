@@ -3,15 +3,10 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { CHUNK, isWater, type PlayerStats } from '@globalcity/shared';
 import { TestClient, resetServer, sleep, TICK } from './support/client.ts';
+import { at } from './support/fixture.ts';
 
 const FREEZE = 4000;
-const CANDIDATES: [number, number][] = [
-  [132, 28],
-  [140, 30],
-  [80, 24],
-  [120, 40],
-  [220, 44],
-];
+const CANDIDATES: [number, number][] = [at('inland'), at('east')];
 
 describe('frozen cities', () => {
   let A: TestClient, B: TestClient;

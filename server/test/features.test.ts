@@ -1,44 +1,8 @@
 // Feature test: power trading across a chunk border, leaderboard, budget, fire (via the devIgnite dev hook).
 import { describe, it, expect, beforeAll } from 'vitest';
-import {
-  CHUNK,
-  LOMASK,
-  FIRE,
-  LASTFIRE,
-  RUBBLE,
-  LASTRUBBLE,
-  lonLatToTile,
-  chunkOf,
-  chunkKey,
-  isWater,
-  type LeaderboardEntry,
-  type ServerMsg,
-} from '@globalcity/shared';
+import { CHUNK, LOMASK, FIRE, LASTFIRE, RUBBLE, LASTRUBBLE, CHUNKS_X, chunkKey, isWater, type LeaderboardEntry, type ServerMsg } from '@globalcity/shared';
 import { TestClient, resetServer, sleep, waitFor, ticks, TICK } from './support/client.ts';
-
-// Seed locations to look for two adjacent free chunks with enough flat land.
-const SEEDS: [number, number][] = [
-  [-0.1, 51.5],
-  [2.35, 48.85],
-  [13.4, 52.5],
-  [-3.7, 40.4],
-  [21.0, 52.2],
-  [30.5, 50.45],
-  [37.6, 55.75],
-  [-94.6, 39.1],
-  [-87.6, 41.9],
-  [-104.9, 39.7],
-  [-46.6, -23.5],
-  [151.2, -33.9],
-  [116.4, 39.9],
-  [77.2, 28.6],
-  [3.4, 6.5],
-  [28.0, -26.2],
-  [-99.1, 19.4],
-  [-58.4, -34.6],
-  [105.8, 21.0],
-  [44.4, 33.3],
-];
+import { site as siteNamed } from './support/fixture.ts';
 
 // Layout (Y = top row). A owns chunk (cx,cy), B owns (cx+1,cy); the border is between columns cx*64+63 and (cx+1)*64.
 //   A: coal plant cols 58..61 rows Y..Y+3; wires cols 62,63 row Y+1; res zone cols 58..60 rows Y+4..Y+6; road row Y+7 cols 58..63
@@ -105,11 +69,9 @@ describe('features', () => {
 
   it('builds a plant on one side of a chunk border and homes on the other', async () => {
     let site: { cx: number; cy: number; Y: number } | null = null;
-    for (const [lon, lat] of SEEDS) {
-      const t = lonLatToTile(lon, lat);
-      const c = chunkOf(t.x, t.y);
+    for (const c of [siteNamed('inland'), siteNamed('east')]) {
       const a = await A.findFree(c.cx, c.cy);
-      if (!a || a.cx + 1 >= 128) continue;
+      if (!a || a.cx + 1 >= CHUNKS_X) continue;
       const b = await B.findFree(a.cx + 1, a.cy);
       if (!b || b.cx !== a.cx + 1 || b.cy !== a.cy) continue;
       await B.subscribe([

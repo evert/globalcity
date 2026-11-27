@@ -3,6 +3,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { CHUNK, LOMASK, ZONEBIT, WIND_POWER, isWater, type ToolId } from '@globalcity/shared';
 import { TestClient, resetServer, settle, sleep, TICK } from './support/client.ts';
+import { at, type SiteName } from './support/fixture.ts';
 
 const CITYHALL = 965,
   OFFSHORE = 1006;
@@ -12,22 +13,10 @@ const ticks = (n: number): Promise<void> => sleep(n * TICK);
 const build = async (c: TestClient, tool: ToolId, x: number, y: number): Promise<string[]> =>
   (await c.build(tool, x, y)).toasts.map((t) => `${t.kind}: ${t.msg}`);
 
-/** The old test's site search: (cx, cy) and four spots around it, a dry w x h site at offsets 2..61-w, 2..61-h;
- *  claimed, with $200,000 granted. */
-async function city(c: TestClient, cx: number, cy: number, w: number, h: number): Promise<{ X: number; Y: number }> {
-  const s = await settle(
-    c,
-    [
-      [cx, cy],
-      [cx + 12, cy + 4],
-      [cx - 16, cy + 8],
-      [cx + 24, cy - 6],
-      [cx + 2, cy + 2],
-    ],
-    w,
-    h,
-    { x0: 2, x1: 61 - w, y0: 2, y1: 61 - h },
-  );
+/** A dry w x h site at offsets 2..61-w, 2..61-h near the named site (or else inland or in the east); claimed, with
+ *  $200,000 granted. */
+async function city(c: TestClient, near: SiteName, w: number, h: number): Promise<{ X: number; Y: number }> {
+  const s = await settle(c, [at(near), at('inland'), at('east')], w, h, { x0: 2, x1: 61 - w, y0: 2, y1: 61 - h });
   await sleep(300);
   c.sendRaw({ t: 'devFunds', amount: 200000 });
   await sleep(200);
@@ -39,7 +28,7 @@ describe('milestones', () => {
 
   it('city hall: locked, unlocked by the milestone, one per city, rebuildable', { timeout: 60_000 }, async () => {
     const A = await TestClient.connect('Mayor-A', { v: 'test' });
-    const a = await city(A, 140, 28, 20, 12);
+    const a = await city(A, 'inland', 20, 12);
     await build(A, 'residential', a.X + 15, a.Y + 9); // a city with a zone, so it is simulated
     let t = await build(A, 'cityhall', a.X + 1, a.Y + 1);
     expect(
@@ -70,7 +59,7 @@ describe('milestones', () => {
 
   it('grandfathering: a pre-milestone city keeps its two airports, and may add a third', async () => {
     const B = await TestClient.connect('Mayor-B', { v: 'test' });
-    const b = await city(B, 180, 40, 15, 15);
+    const b = await city(B, 'east', 15, 15);
     B.sendRaw({ t: 'devPlace', tool: 'airport', x: b.X + 1, y: b.Y + 1 });
     await sleep(200);
     B.sendRaw({ t: 'devPlace', tool: 'airport', x: b.X + 8, y: b.Y + 1 });
@@ -91,7 +80,7 @@ describe('milestones', () => {
 
   it('rail counts as transport access', { timeout: 60_000 }, async () => {
     const R = await TestClient.connect('Mayor-R', { v: 'test' });
-    const r = await city(R, 220, 44, 16, 8);
+    const r = await city(R, 'desert', 16, 8);
     await build(R, 'coal', r.X + 1, r.Y + 1);
     for (let x = r.X + 4; x < r.X + 9; x++) await build(R, 'wire', x, r.Y + 1);
     await build(R, 'residential', r.X + 10, r.Y + 1);
@@ -107,7 +96,7 @@ describe('milestones', () => {
 
   it('early milestones and wind power; no fires spread before the fire milestone', { timeout: 60_000 }, async () => {
     const W = await TestClient.connect('Mayor-W', { v: 'test' });
-    const w = await city(W, 132, 36, 20, 10);
+    const w = await city(W, 'inland', 20, 10);
     let t = await build(W, 'fire', w.X + 1, w.Y + 1);
     expect(
       t.some((x) => /unlocks at 15,000 people/.test(x)),
@@ -153,15 +142,7 @@ describe('milestones', () => {
       return null;
     };
     let site: { wet: { x: number; y: number }; dry: { x: number; y: number } } | null = null;
-    for (const [cx, cy] of [
-      [128, 26],
-      [126, 24],
-      [140, 24],
-      [72, 34],
-      [66, 32],
-      [228, 50],
-      [120, 28],
-    ]) {
+    for (const [cx, cy] of [at('coast'), at('farCoast')]) {
       const spot = await O.findFree(cx, cy);
       if (!spot) continue;
       await O.subscribe([[spot.cx, spot.cy]]);

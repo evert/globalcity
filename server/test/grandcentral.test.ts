@@ -4,6 +4,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { LOMASK, type ToolId } from '@globalcity/shared';
 import { TestClient, resetServer, settle, sleep, TICK } from './support/client.ts';
+import { at } from './support/fixture.ts';
 
 const CUSTOMFILL = 1017,
   CUSTOMCENTRE = 1018,
@@ -26,18 +27,7 @@ describe('grandcentral', () => {
   });
 
   it('is locked until the rail reaches another city', async () => {
-    const site = await settle(
-      A,
-      [
-        [144, 30],
-        [160, 36],
-        [120, 44],
-        [200, 40],
-      ],
-      18,
-      12,
-      { x0: 2, x1: 43, y0: 2, y1: 49 },
-    );
+    const site = await settle(A, [at('inland'), at('east')], 18, 12, { x0: 2, x1: 43, y0: 2, y1: 49 });
     X = site.x;
     R = site.y + 2; // the line
     await sleep(300);

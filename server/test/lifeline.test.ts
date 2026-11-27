@@ -4,6 +4,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import type { ToolId } from '@globalcity/shared';
 import { repayLifeline, type PlayerRecord } from '../src/players.ts';
 import { TestClient, resetServer, settle, sleep, TICK } from './support/client.ts';
+import { at } from './support/fixture.ts';
 
 describe('lifeline', () => {
   let c: TestClient;
@@ -29,7 +30,7 @@ describe('lifeline', () => {
 
   it('is refused to a city with money', async () => {
     // only the nearest free plot to 150,30: a dry 22x12 site at offsets 3..39, 3..47
-    const site = await settle(c, [[150, 30]], 22, 12, { x0: 3, x1: 39, y0: 3, y1: 47 });
+    const site = await settle(c, [at('inland')], 22, 12, { x0: 3, x1: 39, y0: 3, y1: 47 });
     ({ x: X, y: Y } = site);
     await sleep(400);
     await lifeline();

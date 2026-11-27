@@ -2,16 +2,10 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { CHUNK, LOMASK, RIVER, type ToolId } from '@globalcity/shared';
 import { TestClient, resetServer } from './support/client.ts';
+import { at } from './support/fixture.ts';
 
 // coastal chunks: try a few until one has a row of three open-water tiles (id RIVER) away from its edges
-const CANDIDATES: [number, number][] = [
-  [128, 26],
-  [126, 24],
-  [140, 24],
-  [72, 34],
-  [66, 32],
-  [228, 50],
-];
+const CANDIDATES: [number, number][] = [at('coast'), at('farCoast')];
 
 describe('building on water and bulldozing it', () => {
   let c: TestClient;
