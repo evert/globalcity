@@ -3,13 +3,15 @@
 The fir was generated with the sprite-ai MCP (christmas_tree_ai.png, generation
 9200c525-e71c-41f2-8e5e-b3b61c84c4ea) and is mapped here onto the 14 Micropolis colours. The square
 round its foot (paving, lamps, benches, small round trees, people) is drawn by hand, and the fir's shadow
-is cast east by darkening the ground, the way the originals do. The baubles, tinsel, star, fairy lights
-and lamps light up at night via the edits for 'XMAS' in art/nightlights/lights.py.
+is cast east by darkening the ground, the way the originals do. Strings of single-pixel bulbs (red, blue,
+yellow, white) are added on the needles. At night only the star, the bulbs and the baubles glow, each in its
+own colour: their pixels go to christmas_tree_lights.json, which the 'XMAS' entry in
+art/nightlights/lights.py reads.
 
 Run: python3 art/prototype/seasonal/christmas_tree.py   (writes christmas_tree.png, @4x, and the game
 copy client/public/assets/buildings/christmastree.png; then run art/nightlights/lights.py)
 """
-import os, sys, json, shutil
+import os, sys, json, shutil, hashlib
 from PIL import Image
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, '..', 'civic'))
@@ -53,6 +55,29 @@ for (x, y), c in list(fir.items()):
     if y < 53 and c in (GRASS, FOREST) and (x + 1, y) not in fir:
         fir[(x, y)] = BLACK
         if fir.get((x - 1, y)) == GRASS: fir[(x - 1, y)] = FOREST
+
+# ---------- strings of Christmas lights: single bulbs on the needles, not touching the tinsel, baubles or the
+# outline, at least 3 px apart. Picked in a fixed pseudo-random order so the tree comes out the same every run.
+NEEDLE = (GRASS, FOREST)
+BULB_COLOURS = [RED, BLUE, YELLOW, WHITE]
+baubles = [(x, y) for (x, y), c in fir.items() if 8 <= y <= 52 and c in (RED, BLUE, WATER)]
+taken = list(baubles)
+bulbs = {}
+order = sorted(((x, y) for (x, y), c in fir.items() if 9 <= y <= 51 and c in NEEDLE),
+               key=lambda p: hashlib.md5(f'bulb:{p}'.encode()).digest())
+for (x, y) in order:
+    if len(bulbs) >= 32: break
+    if not all(fir.get((x + dx, y + dy)) in NEEDLE + (BLACK,) for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1))): continue
+    if any(max(abs(x - a), abs(y - b)) < 3 for (a, b) in taken): continue
+    bulbs[(x, y)] = BULB_COLOURS[len(bulbs) % 4]
+    taken.append((x, y))
+fir.update(bulbs)
+# what glows at night (art/nightlights/lights.py reads this): the star, the bulbs and the baubles, each in its colour
+NAMES = {RED: 'red', BLUE: 'blue', WATER: 'blue', YELLOW: 'yellow', WHITE: 'white'}
+glow = {'star': [(x, y) for (x, y), c in fir.items() if y <= 7 and c in (YELLOW, WHITE, ORANGE)]}
+for (x, y), c in list(bulbs.items()) + [(p, fir[p]) for p in baubles]:
+    glow.setdefault(NAMES[c], []).append((x, y))
+json.dump({k: sorted(v) for k, v in glow.items()}, open(os.path.join(HERE, 'christmas_tree_lights.json'), 'w'))
 
 # ---------- lamps round the square (white lamp, dark post, shadow pixel to the east)
 LAMPS = [(4, 38), (27, 38), (3, 52), (28, 52)]
