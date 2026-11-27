@@ -1061,7 +1061,7 @@ export class Renderer extends Emitter<RendererEvents> {
       }, customAnimMs);
     }
     // 1a. weather: the sky dims under cloud and rain (what falls is drawn over everything, see Precipitation)
-    if (this.weather.shown) {
+    if (this.weather.ready) {
       g.imageSmoothingEnabled = true;
       this.drawWorldImage(g, this.weather.shade, this.weather.shade.width, this.weather.shade.height, 0, 0, W, H);
       g.imageSmoothingEnabled = false;
@@ -1393,7 +1393,7 @@ export class Renderer extends Emitter<RendererEvents> {
       g.drawImage(lc, rx0, ry0);
       g.globalAlpha = 1;
     }
-    if (this.weather.shown) {
+    if (this.weather.cloudsShown) {
       const clouds = this.weather.shadedClouds(this.night.canvas, this.night.version);
       this.drawWorldImage(g, clouds, clouds.width, clouds.height, rx0, ry0, rx1, ry1);
     }

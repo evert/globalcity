@@ -1531,7 +1531,11 @@ export class UI {
     // zoomed out the map views don't apply: the corner holds the weather switch instead
     this.weatherBtn = el(
       'button',
-      { class: 'btn ov-toggle hidden', type: 'button', title: "Real weather: this hour's clouds, rain and snow (NOAA forecast)" },
+      {
+        class: 'btn ov-toggle hidden',
+        type: 'button',
+        title: "Clouds on the world map: this hour's real weather (NOAA forecast). Zoomed in, rain and snow always show.",
+      },
       '🌦 Weather',
     );
     this.weatherBtn.onclick = () => {

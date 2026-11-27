@@ -2,9 +2,8 @@
 // whose red channel is cloud cover, green the rain or snow rate, blue where it is snow).
 //   zoomed out  clouds drift over the world map, darker where it rains, over the city lights (shaded by the night)
 //   zoomed in   the sky dims under cloud, and rain or snow falls across the screen where the camera is
-// Off until the player turns it on (the Weather button, zoomed out); the choice is remembered, and nothing is
-// downloaded while it is off. `?weather=rain|snow|storm|clear` turns it on and overrides what falls at the camera,
-// to look at the effect.
+// Zoomed in it is always on. The zoomed-out clouds are off until the player turns them on (the Weather button);
+// that choice is remembered. `?weather=rain|snow|storm|clear` overrides what falls at the camera, to look at the effect.
 import { WORLD_H, WORLD_W } from '@globalcity/shared';
 
 const W = 720,
@@ -54,8 +53,8 @@ export class WeatherLayer {
   readonly shade = document.createElement('canvas');
   /** bumped whenever a new hour arrives or the layer is turned on or off */
   version = 0;
-  /** the player wants the weather shown */
-  enabled = OVERRIDE !== null || readEnabled();
+  /** the player wants the clouds on the zoomed-out map */
+  enabled = readEnabled();
   /** an hour has arrived */
   ready = false;
   onChange: () => void = () => {};
@@ -69,8 +68,8 @@ export class WeatherLayer {
     this.clouds.height = this.shade.height = H;
   }
 
-  /** shown: on and loaded */
-  get shown(): boolean {
+  /** the zoomed-out clouds are showing: on and loaded */
+  get cloudsShown(): boolean {
     return this.enabled && this.ready;
   }
 
@@ -82,22 +81,21 @@ export class WeatherLayer {
     } catch {
       /* private mode */
     }
-    if (on) this.start();
     this.version++;
     this.onChange();
   }
 
   private started = false;
-  /** Start fetching the weather (once it is on): now, then every POLL_MS. */
+  /** Start fetching the weather: now, then every POLL_MS. */
   start(): void {
-    if (!this.enabled || this.started) return;
+    if (this.started) return;
     this.started = true;
     void this.poll();
     setInterval(() => {
-      if (this.enabled) void this.poll();
+      void this.poll();
     }, POLL_MS);
     document.addEventListener('visibilitychange', () => {
-      if (!document.hidden && this.enabled) void this.poll();
+      if (!document.hidden) void this.poll();
     });
   }
 
@@ -166,7 +164,6 @@ export class WeatherLayer {
 
   /** The weather at a tile (bilinear between the grid's points). */
   at(tx: number, ty: number): WeatherHere {
-    if (!this.enabled) return { cloud: 0, precip: 0, snow: false };
     if (OVERRIDE) return OVERRIDE;
     const d = this.data;
     if (!d) return { cloud: 0, precip: 0, snow: false };
