@@ -63,6 +63,19 @@ export interface WorldStats {
   /** world population over the world's life: [game year, people], oldest first, at most ~500 points (each the
    *  average of its stretch of years; the last is exact). Absent from old servers. */
   history?: [number, number][];
+  /** the climate (shared/src/climate.ts); absent from old servers */
+  climate?: {
+    /** share of the world's power supply from wind, offshore wind and nuclear, 0..1 */
+    cleanShare: number;
+    /** CO2 the world emits a year at its current rate (coal plants and industry standing now), megatonnes */
+    emissions: number;
+    /** CO2 in the air, ppm */
+    co2: number;
+    /** warming since 1900, degC */
+    warming: number;
+    /** [game year, warming degC] once a year, like `history` */
+    history: [number, number][];
+  };
 }
 
 export interface GameTime {

@@ -1,4 +1,4 @@
-// The world population graph in the World panel's stats tab: one series over game years, drawn as inline SVG
+// The graphs in the World panel's stats tab (world population, warming): one series over game years, inline SVG
 // (a 2px line over a faint area, recessive grid, a crosshair and tooltip on hover or touch).
 const W = 560,
   H = 170,
@@ -25,31 +25,55 @@ function niceStep(span: number, n: number): number {
   return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * p;
 }
 
-/** The graph for `points` ([game time in years, people], oldest first), or a note while there is too little. */
-export function populationChart(points: readonly [number, number][], fmtCompact: (n: number) => string): HTMLElement {
+export interface LineChartText {
+  /** the y axis labels */
+  axis: (v: number) => string;
+  /** the tooltip for a point */
+  tip: (year: number, v: number) => string;
+  /** what the chart shows, for screen readers, from its first and last point */
+  label: (first: [number, number], last: [number, number]) => string;
+}
+
+/** World population: people over the years. */
+export const populationChart = (points: readonly [number, number][], fmtCompact: (n: number) => string): HTMLElement =>
+  lineChart(points, {
+    axis: axisLabel,
+    tip: (t, v) => `${Math.round(t)} · ${v.toLocaleString('en-US')} people`,
+    label: (a, b) => `World population from ${Math.round(a[0])} to ${Math.round(b[0])}: ${fmtCompact(a[1])} to ${fmtCompact(b[1])} people`,
+  });
+
+/** Warming since 1900 over the years, degC. */
+export const warmingChart = (points: readonly [number, number][]): HTMLElement =>
+  lineChart(points, {
+    axis: (v) => (Math.abs(v) < 1e-9 ? '0' : `${v > 0 ? '+' : ''}${+v.toFixed(2)}°`),
+    tip: (t, v) => `${Math.round(t)} · ${v >= 0 ? '+' : ''}${v.toFixed(2)} °C`,
+    label: (a, b) => `Warming since 1900, from ${Math.round(a[0])} to ${Math.round(b[0])}: ${b[1].toFixed(2)} °C`,
+  });
+
+/** One series over game years (`points` oldest first), or a note while there is too little. */
+export function lineChart(points: readonly [number, number][], text: LineChartText): HTMLElement {
   const wrap = document.createElement('div');
   wrap.className = 'ws-chart';
   if (points.length < 2) {
-    wrap.append(Object.assign(document.createElement('p'), { className: 'muted', textContent: 'The graph fills in as the months go by.' }));
+    wrap.append(Object.assign(document.createElement('p'), { className: 'muted', textContent: 'The graph fills in as the years go by.' }));
     return wrap;
   }
   const t0 = points[0][0],
     t1 = points[points.length - 1][0];
-  const maxPop = Math.max(1, ...points.map((p) => p[1]));
-  const yStep = niceStep(maxPop, 3),
-    yMax = Math.ceil(maxPop / yStep) * yStep;
+  const maxV = Math.max(...points.map((p) => p[1])),
+    minV = Math.min(0, ...points.map((p) => p[1]));
+  const yStep = niceStep(maxV - minV > 0 ? maxV - minV : 1, 3),
+    yMax = Math.max(yStep, Math.ceil(maxV / yStep) * yStep),
+    yMin = Math.floor(minV / yStep) * yStep;
   const x = (t: number) => PAD.l + ((t - t0) / (t1 - t0 || 1)) * (W - PAD.l - PAD.r);
-  const y = (v: number) => H - PAD.b - (v / yMax) * (H - PAD.t - PAD.b);
+  const y = (v: number) => H - PAD.b - ((v - yMin) / (yMax - yMin)) * (H - PAD.t - PAD.b);
   const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, class: 'ws-chart-svg', role: 'img' });
-  root.setAttribute(
-    'aria-label',
-    `World population from ${Math.round(t0)} to ${Math.round(t1)}: ${fmtCompact(points[0][1])} to ${fmtCompact(points[points.length - 1][1])} people`,
-  );
+  root.setAttribute('aria-label', text.label(points[0], points[points.length - 1]));
   // grid and axes: hairlines in a recessive ink, labels in the muted text colour
-  for (let v = 0; v <= yMax + 1e-9; v += yStep) {
-    root.append(svg('line', { x1: PAD.l, x2: W - PAD.r, y1: y(v), y2: y(v), class: v === 0 ? 'ws-axis' : 'ws-grid-line' }));
+  for (let v = yMin; v <= yMax + 1e-9; v += yStep) {
+    root.append(svg('line', { x1: PAD.l, x2: W - PAD.r, y1: y(v), y2: y(v), class: Math.abs(v) < 1e-9 ? 'ws-axis' : 'ws-grid-line' }));
     const label = svg('text', { x: PAD.l - 6, y: y(v) + 4, class: 'ws-tick', 'text-anchor': 'end' });
-    label.textContent = axisLabel(v);
+    label.textContent = text.axis(v);
     root.append(label);
   }
   const xStep = Math.max(1, niceStep(t1 - t0 || 1, 4));
@@ -87,7 +111,7 @@ export function populationChart(points: readonly [number, number][], fmtCompact:
     dot.setAttribute('cx', String(px));
     dot.setAttribute('cy', String(py));
     hover.style.display = '';
-    tip.textContent = `${Math.round(best[0])} · ${best[1].toLocaleString('en-US')} people`;
+    tip.textContent = text.tip(best[0], best[1]);
     tip.classList.remove('hidden');
     const left = (px / W) * r.width;
     tip.style.left = `${Math.min(Math.max(left, 70), r.width - 70)}px`;

@@ -24,6 +24,8 @@ import {
   NUCLEAR_POWER,
   WIND_POWER,
   OFFSHORE_POWER,
+  warming,
+  yearEmissions,
 } from '@globalcity/shared';
 import type { World } from './world.ts';
 import type { Players } from './players.ts';
@@ -33,8 +35,8 @@ const WORLD_STATS_MS = 30_000;
 /** Points of the population history sent to clients: plenty for a chart, small however long the server runs. */
 const HISTORY_POINTS = 500;
 
-/** At most `n` points: consecutive stretches averaged (time and value), the last point kept exact. */
-export function bucketed(points: readonly [number, number][], n: number): [number, number][] {
+/** At most `n` points: consecutive stretches averaged (time and value, the value to `decimals` places), the last point kept exact. */
+export function bucketed(points: readonly [number, number][], n: number, decimals = 0): [number, number][] {
   if (points.length <= n) return points.slice();
   const out: [number, number][] = [];
   const size = (points.length - 1) / (n - 1);
@@ -47,7 +49,8 @@ export function bucketed(points: readonly [number, number][], n: number): [numbe
       t += points[i][0];
       v += points[i][1];
     }
-    out.push([t / (i1 - i0), Math.round(v / (i1 - i0))]);
+    const f = 10 ** decimals;
+    out.push([t / (i1 - i0), Math.round((v / (i1 - i0)) * f) / f]);
   }
   out.push(points[points.length - 1]);
   return out;
@@ -94,6 +97,8 @@ export class WorldStatsCounter {
       monuments = 0,
       abandoned = 0,
       powerSupply = 0,
+      cleanSupply = 0,
+      coalPlants = 0,
       plants = 0;
     let biggest: WorldStats['biggest'] = null,
       newest: WorldStats['newest'] = null;
@@ -145,6 +150,7 @@ export class WorldStatsCounter {
           else if (v & ZONEBIT && (v & LOMASK) === OFFSHORE) {
             plants++;
             powerSupply += OFFSHORE_POWER;
+            cleanSupply += OFFSHORE_POWER;
           } // drawn as water on the map
           else if (v & ZONEBIT) {
             if (c === OvClass.Res) res++;
@@ -152,7 +158,10 @@ export class WorldStatsCounter {
             else if (c === OvClass.Ind) ind++;
             else if (c === OvClass.Power) {
               plants++;
-              powerSupply += PLANT_POWER.get(v & LOMASK) ?? 0;
+              const supply = PLANT_POWER.get(v & LOMASK) ?? 0;
+              powerSupply += supply;
+              if ((v & LOMASK) !== POWERPLANT) cleanSupply += supply; // nuclear and wind: no CO2
+              else coalPlants++;
             }
           }
         }
@@ -164,6 +173,13 @@ export class WorldStatsCounter {
       year: this.players.time.year,
       population,
       history: bucketed(this.players.popHistory, HISTORY_POINTS),
+      climate: {
+        cleanShare: powerSupply ? cleanSupply / powerSupply : 0,
+        emissions: Math.round(yearEmissions(coalPlants, ind)),
+        co2: Math.round(this.players.climate.co2 * 10) / 10,
+        warming: Math.round(warming(this.players.climate) * 100) / 100,
+        history: bucketed(this.players.climateHistory, HISTORY_POINTS, 3),
+      },
       cities,
       monuments,
       abandoned,

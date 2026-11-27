@@ -1525,3 +1525,7 @@ a.btn {
 .ws-tip.hidden {
   display: none;
 }
+.ws-note {
+  font-size: 12px;
+  margin: 6px 0 0;
+}

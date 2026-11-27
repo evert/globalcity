@@ -17,3 +17,4 @@ export * from './maptiles.ts';
 export * from './looks.ts';
 export * from './disasters.ts';
 export * from './build.ts';
+export * from './climate.ts';

@@ -169,6 +169,7 @@ import { chance, randInt, log } from './util.ts';
 import { Disasters } from './disasters.ts';
 import { Elevation } from './elevation.ts';
 import { config } from './config.ts';
+import { countEmitters } from './climate.ts';
 
 /** Tax multiplier: tuned so a town of ~20 full R, 8 C, 8 I zones earns ~$2600 per game year. */
 /** Growth odds per tick: one house step / one density step, scaled by demand (0..1). */
@@ -536,7 +537,11 @@ export class Sim {
       t.year++;
     }
     const newYear = newMonth && t.month === 0;
-    if (newYear) this.players.recordPopulation();
+    if (newYear) {
+      this.players.recordPopulation();
+      const e = countEmitters(this.world, this.players.claims.keys());
+      this.players.recordClimate(e.coal, e.industry);
+    }
     this.players.dirty = true;
     this.toasts = [];
     this.stations = [];

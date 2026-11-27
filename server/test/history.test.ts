@@ -1,10 +1,12 @@
-// World population history: one point per game year in the world stats, oldest first; long histories are sent
-// as at most HISTORY_POINTS averaged points.
+// World population and climate history: one point per game year in the world stats, oldest first; long histories
+// are sent as at most HISTORY_POINTS averaged points. A coal plant makes the world emit CO2 and all its power dirty.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { resetServer, closeAll, TestClient, waitFor, sleep, ticks } from './support/client.ts';
+import { START_PPM } from '@globalcity/shared';
+import { resetServer, closeAll, TestClient, waitFor, sleep, ticks, settle } from './support/client.ts';
+import { at } from './support/fixture.ts';
 import { bucketed } from '../src/worldstats.ts';
 
-describe('world population history', () => {
+describe('world population and climate history', () => {
   let c: TestClient;
   beforeAll(async () => {
     await resetServer();
@@ -12,7 +14,10 @@ describe('world population history', () => {
   });
   afterAll(closeAll);
 
-  it('records a point every game year, in order', async () => {
+  it('records a point every game year, in order, and the climate with it', async () => {
+    const s0 = await settle(c, [at('inland'), at('east')], 6, 6);
+    const coal = await c.build('coal', s0.x + 1, s0.y + 1);
+    expect(coal.ok, 'coal plant built').toBe(true);
     await sleep(ticks(30)); // tests run one step to the month: two and a half years
     c.send({ t: 'worldStats' });
     const s = await waitFor(() => c.worldStats, 'worldStats');
@@ -21,6 +26,14 @@ describe('world population history', () => {
     for (let i = 1; i < h.length; i++) expect(h[i][0]).toBe(h[i - 1][0] + 1);
     for (const [, pop] of h) expect(pop).toBeGreaterThanOrEqual(0);
     expect(h[h.length - 1][0]).toBeLessThanOrEqual(s.year);
+    // climate: one coal plant, no clean power; CO2 above where it started, a warming point every year
+    const cl = s.climate!;
+    expect(cl, 'climate in the world stats').toBeTruthy();
+    expect(cl.cleanShare).toBe(0);
+    expect(cl.emissions).toBe(5); // one coal plant, 5 Mt a year
+    expect(cl.co2).toBeGreaterThan(START_PPM - 1);
+    expect(cl.history.map((p) => p[0])).toEqual(h.map((p) => p[0]));
+    expect(cl.warming).toBe(Math.round(cl.history[cl.history.length - 1][1] * 100) / 100);
   });
 
   it('sends a long history as averaged buckets, the last point exact', () => {
@@ -31,5 +44,11 @@ describe('world population history', () => {
     expect(b[b.length - 1]).toEqual(years[years.length - 1]);
     for (let i = 1; i < b.length; i++) expect(b[i][0]).toBeGreaterThan(b[i - 1][0]);
     expect(bucketed(years.slice(0, 300), 500)).toEqual(years.slice(0, 300)); // short histories go as they are
+    const warm = bucketed(
+      Array.from({ length: 1000 }, (_, i): [number, number] => [1900 + i, 0.4]),
+      100,
+      3,
+    );
+    expect(warm[0][1]).toBe(0.4); // decimals kept
   });
 });

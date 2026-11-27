@@ -53,7 +53,7 @@ import type { Renderer } from './renderer.ts';
 import { ZONE_TOOLS, type TouchPlan } from './input.ts';
 import { NIGHT_REFRESH_MS } from './night.ts';
 import { isFireTile, withAlpha } from './renderer.ts';
-import { populationChart } from './chart.ts';
+import { populationChart, warmingChart } from './chart.ts';
 import type { AppState } from './state.ts';
 
 /** Tabs of the World panel. */
@@ -899,12 +899,41 @@ export class UI {
       top,
       el('h3', { text: 'Population' }),
       populationChart(s.history ?? [], fmtCompact),
+      ...(s.climate ? [el('h3', { text: 'Climate' }), this.climateSection(s.climate)] : []),
       el('h3', { text: 'Built' }),
       built,
       el('h3', { text: 'Where cities are' }),
       biomes,
       el('h3', { text: 'Disasters' }),
       disasters,
+    );
+  }
+
+  /** The world stats' climate: clean power, CO2 and warming (the model is shared/src/climate.ts). */
+  private climateSection(c: NonNullable<WorldStats['climate']>): HTMLElement {
+    const tile = (value: string, label: string, title: string) =>
+      el('div', { class: 'ws-tile', title }, el('div', { class: 'ws-val', text: value }), el('div', { class: 'ws-label', text: label }));
+    const sign = c.warming >= 0 ? '+' : '';
+    return el(
+      'div',
+      { class: 'ws-section' },
+      el(
+        'div',
+        { class: 'ws-grid' },
+        tile(`${Math.round(c.cleanShare * 100)}%`, 'clean power', "Share of the world's power from wind, offshore wind and nuclear: no CO2"),
+        tile(
+          c.emissions >= 1000 ? `${(c.emissions / 1000).toFixed(1)} Gt` : `${Math.round(c.emissions)} Mt`,
+          'CO₂ a year',
+          'CO2 the world emits a year at its current rate: coal plants and industry standing now',
+        ),
+        tile(`${c.co2.toFixed(0)} ppm`, 'CO₂ in the air', 'CO2 in the atmosphere, parts per million (296 in 1900)'),
+        tile(`${sign}${c.warming.toFixed(2)} °C`, 'warming since 1900', 'Global temperature compared with 1900'),
+      ),
+      warmingChart(c.history),
+      el('p', {
+        class: 'muted ws-note',
+        text: 'Coal and industry add CO₂; wind, offshore wind and nuclear add none. Oceans and plants take some back, slowly, and the oceans take decades to warm, so the warming keeps climbing for a while after emissions fall.',
+      }),
     );
   }
 

@@ -3,6 +3,11 @@
 import crypto from 'node:crypto';
 import {
   STARTING_FUNDS,
+  startClimate,
+  climateYear,
+  yearEmissions,
+  warming,
+  type ClimateState,
   ABANDON_RECLAIM_DAYS,
   MAX_MAYOR_NAME,
   MAX_CITY_NAME,
@@ -148,6 +153,9 @@ export interface StateFile {
   claims: [string, string][]; // chunkKey -> playerId
   /** world population history (WorldStats.history); absent in older saves */
   popHistory?: [number, number][];
+  /** the climate model's state and its yearly warming history; absent in older saves */
+  climate?: ClimateState;
+  climateHistory?: [number, number][];
   /** Older saves: released plots that were still crumbling. Nothing decays any more; ignored on load. */
   ruins?: string[];
 }
@@ -270,6 +278,9 @@ export class Players {
   time: GameTime = { year: START_YEAR, month: 0, step: 0 };
   /** world population once a game year: [year, people] (see recordPopulation) */
   popHistory: [number, number][] = [];
+  /** the world's climate (shared/src/climate.ts), stepped once a game year, and its warming once a year */
+  climate: ClimateState = startClimate();
+  climateHistory: [number, number][] = [];
   /** state changed since last save */
   dirty = false;
   /** bumped whenever the claims map changes (consumers cache per version: neighbours, rail networks) */
@@ -631,13 +642,32 @@ export class Players {
     this.popHistory.push([this.time.year, pop]);
   }
 
+  /** A year of climate: this year's emissions from what stands in the world, then the yearly warming point. */
+  recordClimate(coalPlants: number, industryZones: number): void {
+    this.climate = climateYear(this.climate, yearEmissions(coalPlants, industryZones));
+    this.climateHistory.push([this.time.year, Math.round(warming(this.climate) * 1000) / 1000]);
+  }
+
   serialize(): StateFile {
-    return { version: 1, time: { ...this.time }, players: [...this.players.values()], claims: [...this.claims.entries()], popHistory: this.popHistory };
+    return {
+      version: 1,
+      time: { ...this.time },
+      players: [...this.players.values()],
+      claims: [...this.claims.entries()],
+      popHistory: this.popHistory,
+      climate: this.climate,
+      climateHistory: this.climateHistory,
+    };
   }
 
   /** Load a state file; players saved by older versions get the new fields (cityName derived from their first chunk, lastSeen = now). */
   load(state: StateFile): void {
     this.time = { step: 0, ...state.time };
+    if (state.climate && Number.isFinite(state.climate.co2) && Number.isFinite(state.climate.temp))
+      this.climate = { co2: state.climate.co2, temp: state.climate.temp, emissions: Number(state.climate.emissions) || 0 };
+    this.climateHistory = Array.isArray(state.climateHistory)
+      ? state.climateHistory.filter((p) => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]))
+      : [];
     this.popHistory = Array.isArray(state.popHistory) ? state.popHistory.filter((p) => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1])) : [];
     const now = Date.now();
     const unnamed: PlayerRecord[] = [];
