@@ -79,7 +79,19 @@ export const UPKEEP_NUCLEAR = 300;
 // upkeep, and fire can't spread into it. Its power plants keep supplying neighbours. It resumes exactly
 // where it was when the mayor returns (any message, incl. the client's 20 s ping, counts as presence).
 export const CITY_FREEZE_MS = 15 * 60_000;
-export const POWER_PRICE_PER_UNIT = 1; // $ per zone-unit per simulation step, paid by importer to exporter
+/**
+ * Power is counted in units of one zone's need, shown as megawatts: 1 unit = 1 MW. That puts the plants close to
+ * real ones (coal 400 MW, nuclear 1.2 GW: one reactor, a wind farm 40 MW, offshore wind 60 MW) and a city's use near
+ * real electricity use per person (a zone houses a few hundred people).
+ */
+export const MW_PER_POWER_UNIT = 1;
+/** A power amount in units, as watts: "400 MW", "1.2 GW", "19.2 GW". */
+export function fmtPower(units: number): string {
+  const mw = units * MW_PER_POWER_UNIT;
+  const f = (v: number, u: string): string => `${+v.toFixed(v < 10 ? 2 : 1)} ${u}`;
+  return Math.abs(mw) >= 1e6 ? f(mw / 1e6, 'TW') : Math.abs(mw) >= 1e3 ? f(mw / 1e3, 'GW') : `${Math.round(mw).toLocaleString('en-US')} MW`;
+}
+export const POWER_PRICE_PER_UNIT = 1; // $ per unit (MW) per simulation step, paid by importer to exporter
 export const LEADERBOARD_SIZE = 20;
 
 // Abandonment: idle cities are shown as abandoned, then their plots become claimable again. Nothing decays:

@@ -162,3 +162,15 @@ describe('build rules', () => {
     expect(isWater(w.get(X0 + 30, y))).toBe(true);
   });
 });
+
+describe('power units', () => {
+  it('shows power as watts: 1 unit is 1 MW', async () => {
+    const { fmtPower } = await import('../src/constants.ts');
+    expect(fmtPower(0)).toBe('0 MW');
+    expect(fmtPower(40)).toBe('40 MW');
+    expect(fmtPower(400)).toBe('400 MW');
+    expect(fmtPower(1200)).toBe('1.2 GW');
+    expect(fmtPower(19_200)).toBe('19.2 GW');
+    expect(fmtPower(1_150_000)).toBe('1.15 TW');
+  });
+});
