@@ -14,13 +14,13 @@ import {
   WORLD_W, WORLD_H, CHUNK, CHUNKS_X, CHUNKS_Y, MAX_SUBSCRIBED_CHUNKS, TOOLS, LEADERBOARD_PUSH_TICKS,
   PRESENCE_INTERVAL_MS, PRESENCE_MAX,
   encodeChunk, inWorld, clamp, Disaster, DISASTERS, DISASTER_COUNT, hazardBit,
-  type ClientMsg, type ServerMsg, type ToolId, type Presence,
+  type ClientMsg, type ServerMsg, type ToolId, type Presence, type SantaTree, SANTA_MIN_TREES,
   LIFELINE_AMOUNT, LIFELINE_MAX_FUNDS, MONUMENT_MIN_POP, STARTING_FUNDS, LIFELINE_EARLY_PEAK_POP, LIFELINE_MAX_DEBT,
 } from '@globalcity/shared';
 import type { MapTiles } from './maptiles.ts';
 import { WorldStatsCounter } from './worldstats.ts';
 import { World, chunkIndex, chunkCoords, type ChunkIndex } from './world.ts';
-import { Players, NAMES_LOCKED_MSG, sanitizeName, sanitizeCityName, refreshMilestoneStats, refreshLifeline, earn, type PlayerRecord } from './players.ts';
+import { Players, NAMES_LOCKED_MSG, sanitizeName, sanitizeCityName, refreshMilestoneStats, refreshLifeline, earn, seasonMonth, type PlayerRecord } from './players.ts';
 import { Sim, type TickResult, type SimToast } from './sim.ts';
 import { applyBuild, queryTile } from './tools.ts';
 import { Leaderboard } from './leaderboard.ts';
@@ -545,6 +545,7 @@ export class Net {
         this.sendDisasters(client);
     this.send(client, this.leaderboard.messageFor(p));
     this.send(client, this.airportsMsg());
+    this.send(client, this.santaMsg());
     this.send(client, this.shippingMsg());
     this.send(client, { t: 'buildings', list: this.world.buildings.list() });
     if (this.admin.version) this.send(client, { t: 'version', version: this.admin.version });
@@ -664,6 +665,14 @@ export class Net {
   /** last airports list sent to clients (JSON), so we only broadcast when it changes */
   private airportsJson = '[]';
   private airportsMsg(): ServerMsg { return { t: 'airports', airports: this.sim.airports, now: Date.now() }; }
+  /** Santa's stops (the tops of the Christmas trees) in December once there are enough of them, else none */
+  private santaTrees(): SantaTree[] {
+    if (seasonMonth() !== 11) return [];
+    const trees = this.world.buildings.list().filter((b) => b.kind === 'christmastree').map((b) => ({ x: b.x + 1, y: b.y }));
+    return trees.length >= SANTA_MIN_TREES ? trees : [];
+  }
+  private santaJson = '[]';
+  private santaMsg(): ServerMsg { return { t: 'santa', trees: this.santaTrees(), now: Date.now() }; }
   private shippingVersion = -1;
   private shippingMsg(): ServerMsg { return { t: 'shipping', ports: this.sim.shipping.ports, routes: this.sim.shipping.routes, now: Date.now() }; }
 
@@ -672,6 +681,8 @@ export class Net {
     if (result.disasters) this.broadcast({ t: 'disasters', list: result.disasters });
     const aj = JSON.stringify(this.sim.airports);
     if (aj !== this.airportsJson) { this.airportsJson = aj; this.broadcast(this.airportsMsg()); }
+    const sm = this.santaMsg(), sj = JSON.stringify((sm as { trees: SantaTree[] }).trees);
+    if (sj !== this.santaJson) { this.santaJson = sj; this.broadcast(sm); }
     if (this.sim.shipping.version !== this.shippingVersion) { this.shippingVersion = this.sim.shipping.version; this.broadcast(this.shippingMsg()); }
     for (const u of result.unclaimed) this.broadcast({ t: 'unclaim', cx: u.cx, cy: u.cy });
     if (result.claimsChanged.length > 0) this.broadcast({ t: 'claims', claims: result.claimsChanged });

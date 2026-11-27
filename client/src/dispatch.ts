@@ -44,6 +44,7 @@ export function handleServerMsg(msg: ServerMsg, { state, map, renderer, ui, upda
     case 'leaderboard': state.setLeaderboard(msg.entries, msg.me, msg.monuments); break;
     case 'presence': state.setPresence(Array.isArray(msg.players) ? msg.players : []); break;
     case 'airports': renderer.flightLayer.set(msg.airports, msg.now); renderer.invalidate(); break;
+    case 'santa': renderer.santaLayer.set(msg.trees, msg.now); renderer.invalidate(); break;
     case 'shipping': renderer.shipLayer.set(msg.ports, msg.routes, msg.now); renderer.invalidate(); break;
     case 'buildings': renderer.customs.set(msg.list); break;
     case 'building': renderer.customs.apply(msg.op, msg.b); break;

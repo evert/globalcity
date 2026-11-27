@@ -38,6 +38,8 @@ TESTS=(
   "firstplot|"
   "christmastree|SEASON_MONTH=12"
   "christmastree_off|SEASON_MONTH=11"
+  "santa|SEASON_MONTH=12"
+  "santa_off|SEASON_MONTH=11"
 )
 
 want=" $* "

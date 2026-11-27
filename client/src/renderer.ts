@@ -3,11 +3,11 @@
 import {
   CHUNK, CHUNKS_X, CHUNKS_Y, WORLD_W, WORLD_H, TILE_PX, MAX_SUBSCRIBED_CHUNKS,
   LOMASK, ZONEBIT, PWRBIT, ANIMBIT, LIGHTNINGBOLT, FIRE, LASTFIRE, TOOLS, CUSTOM_BUILDINGS, footprintOrigin, toolW, toolH, chunkKey, parseChunkKey, clamp, inWorld,
-  sheetIndex, Disaster, DISASTERS, TICK_MS, type ActiveDisaster, DIRT, isCustomTile,
+  sheetIndex, Disaster, DISASTERS, TICK_MS, type ActiveDisaster, DIRT, isCustomTile, SLEIGH_TILES, SLEIGH_PX, SLEIGH_NOSE, type Sleigh,
 } from '@globalcity/shared';
 import type { ClaimInfo, Flight, ToolId, Voyage } from '@globalcity/shared';
 import type { SpriteSheet, Minimap } from './assets.ts';
-import { drawTile } from './assets.ts';
+import { drawTile, versioned } from './assets.ts';
 import { ANI_TILE, isAnimatedId } from './anim.ts';
 import { TileMap, DIRTY_ALL } from './map.ts';
 import type { AppState, ClaimIdle } from './state.ts';
@@ -15,7 +15,7 @@ import { claimIdleState, claimLabel, claimShortLabel } from './state.ts';
 import { Emitter } from './emitter.ts';
 import { PresenceTracker, presenceLabel, PRESENCE_STALE_MS } from './presence.ts';
 import type { SpriteEngine } from './sprites.ts';
-import { FlightLayer, ShipLayer } from './flights.ts';
+import { FlightLayer, ShipLayer, SantaLayer } from './flights.ts';
 import { OverlayLayer } from './overlays.ts';
 import { CustomLayer } from './custom.ts';
 import { NightLayer, NIGHT_REFRESH_MS } from './night.ts';
@@ -136,6 +136,9 @@ export class Renderer extends Emitter<RendererEvents> {
   readonly flightLayer = new FlightLayer();
   /** ships between seaports */
   readonly shipLayer = new ShipLayer();
+  /** Santa's sleigh in December (see shared/santa.ts) and its sprite */
+  readonly santaLayer = new SantaLayer();
+  private readonly sleighImg: HTMLImageElement = (() => { const i = new Image(); i.onload = () => this.invalidate(); i.src = versioned('/assets/vehicles/sleigh.png'); return i; })();
   /** map overlays (power, fire, crime, traffic, land value), zoomed-in view only */
   overlay!: OverlayLayer;
   /** custom-building layer: non-square buildings drawn as one image */
@@ -586,7 +589,8 @@ export class Renderer extends Emitter<RendererEvents> {
   private renderFlights(g: CanvasRenderingContext2D): void {
     const flights = this.flightLayer.interCity ? this.flightLayer.flights() : [];
     const ships = this.shipLayer.voyages();
-    if (!flights.length && !ships.length) { if (this.flightLayer.interCity || this.shipLayer.routes.length) this.scheduleFlights(2000); return; }
+    const sleigh = this.santaLayer.sleigh();
+    if (!flights.length && !ships.length && !sleigh) { if (this.flightLayer.interCity || this.shipLayer.routes.length || this.santaLayer.active) this.scheduleFlights(2000); return; }
     const W = this.canvas.width, H = this.canvas.height, d = this.dpr;
     const tile = this.isTileMode();
     // the world wraps at the date line: try the position and its copies one world-width either side
@@ -600,12 +604,14 @@ export class Renderer extends Emitter<RendererEvents> {
     let visible = 0;
     for (const f of flights) if (toPx(f.x, f.y)) visible++;
     for (const v of ships) if (toPx(v.x, v.y)) visible++;
+    if (sleigh && toPx(sleigh.x, sleigh.y)) visible++;
     if (tile) {
       // zoomed in: the Micropolis sprites at true scale (48px sprite = 3 tiles)
       if (this.sprites) {
         this.sprites.drawFlights(g, flights, toPx, this.tilePx() * d * 3);
         this.sprites.drawShips(g, ships, toPx, this.tilePx() * d * 3);
       }
+      if (sleigh) this.drawSleigh(g, sleigh, toPx, this.tilePx() * d * SLEIGH_TILES);
     } else {
       // world map: simple shapes and faint trails
       g.save();
@@ -650,10 +656,31 @@ export class Renderer extends Emitter<RendererEvents> {
         g.closePath(); g.fill(); g.stroke();
       }
       g.restore();
+      if (sleigh) this.drawSleigh(g, sleigh, toPx, Math.round(30 * d));
     }
     if (visible > 0) {
       if (tile) { if (this.animated) this.invalidate(); } else this.scheduleFlights(100);
     } else this.scheduleFlights(1000);
+  }
+
+  /** Santa's sleigh, `w` device px wide, flying over its position (it faces west, the way it always flies), fading
+   *  in and out as it arrives and leaves. At night the lead reindeer's nose glows red. */
+  private drawSleigh(g: CanvasRenderingContext2D, s: Sleigh, toPx: (tx: number, ty: number) => { x: number; y: number } | null, w: number): void {
+    const at = toPx(s.x, s.y);
+    const img = this.sleighImg;
+    if (!at || !img.complete || !img.naturalWidth) return;
+    const h = w * SLEIGH_PX.h / SLEIGH_PX.w;
+    const x0 = Math.round(at.x - w / 2), y0 = Math.round(at.y - h * 0.9); // riding just above the tree top
+    g.imageSmoothingEnabled = false;
+    g.globalAlpha = s.alpha;
+    g.drawImage(img, x0, y0, Math.round(w), Math.round(h));
+    if (this.nightAtChunk(Math.floor(s.x / CHUNK), Math.floor(s.y / CHUNK)) < LIGHTS_ON) { g.globalAlpha = 1; return; }
+    const nx = x0 + (SLEIGH_NOSE.x + 0.5) * w / SLEIGH_PX.w, ny = y0 + (SLEIGH_NOSE.y + 0.5) * h / SLEIGH_PX.h;
+    const r = Math.max(3 * this.dpr, w * 0.07) * (0.85 + 0.15 * Math.sin(performance.now() / 180));
+    const glow = g.createRadialGradient(nx, ny, 0, nx, ny, r);
+    glow.addColorStop(0, 'rgba(255,80,60,0.95)'); glow.addColorStop(0.35, 'rgba(255,60,40,0.5)'); glow.addColorStop(1, 'rgba(255,40,30,0)');
+    g.fillStyle = glow; g.fillRect(nx - r, ny - r, r * 2, r * 2);
+    g.globalAlpha = 1;
   }
 
   /** Redraw later for flights (overview needs ~10 fps; off-screen flights only a slow check). */

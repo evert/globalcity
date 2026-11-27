@@ -1,6 +1,6 @@
 // Inter-city air traffic. The server publishes powered airports and its clock; flights are derived
 // from that with the shared deterministic schedule, so every viewer sees the same planes.
-import { activeFlights, activeVoyages, FLIGHT_GROUND_S, type AirportInfo, type Flight, type PortInfo, type SeaRoute, type Voyage } from '@globalcity/shared';
+import { activeFlights, activeVoyages, FLIGHT_GROUND_S, santaRoute, sleighAt, type AirportInfo, type Flight, type PortInfo, type SeaRoute, type Voyage, type SantaRoute, type SantaTree, type Sleigh } from '@globalcity/shared';
 
 export class FlightLayer {
   airports: AirportInfo[] = [];
@@ -44,4 +44,17 @@ export class ShipLayer {
     if (Number.isFinite(serverNow)) this.offset = serverNow - Date.now();
   }
   voyages(): Voyage[] { return activeVoyages(this.ports, this.routes, Date.now() + this.offset); }
+}
+
+/** Santa's sleigh (December, with enough Christmas trees): the server publishes the trees and its clock. */
+export class SantaLayer {
+  private route: SantaRoute | null = null;
+  private offset = 0;
+  set(trees: SantaTree[], serverNow: number): void {
+    this.route = santaRoute(Array.isArray(trees) ? trees.filter((t) => Number.isFinite(t.x) && Number.isFinite(t.y)) : []);
+    if (Number.isFinite(serverNow)) this.offset = serverNow - Date.now();
+  }
+  /** Santa makes trips (it is December and there are enough trees), though he may be away right now */
+  get active(): boolean { return this.route !== null; }
+  sleigh(): Sleigh | null { return this.route ? sleighAt(this.route, Date.now() + this.offset) : null; }
 }

@@ -1,6 +1,7 @@
 import type { ActiveDisaster } from './disasters.ts';
 import type { ToolId } from './tools.ts';
 import type { AirportInfo } from './flights.ts';
+import type { SantaTree } from './santa.ts';
 import type { PortInfo, SeaRoute } from './ships.ts';
 import type { CustomBuilding } from './tools.ts';
 import { CHUNK } from './constants.ts';
@@ -240,6 +241,7 @@ export type ServerMsg =
   | { t: 'toast'; msg: string; kind: 'info' | 'error' | 'success'; at?: { x: number; y: number }; big?: boolean } // `at`: clickable, fly there; `big`: news to notice (a disaster), shown larger and longer
   | { t: 'leaderboard'; entries: LeaderboardEntry[]; me?: { rank: number; population: number }; monuments?: MonumentEntry[] } // top cities (and monuments, absent from old servers); also pushed periodically
   | { t: 'presence'; players: Presence[] } // every PRESENCE_INTERVAL_MS, online players except the receiver
+  | { t: 'santa'; trees: SantaTree[]; now: number } // Christmas trees Santa visits: empty outside December or below SANTA_MIN_TREES; `now` = server clock ms
   | { t: 'airports'; airports: AirportInfo[]; now: number } // powered airports (sent on welcome and when the set changes); `now` = server clock ms, for flight sync
   | { t: 'unclaim'; cx: number; cy: number } // a chunk was released (abandoned); what was built there stays for the next claimant
   | { t: 'version'; version: string } // current client build on the server (on welcome and whenever a new build lands)

@@ -5,6 +5,7 @@ export * from './tools.ts';
 export * from './protocol.ts';
 export * from './animation.ts';
 export * from './flights.ts';
+export * from './santa.ts';
 export * from './overview.ts';
 export * from './pollution.ts';
 export * from './ships.ts';
