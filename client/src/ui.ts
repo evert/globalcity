@@ -2308,11 +2308,10 @@ export class UI {
               : w.cloud < 0.9
                 ? '🌥 Mostly cloudy'
                 : '☁ Overcast';
-    const c = Math.round(w.temp),
-      f = Math.round((w.temp * 9) / 5 + 32);
+    const c = Math.round(w.temp);
     const at = wx.validAt;
     const when = at ? new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'now';
-    return [el('div', { class: 'qrow', text: `${sky}, ${c} °C (${f} °F)`, title: `Real weather here at ${when}: NOAA GFS forecast` })];
+    return [el('div', { class: 'qrow', text: `${sky}, ${c} °C`, title: `Real weather here at ${when}: NOAA GFS forecast` })];
   }
 
   /** Where a plane or ship is going, where from, and what it carries (cargo is cosmetic, the same for everyone). */
