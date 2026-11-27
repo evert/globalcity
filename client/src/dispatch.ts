@@ -15,9 +15,11 @@ export interface DispatchTargets {
   renderer: Renderer;
   ui: UI;
   updater?: { onVersion(v: string): void };
+  /** build predictions, settled by 'built' */
+  predictor?: { ack(seq: number, ok: boolean): void };
 }
 
-export function handleServerMsg(msg: ServerMsg, { state, map, renderer, ui, updater }: DispatchTargets): void {
+export function handleServerMsg(msg: ServerMsg, { state, map, renderer, ui, updater, predictor }: DispatchTargets): void {
   switch (msg.t) {
     case 'welcome': {
       const { token: _token, ...me } = msg.player;
@@ -33,6 +35,9 @@ export function handleServerMsg(msg: ServerMsg, { state, map, renderer, ui, upda
     }
     case 'tiles':
       map.applyTiles(msg.u);
+      break;
+    case 'built':
+      predictor?.ack(msg.seq, msg.ok);
       break;
     case 'disasters':
       renderer.setDisasters(msg.list);

@@ -4,13 +4,18 @@ import { CHUNK, CHUNKS_X, CHUNKS_Y, clamp, inWorld } from '@globalcity/shared';
 import type { Net } from './net.ts';
 import type { Renderer } from './renderer.ts';
 import type { AppState } from './state.ts';
+import { Predictor } from './predict.ts';
 
 export class Actions {
+  /** shows builds before the server confirms them */
+  readonly predictor: Predictor;
   constructor(
     readonly state: AppState,
     readonly net: Net,
     readonly renderer: Renderer,
-  ) {}
+  ) {
+    this.predictor = new Predictor(renderer.map, renderer.customs, state);
+  }
 
   flyToChunk(cx: number, cy: number, zoom = 1, ms = 700): void {
     cx = clamp(cx, 0, CHUNKS_X - 1);
@@ -41,7 +46,10 @@ export class Actions {
 
   build(tool: ToolId, x: number, y: number): boolean {
     if (!inWorld(x, y) || tool === 'query') return false;
-    return this.net.send({ t: 'build', tool, x, y });
+    const seq = this.predictor.next();
+    if (!this.net.send({ t: 'build', tool, x, y, seq })) return false;
+    this.predictor.predict(seq, tool, x, y);
+    return true;
   }
 
   query(x: number, y: number): boolean {
