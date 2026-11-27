@@ -1369,10 +1369,9 @@ export class Renderer extends Emitter<RendererEvents> {
     g.imageSmoothingEnabled = false;
     if (this.mapTiles.ready) this.mapTiles.draw(g, 'day', level, view, rx0, ry0, rx1, ry1);
     else this.drawWorldImage(g, this.minimap.image, this.minimap.width, this.minimap.height, rx0, ry0, rx1, ry1);
-    // clouds (real weather), then night: the real-time shade over the whole map, then the lights of the cities on
-    // the dark side
+    // night: the real-time shade over the whole map, then the lights of the cities on the dark side, then the clouds
+    // (real weather, shaded by the night themselves) over both
     g.imageSmoothingEnabled = true;
-    if (this.weather.ready) this.drawWorldImage(g, this.weather.clouds, this.weather.clouds.width, this.weather.clouds.height, rx0, ry0, rx1, ry1);
     this.drawWorldImage(g, this.night.canvas, this.night.canvas.width, this.night.canvas.height, rx0, ry0, rx1, ry1);
     if (this.mapTiles.ready && rx1 > rx0 && ry1 > ry0) {
       const lc = (this.lightsLayer ??= document.createElement('canvas'));
@@ -1393,6 +1392,10 @@ export class Renderer extends Emitter<RendererEvents> {
       g.globalAlpha = NIGHT_MAP_LIGHTS;
       g.drawImage(lc, rx0, ry0);
       g.globalAlpha = 1;
+    }
+    if (this.weather.ready) {
+      const clouds = this.weather.shadedClouds(this.night.canvas, this.night.version);
+      this.drawWorldImage(g, clouds, clouds.width, clouds.height, rx0, ry0, rx1, ry1);
     }
     g.imageSmoothingEnabled = false;
     // chunk grid at the higher overview zooms

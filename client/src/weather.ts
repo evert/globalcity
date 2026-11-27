@@ -1,6 +1,6 @@
 // Real weather over the map (server/src/weather.ts: NOAA's GFS forecast for the current hour, as a 0.5-degree image
 // whose red channel is cloud cover, green the rain or snow rate, blue where it is snow).
-//   zoomed out  clouds drift over the world map, darker where it rains (drawn under the night shade)
+//   zoomed out  clouds drift over the world map, darker where it rains, over the city lights (shaded by the night)
 //   zoomed in   the sky dims under cloud, and rain or snow falls across the screen where the camera is
 // `?weather=rain|snow|storm|clear` overrides what falls at the camera, to look at the effect.
 import { WORLD_H, WORLD_W } from '@globalcity/shared';
@@ -47,6 +47,8 @@ export class WeatherLayer {
   onChange: () => void = () => {};
   private data: Uint8ClampedArray | null = null;
   private valid: number | null = null;
+  private readonly shaded = document.createElement('canvas');
+  private shadedKey = '';
 
   constructor() {
     this.clouds.width = this.shade.width = W;
@@ -105,6 +107,23 @@ export class WeatherLayer {
     }
     cg.putImageData(ci, 0, 0);
     sg.putImageData(si, 0, 0);
+  }
+
+  /** The clouds with the night shade on them (only where there is cloud), to draw over the city lights. */
+  shadedClouds(night: HTMLCanvasElement, nightVersion: number): HTMLCanvasElement {
+    const key = `${this.version}|${nightVersion}`;
+    if (key !== this.shadedKey) {
+      this.shadedKey = key;
+      const c = this.shaded;
+      c.width = W;
+      c.height = H; // also clears it
+      const g = c.getContext('2d')!;
+      g.drawImage(this.clouds, 0, 0);
+      g.globalCompositeOperation = 'source-atop';
+      g.imageSmoothingEnabled = true;
+      g.drawImage(night, 0, 0, W, H);
+    }
+    return this.shaded;
   }
 
   /** The weather at a tile (bilinear between the grid's points). */
