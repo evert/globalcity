@@ -1,0 +1,36 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "import"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn"
+  },
+  "env": { "builtin": true, "browser": true, "node": true, "es2024": true },
+  "ignorePatterns": ["**/dist/**", "data/**", "client/public/assets/**", "art/**", "android/**"],
+  "rules": {
+    // Tests and the client poll a socket with `while (!x) await sleep()`; sequential awaits are the point.
+    "no-await-in-loop": "off",
+    // Same polling loops: the condition is set by a socket callback, which the rule cannot see.
+    "no-unmodified-loop-condition": "off",
+    // `ws.onmessage = ...` / `el.onclick = ...` is the house style and there is only ever one handler.
+    "unicorn/prefer-add-event-listener": "off",
+    // Closures are kept next to the code that uses them on purpose.
+    "unicorn/consistent-function-scoping": "off",
+    // In-place sort()/reverse() on fresh arrays is intended; toSorted() needs ES2023 and the target is ES2022.
+    "unicorn/no-array-sort": "off",
+    "unicorn/no-array-reverse": "off",
+    // `for (const x of [...set]) set.delete(x)` copies are deliberate snapshots; the autofix would remove them.
+    "unicorn/no-useless-spread": "off",
+    // __BUILD_VERSION__ is a Vite define.
+    "no-underscore-dangle": "off",
+    // `import WebSocket from 'ws'` is how ws documents it.
+    "import/no-named-as-default": "off",
+    // The name sanitizers strip control characters on purpose.
+    "no-control-regex": "off",
+    // `new Array(n).fill(0)` is used for counters throughout.
+    "unicorn/no-new-array": "off",
+    // The *_off.mjs tests import the real test for its side effects.
+    "import/no-unassigned-import": "off"
+  }
+}
