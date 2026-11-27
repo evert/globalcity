@@ -67,6 +67,15 @@ export class WeatherLayer {
   /** an hour has arrived */
   ready = false;
   onChange: () => void = () => {};
+  private readonly listeners: (() => void)[] = [];
+  /** Also call `fn` whenever the weather changes (a new hour, or the clouds switched). */
+  subscribe(fn: () => void): void {
+    this.listeners.push(fn);
+  }
+  private changed(): void {
+    this.onChange();
+    for (const fn of this.listeners) fn();
+  }
   private data: Uint8ClampedArray | null = null;
   private valid: number | null = null;
   private readonly shaded = document.createElement('canvas');
@@ -91,7 +100,7 @@ export class WeatherLayer {
       /* private mode */
     }
     this.version++;
-    this.onChange();
+    this.changed();
   }
 
   private started = false;
@@ -127,7 +136,7 @@ export class WeatherLayer {
       this.paint();
       this.ready = true;
       this.version++;
-      this.onChange();
+      this.changed();
     } catch {
       /* no weather: the map just stays clear */
     }
@@ -279,7 +288,11 @@ export class WeatherOverlay {
     Object.assign(this.canvas.style, { position: 'fixed', inset: '0', width: '100vw', height: '100vh', pointerEvents: 'none' });
     this.canvas.setAttribute('aria-hidden', 'true');
     mapCanvas.after(this.canvas);
+    // start as soon as there is something to show: when the weather arrives, when the view moves (callers poke()),
+    // and once a second for what changes on its own (dusk and dawn)
+    weather.subscribe(() => this.check());
     setInterval(() => this.check(), 1000);
+    this.check();
   }
 
   /** What to draw now, or null (zoomed out, nothing to show, or reduced motion). */
@@ -292,6 +305,11 @@ export class WeatherOverlay {
     const broken = smooth(0.08, 0.2, w.cloud) * (1 - smooth(0.82, 0.97, w.cloud));
     const shadow = day * broken;
     return w.precip >= 0.15 || shadow > 0.03 ? { w, shadow } : null;
+  }
+
+  /** The view moved or zoomed: start animating if there is now something to show. */
+  poke(): void {
+    this.check();
   }
 
   private check(): void {

@@ -92,7 +92,7 @@ async function boot(): Promise<void> {
   renderer.sprites = new SpriteEngine(map, spriteAssets);
   document.addEventListener('visibilitychange', () => renderer.invalidate()); // sprites pause while hidden, resume on return
   renderer.resizeToWindow();
-  new WeatherOverlay(canvas, renderer, renderer.weather);
+  const sky = new WeatherOverlay(canvas, renderer, renderer.weather);
   if (!applyHashCamera(renderer)) renderer.showWorld();
   const actions = new Actions(state, net, renderer);
   const ui = new UI(state, net, renderer, actions, sheet, minimap);
@@ -149,6 +149,7 @@ async function boot(): Promise<void> {
   // ---- presence: tell the server where we look / point (max 4/s) ----
   const view = new ViewReporter(net, renderer);
   renderer.on('camera', () => view.poke());
+  renderer.on('camera', () => sky.poke());
   renderer.on('hover', () => view.poke());
   renderer.on('touchCursor', () => view.poke());
   state.on('me', (me) => {
