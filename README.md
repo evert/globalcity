@@ -47,7 +47,7 @@ Requires Node 22+ (24 recommended).
 
 ```sh
 npm install
-bash tools/fetch-terrain-data.sh   # climate, tree cover and sea ice rasters (~300 MB, one-off)
+bash tools/fetch-terrain-data.sh   # climate, tree cover, elevation, sea ice, plates (~640 MB, one-off, from our terrain-data-v2 release mirror)
 npm run gen:world      # downloads Natural Earth data and rasterises the world (one-off, ~2 min)
 npm run dev            # server on :8787, Vite client on :5173 (proxies /ws)
 ```

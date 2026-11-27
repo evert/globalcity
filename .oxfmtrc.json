@@ -7,5 +7,5 @@
   "trailingComma": "all",
   "arrowParens": "always",
   "sortPackageJson": false,
-  "ignorePatterns": ["client/dist/", "dist/", "data/", "client/public/assets/", "art/", "android/", "LICENSES/", "package-lock.json", "*.yml", "*.yaml"]
+  "ignorePatterns": [".claude/", "client/dist/", "dist/", "data/", "client/public/assets/", "art/", "android/", "LICENSES/", "package-lock.json", "*.yml", "*.yaml"]
 }

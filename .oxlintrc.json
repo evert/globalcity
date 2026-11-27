@@ -7,7 +7,7 @@
     "perf": "warn"
   },
   "env": { "builtin": true, "browser": true, "node": true, "es2024": true },
-  "ignorePatterns": ["**/dist/**", "data/**", "client/public/assets/**", "art/**", "android/**"],
+  "ignorePatterns": [".claude/**", "**/dist/**", "data/**", "client/public/assets/**", "art/**", "android/**"],
   "rules": {
     // Tests and the client poll a socket with `while (!x) await sleep()`; sequential awaits are the point.
     "no-await-in-loop": "off",
