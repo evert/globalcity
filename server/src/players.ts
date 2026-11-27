@@ -3,7 +3,6 @@
 import crypto from 'node:crypto';
 import {
   STARTING_FUNDS,
-  POP_HISTORY_MAX,
   ABANDON_RECLAIM_DAYS,
   MAX_MAYOR_NAME,
   MAX_CITY_NAME,
@@ -625,12 +624,11 @@ export class Players {
   }
 
   /** World population now (every city with land, monuments not counted): one point of the history, once a game
-   *  month. When the history is full every other point is dropped, so it always spans the whole world's life. */
+   *  month. Every point is kept: a world runs about a century, ~1,200 points. */
   recordPopulation(): void {
     let pop = 0;
     for (const p of this.players.values()) if (p.chunks.length && !p.monument) pop += p.stats.population;
     this.popHistory.push([this.time.year + this.time.month / 12, pop]);
-    if (this.popHistory.length > POP_HISTORY_MAX) this.popHistory = this.popHistory.filter((_, i, a) => i % 2 === 0 || i === a.length - 1);
   }
 
   serialize(): StateFile {
