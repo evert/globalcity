@@ -106,9 +106,20 @@ for (let y = 2; y < 62; y += 5)
     built++;
     await sleep(30);
   }
+// a power line along the driest row between the zones (the plot's edge rows can be mostly sea)
+let wireY = 0,
+  best = -1;
+for (let y = 0; y < 62; y += 5) {
+  let d = 0;
+  for (let x = 1; x < 63; x++) if (dry(x, y)) d++;
+  if (d > best) {
+    best = d;
+    wireY = y;
+  }
+}
 for (let x = 1; x < 63; x++)
-  if (dry(x, 0)) {
-    A.send({ t: 'build', tool: 'wire', x: s.cx * CHUNK + x, y: s.cy * CHUNK });
+  if (dry(x, wireY)) {
+    A.send({ t: 'build', tool: 'wire', x: s.cx * CHUNK + x, y: s.cy * CHUNK + wireY });
     await sleep(30);
   }
 await sleep(1000);
@@ -127,17 +138,18 @@ async function strike(kind, name, waitTicks) {
   await sleep(waitTicks * TICK);
 }
 
-const rubble0 = A.count(s.cx, s.cy, isRubble);
-await strike(Disaster.Earthquake, 'earthquake', 4);
-const rubble1 = A.count(s.cx, s.cy, isRubble);
-console.log(`  rubble ${rubble0} -> ${rubble1}, fires ${A.count(s.cx, s.cy, isFire)}`);
-if (rubble1 <= rubble0) fail('the earthquake left no rubble');
-
+// the blizzard first, while the power line is whole (an earthquake can take all of it down)
 const wires0 = A.count(s.cx, s.cy, (t) => t >= 210 && t <= 220);
 await strike(Disaster.Blizzard, 'blizzard', 30);
 const wires1 = A.count(s.cx, s.cy, (t) => t >= 210 && t <= 220);
 console.log(`  power line tiles ${wires0} -> ${wires1}`);
 if (wires1 >= wires0) fail('the blizzard brought no power lines down');
+
+const rubble0 = A.count(s.cx, s.cy, isRubble);
+await strike(Disaster.Earthquake, 'earthquake', 4);
+const rubble1 = A.count(s.cx, s.cy, isRubble);
+console.log(`  rubble ${rubble0} -> ${rubble1}, fires ${A.count(s.cx, s.cy, isFire)}`);
+if (rubble1 <= rubble0) fail('the earthquake left no rubble');
 
 const r2 = A.count(s.cx, s.cy, isRubble);
 await strike(Disaster.Tornado, 'tornado', 4);
