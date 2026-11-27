@@ -4,8 +4,7 @@ import WebSocket from 'ws';
 import { decodeChunk } from '@globalcity/shared';
 const URL = `ws://127.0.0.1:${process.env.PORT}/ws`;
 const CHUNK = 64,
-  LOMASK = 0x3ff,
-  isWater = (t) => t >= 2 && t <= 20;
+  LOMASK = 0x3ff;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const fail = (m) => {
   console.log('FAIL:', m);
