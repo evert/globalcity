@@ -38,7 +38,6 @@ import {
   TOOLS,
   TOOL_ORDER,
   PLANT_OUTPUT,
-  CUSTOM_BUILDINGS,
   GRAND_CENTRAL,
   WORLD_H,
   WORLD_W,
@@ -48,7 +47,7 @@ import {
 import { DISASTERS, DISASTER_COUNT, Disaster, type WorldStats } from '@globalcity/shared';
 import type { Actions } from './actions.ts';
 import type { Minimap, SpriteSheet } from './assets.ts';
-import { drawTile } from './assets.ts';
+import { iconDpr, ToolIcons } from './icons.ts';
 import type { Net } from './net.ts';
 import type { Renderer } from './renderer.ts';
 import { ZONE_TOOLS, type TouchPlan } from './input.ts';
@@ -78,16 +77,9 @@ interface ToolGroupUi {
 /** Price for a toolbar label; power plants add how many zones they power. */
 const priceLabel = (id: ToolId): string => `${fmtMoney(TOOLS[id].cost)}${PLANT_OUTPUT[id] ? ` · ⚡${PLANT_OUTPUT[id]}` : ''}`;
 
-/** Draw a custom building's image (its first frame, when animated) centred in a px x px square. */
-function drawCustomFit(g: CanvasRenderingContext2D, img: HTMLImageElement, kind: string, px: number): void {
-  const frames = CUSTOM_BUILDINGS[kind]?.frames ?? 1;
-  const fw = img.naturalWidth / frames,
-    fh = img.naturalHeight;
-  const s = Math.min(px / fw, px / fh),
-    w = fw * s,
-    h = fh * s;
-  g.drawImage(img, 0, 0, fw, fh, (px - w) / 2, (px - h) / 2, w, h);
-}
+/** Toolbar icon size in CSS px (16 px tiles at 2x); wide buildings are cropped to a square from their middle. */
+const TOOL_ICON_PX = 32;
+const TOOL_ICON_OPTS = { maxAspect: 1 };
 
 /** Leaderboard cell: the share of milestones unlocked, as a number over a thin bar. */
 function milestoneCell(pct: number | undefined): HTMLElement {
@@ -195,6 +187,7 @@ export class UI {
   private toolButtons = new Map<ToolId, HTMLButtonElement>();
   private toolGroups: ToolGroupUi[] = [];
   private openGroup: ToolGroupUi | null = null;
+  private icons!: ToolIcons;
   private autoOverlay: OverlayMode | null = null; // map view opened by clicking a station
   private rciBars!: Record<'r' | 'c' | 'i', HTMLElement>;
   private rciBoost!: Record<'r' | 'c' | 'i', HTMLElement>;
@@ -271,6 +264,7 @@ export class UI {
     readonly minimap: Minimap,
   ) {
     this.root = document.getElementById('ui') ?? document.body.appendChild(el('div', { id: 'ui' }));
+    this.icons = new ToolIcons(sheet, renderer.customs);
     this.buildTopBar();
     this.buildToolbar();
     this.buildRci();
@@ -426,21 +420,8 @@ export class UI {
     const bar = el('div', { id: 'toolbar' });
     for (const id of TOOL_ORDER) {
       const t = TOOLS[id];
-      const icon = el('canvas', { class: 'icon', width: '32', height: '32' });
-      const g = icon.getContext('2d')!;
-      g.imageSmoothingEnabled = false;
-      drawTile(g, this.sheet, t.icon, 0, 0, 32, 32);
-      if (t.custom) {
-        const img = this.renderer.customs.images.get(t.custom);
-        const paint = () => {
-          if (img && img.naturalWidth) {
-            g.clearRect(0, 0, 32, 32);
-            drawCustomFit(g, img, t.custom!, 32);
-          }
-        };
-        if (img?.complete) paint();
-        else img?.addEventListener('load', paint, { once: true });
-      }
+      const icon = el('canvas', { class: 'icon' });
+      this.icons.paint(icon, id, TOOL_ICON_PX, TOOL_ICON_OPTS);
       const cost = t.cost ? priceLabel(id) : 'free';
       const btn = el(
         'button',
@@ -479,10 +460,25 @@ export class UI {
     window.addEventListener('resize', () => this.closeToolGroup());
     this.root.append(bar);
     this.layoutToolGroups();
+    this.watchIconDpr();
+  }
+
+  /** Redraw the toolbar icons when the pixel density changes (browser zoom, another monitor). */
+  private watchIconDpr(): void {
+    matchMedia(`(resolution: ${iconDpr()}dppx)`).addEventListener(
+      'change',
+      () => {
+        for (const [id, btn] of this.toolButtons) this.icons.paint(btn.querySelector('canvas')!, id, TOOL_ICON_PX, TOOL_ICON_OPTS);
+        for (const g of this.toolGroups) g.shown = null;
+        this.layoutToolGroups();
+        this.watchIconDpr();
+      },
+      { once: true },
+    );
   }
 
   private buildToolGroup(def: (typeof TOOL_GROUPS)[number], bar: HTMLElement): ToolGroupUi {
-    const icon = el('canvas', { class: 'icon', width: '32', height: '32' });
+    const icon = el('canvas', { class: 'icon' });
     const label = el('span', { class: 'label', text: def.name });
     const cost = el('span', { class: 'cost' });
     const head = el(
@@ -561,11 +557,7 @@ export class UI {
       g.head.title = `${g.def.name}: ${unlocked.map((id) => `${TOOLS[id].name} (${TOOLS[id].hotkey.toUpperCase()})`).join(', ')}`;
       if (g.shown !== cur) {
         g.shown = cur;
-        const src = this.toolButtons.get(cur)!.querySelector('canvas')!;
-        const ctx = g.icon.getContext('2d')!;
-        ctx.imageSmoothingEnabled = false;
-        ctx.clearRect(0, 0, 32, 32);
-        ctx.drawImage(src, 0, 0);
+        this.icons.paint(g.icon, cur, TOOL_ICON_PX, TOOL_ICON_OPTS);
       }
     }
   }
@@ -1655,23 +1647,8 @@ export class UI {
     this.refreshMilestones();
   }
   private msIcon(b: MilestoneBuilding): HTMLCanvasElement {
-    const t = TOOLS[MILESTONE_BUILDINGS[b].tool];
-    const n = t.size,
-      px = 72;
-    const c = el('canvas', { class: 'ms-icon', width: String(px), height: String(px) });
-    const g = c.getContext('2d')!;
-    g.imageSmoothingEnabled = false;
-    if (t.custom) {
-      const img = this.renderer.customs.images.get(t.custom);
-      const paint = () => {
-        if (img && img.naturalWidth) drawCustomFit(g, img, t.custom!, px);
-      };
-      if (img?.complete) paint();
-      else img?.addEventListener('load', paint, { once: true });
-      return c;
-    }
-    const cell = px / n;
-    for (let k = 0; k < n * n; k++) drawTile(g, this.sheet, t.base! + k, (k % n) * cell, Math.floor(k / n) * cell, cell, cell);
+    const c = el('canvas', { class: 'ms-icon' });
+    this.icons.paint(c, MILESTONE_BUILDINGS[b].tool, 72);
     return c;
   }
   private refreshMilestones(): void {
@@ -1730,15 +1707,8 @@ export class UI {
       : unlocked
         ? { cls: 'ready', text: 'Unlocked: click your east-west rail line with it' }
         : { cls: 'locked', text: GRAND_CENTRAL.unlock };
-    const c = el('canvas', { class: 'ms-icon', width: '72', height: '72' });
-    const g = c.getContext('2d')!;
-    g.imageSmoothingEnabled = false;
-    const img = this.renderer.customs.images.get('grandcentral');
-    const paint = () => {
-      if (img && img.naturalWidth) drawCustomFit(g, img, 'grandcentral', 72);
-    };
-    if (img?.complete) paint();
-    else img?.addEventListener('load', paint, { once: true });
+    const c = el('canvas', { class: 'ms-icon' });
+    this.icons.paint(c, 'grandcentral', 72);
     return el(
       'div',
       { class: `ms-row ${status.cls}` },

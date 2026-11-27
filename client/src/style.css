@@ -207,7 +207,7 @@ a {
   top: 52px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 1px;
   padding: 6px;
   background: var(--panel);
   border: 1px solid var(--panel-border);
@@ -219,11 +219,11 @@ a {
 .tool {
   position: relative;
   display: grid;
-  grid-template-columns: 28px 1fr;
+  grid-template-columns: 32px 1fr;
   grid-template-rows: auto auto;
   column-gap: 8px;
   align-items: center;
-  padding: 2px 6px 2px 2px;
+  padding: 1px 6px 1px 2px;
   background: transparent;
   border: 1px solid transparent;
   border-radius: 4px;
@@ -247,8 +247,8 @@ a {
 }
 .tool .icon {
   grid-row: 1 / span 2;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   image-rendering: pixelated;
   border-radius: 3px;
   background: #000;
@@ -856,18 +856,18 @@ a {
     justify-content: center;
   }
   .tool {
-    grid-template-columns: 28px;
+    grid-template-columns: 32px;
     grid-template-rows: auto;
-    padding: 3px;
+    padding: 1px;
   }
   .tool .label,
   .tool .cost {
     display: none;
   }
   .tool-flyout .tool {
-    grid-template-columns: 28px 1fr;
+    grid-template-columns: 32px 1fr;
     grid-template-rows: auto auto;
-    padding: 2px 6px 2px 2px;
+    padding: 1px 6px 1px 2px;
   }
   .tool-flyout .tool .label,
   .tool-flyout .tool .cost {
