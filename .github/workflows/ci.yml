@@ -18,32 +18,6 @@ jobs:
 
       - run: npm ci
 
-      # The server tests play on the real map (they look for land and water at real places), so CI needs the
-      # generated world. Its sources (~300 MB) and the result are cached; the world is only regenerated when the
-      # generator or the world's shape changes.
-      - name: Cache terrain sources
-        uses: actions/cache@v4
-        with:
-          path: data/raw
-          key: terrain-raw-${{ hashFiles('tools/fetch-terrain-data.sh') }}
-
-      - name: Cache the generated world
-        id: world
-        uses: actions/cache@v4
-        with:
-          path: data/world-*
-          key: world-${{ hashFiles('tools/src/gen-world.ts', 'tools/src/gen-places.ts', 'tools/fetch-terrain-data.sh', 'shared/src/constants.ts', 'shared/src/terrain.ts') }}
-
-      # Generating the world takes minutes on a cache miss: it runs in the background while the checks below run,
-      # and the tests wait for it. (Always started, so the wait has a step to wait for; it does nothing on a hit.)
-      - name: Generate the world
-        id: gen-world
-        background: true
-        run: |
-          if [ "${{ steps.world.outputs.cache-hit }}" = "true" ]; then echo "world from the cache"; exit 0; fi
-          bash tools/fetch-terrain-data.sh
-          npm run gen:world
-
       - parallel:
           - name: Check formatting
             run: npm run fmt:check
@@ -54,10 +28,9 @@ jobs:
           - name: Build the client
             run: npm run build
 
-      - name: Wait for the world
-        wait: gen-world
-
-      # Vitest runs the server tests in 4 workers, each against its own server (~800 MB each).
+      # The gameplay tests play on a small fixture world built in code (server/test/support/fixture.ts): no
+      # generated world needed. Vitest runs them in 4 workers, each against its own server. (The world generator
+      # tests are skipped here: there is no generated world; the world job runs them.)
       - name: Tests
         run: npm test
         env:
@@ -70,3 +43,61 @@ jobs:
         with:
           name: server-test-logs
           path: ${{ runner.temp }}/globalcity-tests.*
+
+  # The world generator tests (tools/test/), on a freshly generated Earth. Only when the generator, its inputs or these
+  # tests changed: the world is cached under a key of all of them, and a run that finds it cached has nothing new to
+  # check (the cache is only saved after the tests passed on it).
+  world:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: World key
+        id: key
+        run: echo "key=world-${{ hashFiles('tools/src/gen-world.ts', 'tools/src/gen-places.ts', 'tools/fetch-terrain-data.sh', 'shared/src/constants.ts', 'shared/src/terrain.ts', 'shared/src/disasters.ts', 'tools/test/**', 'tools/vitest.config.ts') }}" >> "$GITHUB_OUTPUT"
+
+      - name: Is this world already tested?
+        id: tested
+        uses: actions/cache/restore@v4
+        with:
+          path: data/world-*
+          key: ${{ steps.key.outputs.key }}
+          lookup-only: true
+
+      - if: steps.tested.outputs.cache-hit != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - if: steps.tested.outputs.cache-hit != 'true'
+        run: npm ci
+
+      # the terrain sources (~300 MB) from our mirror
+      - if: steps.tested.outputs.cache-hit != 'true'
+        name: Cache terrain sources
+        uses: actions/cache@v4
+        with:
+          path: data/raw
+          key: terrain-raw-${{ hashFiles('tools/fetch-terrain-data.sh') }}
+
+      - if: steps.tested.outputs.cache-hit != 'true'
+        name: Generate the world
+        run: |
+          bash tools/fetch-terrain-data.sh
+          npm run gen:world
+
+      - if: steps.tested.outputs.cache-hit != 'true'
+        name: World generator tests
+        run: npx vitest run --project world
+
+      - if: steps.tested.outputs.cache-hit != 'true'
+        name: Remember the tested world
+        uses: actions/cache/save@v4
+        with:
+          path: data/world-*
+          key: ${{ steps.key.outputs.key }}
+
+      - if: steps.tested.outputs.cache-hit == 'true'
+        run: echo "The world for this generator was generated and tested before; nothing to do."
