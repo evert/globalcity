@@ -123,12 +123,23 @@ try {
 }
 persist.start();
 
+/** Tick times, logged every TICK_LOG_EVERY ticks (average and slowest), so a long-running server shows its load. */
+const TICK_LOG_EVERY = 60;
+let tickSum = 0,
+  tickMax = 0,
+  tickN = 0;
 const tickTimer = setInterval(() => {
   const t = performance.now();
   const result = sim.tick();
   net.afterTick(result);
   const dt = performance.now() - t;
   if (dt > tickMs / 2) warn(`Slow tick #${sim.tickCount}: ${dt.toFixed(0)} ms`);
+  tickSum += dt;
+  tickMax = Math.max(tickMax, dt);
+  if (++tickN >= TICK_LOG_EVERY) {
+    log(`Ticks: ${(tickSum / tickN).toFixed(1)} ms average, ${tickMax.toFixed(0)} ms slowest over the last ${tickN} (budget ${tickMs} ms)`);
+    tickSum = tickMax = tickN = 0;
+  }
 }, tickMs);
 const flushTimer = setInterval(() => net.flushTiles(), TILE_FLUSH_MS);
 // oxlint-disable-next-line no-unused-vars -- never cleared in shutdown(), unlike the other timers (left as is in the oxc PR)
