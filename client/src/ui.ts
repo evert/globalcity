@@ -35,6 +35,7 @@ import {
   type MilestoneBuilding,
   MAX_CHUNKS_PER_PLAYER,
   POWER_PRICE_PER_UNIT,
+  fmtPower,
   TOOLS,
   TOOL_ORDER,
   PLANT_OUTPUT,
@@ -78,8 +79,8 @@ interface ToolGroupUi {
   shown: ToolId | null;
 }
 
-/** Price for a toolbar label; power plants add how many zones they power. */
-const priceLabel = (id: ToolId): string => `${fmtMoney(TOOLS[id].cost)}${PLANT_OUTPUT[id] ? ` · ⚡${PLANT_OUTPUT[id]}` : ''}`;
+/** Price for a toolbar label; power plants add the power they make. */
+const priceLabel = (id: ToolId): string => `${fmtMoney(TOOLS[id].cost)}${PLANT_OUTPUT[id] ? ` · ⚡${fmtPower(PLANT_OUTPUT[id])}` : ''}`;
 
 /** Toolbar icon size in CSS px (16 px tiles at 2x); wide buildings are cropped to a square from their middle. */
 const TOOL_ICON_PX = 32;
@@ -106,7 +107,7 @@ const DISCORD_ASKED_KEY = 'globalcity.discordAsked';
 /** The Discord invite (main had it off while its world reset countdown linked the Discord instead). */
 const DISCORD_INVITE_ENABLED = true;
 const TOAST_DEDUP_MS = 3000;
-const POWER_TRADE_HELP = 'Power flows over wires across plot borders; surplus is sold at $1 per unit per month.';
+const POWER_TRADE_HELP = 'Power flows over wires across plot borders; surplus is sold at $1 per MW per month.';
 export const NEIGHBOUR_HELP = "Neighbouring cities' jobs and shoppers add demand across the border; rail connecting your zones to theirs boosts commerce.";
 export const POLICE_HELP = 'Police stations cover 14 tiles; uncovered lots lose land value once the city grows (crime)';
 export const TRAFFIC_HELP = 'Average traffic on your roads: zones send cars along nearby roads; busy roads are drawn with traffic.';
@@ -577,7 +578,7 @@ export class UI {
       i = mk('i', 'I');
     this.rciBars = { r: r.fill, c: c.fill, i: i.fill };
     this.rciBoost = { r: r.boost, c: c.boost, i: i.boost };
-    this.powerText = el('span', { class: 'power', text: '⚡ 0 / 0' });
+    this.powerText = el('span', { class: 'power', text: '⚡ 0 MW / 0 MW' });
     this.crimeText = el('span', { class: 'crime bad hidden', id: 'crime', title: `Crime is high and no police station is powered. ${POLICE_HELP}` }, '⚠ crime');
     this.trafficWord = el('span', { class: 'word' });
     this.trafficFill = el('span', { class: 'fill' });
@@ -846,7 +847,7 @@ export class UI {
       tile(n(s.rail), 'rail tiles'),
       tile(n(s.powerLines), 'power line tiles'),
       tile(n(s.plants), 'power plants'),
-      tile(n(s.powerSupply), 'power supplied', "zones the world's plants can power"),
+      tile(fmtPower(s.powerSupply), 'power supplied', "what the world's power plants can produce"),
       tile(n(s.airports), 'airports'),
       tile(n(s.seaports), 'seaports'),
       tile(n(s.seaRoutes), 'sea routes'),
@@ -1061,8 +1062,8 @@ export class UI {
     this.neighbourText.classList.toggle('hidden', neighbours <= 0 && railLinks <= 0);
     const sup = s?.powerSupply ?? 0,
       dem = s?.powerDemand ?? 0;
-    this.powerText.textContent = `⚡ ${dem} / ${sup}`;
-    this.powerText.title = `Power: ${dem} zones in use of ${sup} capacity. ${POWER_TRADE_HELP}`;
+    this.powerText.textContent = `⚡ ${fmtPower(dem)} / ${fmtPower(sup)}`;
+    this.powerText.title = `Power: ${fmtPower(dem)} in use of ${fmtPower(sup)} capacity. ${POWER_TRADE_HELP}`;
     this.powerText.classList.toggle('bad', dem > sup);
     this.refreshPowerTrade(s?.powerImported ?? 0, s?.powerExported ?? 0, s?.powerTradeNet ?? 0);
     const fires = s?.fires ?? 0;
@@ -1089,11 +1090,11 @@ export class UI {
     if (imported > 0) {
       // the importer's share of the net figure; when both flows exist, split by price
       const cost = exported > 0 ? -imported * POWER_PRICE_PER_UNIT : Math.min(net, 0);
-      t.append(el('div', { class: 'paying', text: `⬇ buying ${imported} ${imported === 1 ? 'unit' : 'units'} (${money(cost)})` }));
+      t.append(el('div', { class: 'paying', text: `⬇ buying ${fmtPower(imported)} (${money(cost)})` }));
     }
     if (exported > 0) {
       const income = imported > 0 ? exported * POWER_PRICE_PER_UNIT : Math.max(net, 0);
-      t.append(el('div', { class: 'income', text: `⬆ selling ${exported} ${exported === 1 ? 'unit' : 'units'} (${money(income)})` }));
+      t.append(el('div', { class: 'income', text: `⬆ selling ${fmtPower(exported)} (${money(income)})` }));
     }
     t.classList.toggle('hidden', imported <= 0 && exported <= 0);
   }

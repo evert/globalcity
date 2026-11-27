@@ -22,6 +22,7 @@ import {
   UPKEEP_COAL,
   UPKEEP_NUCLEAR,
   STEPS_PER_MONTH,
+  fmtPower,
   POLICESTATION,
   FIRE_SPREAD_P,
   FIRE_BURNOUT_P,
@@ -957,12 +958,20 @@ export class Sim {
       if (buy !== prev.buy) {
         prev.buy = buy;
         if (buy)
-          this.toasts.push({ playerId: p.id, kind: 'info', msg: `Buying ${p.stats.powerImported} units of power from ${this.names(book.buyFrom.get(p.id)!)}` });
+          this.toasts.push({
+            playerId: p.id,
+            kind: 'info',
+            msg: `Buying ${fmtPower(p.stats.powerImported)} of power from ${this.names(book.buyFrom.get(p.id)!)}`,
+          });
       }
       if (sell !== prev.sell) {
         prev.sell = sell;
         if (sell)
-          this.toasts.push({ playerId: p.id, kind: 'info', msg: `Selling ${p.stats.powerExported} units of power to ${this.names(book.sellTo.get(p.id)!)}` });
+          this.toasts.push({
+            playerId: p.id,
+            kind: 'info',
+            msg: `Selling ${fmtPower(p.stats.powerExported)} of power to ${this.names(book.sellTo.get(p.id)!)}`,
+          });
       }
     }
     return { grid, brownout };

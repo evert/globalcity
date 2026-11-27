@@ -550,7 +550,7 @@ export async function runSelfTest(): Promise<void> {
   net.emit('msg', { t: 'stats', stats: baseStats({ powerSupply: 10, powerDemand: 15, powerImported: 5, powerTradeNet: -5, fires: 2, fireStations: 1 }) });
   const trade = q<HTMLElement>('#powerTrade')!;
   assert(!trade.classList.contains('hidden'), 'trade line visible');
-  assert(trade.textContent === '⬇ buying 5 units (−$5/mo)', `trade text, got "${trade.textContent}"`);
+  assert(trade.textContent === '⬇ buying 5 MW (−$5/mo)', `trade text, got "${trade.textContent}"`);
   assert(trade.querySelector('.paying') && !trade.querySelector('.income'), 'paying styled amber');
   assert(trade.title.includes('Power flows over wires'), 'trade tooltip');
   assert(!q('#rci .stations') && !q('#police') && !q('#specials'), 'no station, police or special-building badges in the status panel');
@@ -558,7 +558,7 @@ export async function runSelfTest(): Promise<void> {
   assert(!fireBtn.classList.contains('hidden') && fireBtn.textContent === '🔥 2 fires', `fire badge, got "${fireBtn.textContent}"`);
   net.emit('msg', { t: 'stats', stats: baseStats({ powerExported: 7, powerTradeNet: 7, powerImported: 2 }) });
   assert(
-    trade.textContent!.includes('⬆ selling 7 units (+$7/mo)') && trade.textContent!.includes('⬇ buying 2 units (−$2/mo)'),
+    trade.textContent!.includes('⬆ selling 7 MW (+$7/mo)') && trade.textContent!.includes('⬇ buying 2 MW (−$2/mo)'),
     `both flows, got "${trade.textContent}"`,
   );
   net.emit('msg', { t: 'stats', stats: baseStats() });

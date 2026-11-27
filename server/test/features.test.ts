@@ -129,8 +129,8 @@ describe('features', () => {
     await sleep(ticks(3));
     // upkeep (plant + roads) can outweigh a tiny trade, so only the trade itself is asserted
     expect(A.stats!.powerTradeNet, 'A trade income goes on').toBeGreaterThan(0);
-    await waitFor(() => B.hasToast(/^info: Buying \d+ units of power from Exporter-A/), 'B buying toast', ticks(2));
-    await waitFor(() => A.hasToast(/^info: Selling \d+ units of power to Importer-B/), 'A selling toast', ticks(2));
+    await waitFor(() => B.hasToast(/^info: Buying [\d,.]+ [MGT]W of power from Exporter-A/), 'B buying toast', ticks(2));
+    await waitFor(() => A.hasToast(/^info: Selling [\d,.]+ [MGT]W of power to Importer-B/), 'A selling toast', ticks(2));
     expect(B.toasts.filter((t) => t.msg.startsWith('Buying')).length, 'exactly one Buying toast so far').toBe(1);
   });
 

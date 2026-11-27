@@ -97,14 +97,14 @@ export interface PlayerStats {
   resPop: number;
   comPop: number;
   indPop: number;
-  powerSupply: number; // zone-units available
-  powerDemand: number; // zone-units needed
+  powerSupply: number; // power units available (1 unit = 1 MW: a zone's need)
+  powerDemand: number; // power units needed
   demand: Demand;
   chunks: number; // chunks owned
   lastIncome: number; // funds gained last game month
   // Power trading (per simulation step)
-  powerImported: number; // zone-units bought from neighbours' grids
-  powerExported: number; // zone-units sold to neighbours
+  powerImported: number; // power units bought from neighbours' grids
+  powerExported: number; // power units sold to neighbours
   powerTradeNet: number; // $ net from power trade last month (positive = income)
   // Fire
   fires: number; // burning tiles in this city right now
