@@ -13,7 +13,8 @@ const GW = WORLD_W / CELL,
 const PORT_SEARCH_CELLS = 4; // a port uses the nearest water cell within this many cells
 
 export class ShippingPlanner {
-  private readonly water = new Uint8Array(GW * GH);
+  /** water cells of the coarse grid ships sail on (from the landscape at boot; never changes after) */
+  readonly water: Uint8Array;
   ports: PortInfo[] = [];
   routes: SeaRoute[] = [];
   /** bumps whenever ports or routes change (the network layer re-publishes) */
@@ -22,7 +23,13 @@ export class ShippingPlanner {
   private readonly cache = new Map<string, number[] | null>(); // "ax,ay>bx,by" (sorted) -> waypoints
   private queue: PortInfo[] = [];
 
-  constructor(world: World) {
+  /** `water`: the grid of an earlier planner on the same world, to skip building it again (devReset). */
+  constructor(world: World, water?: Uint8Array) {
+    if (water) {
+      this.water = water;
+      return;
+    }
+    this.water = new Uint8Array(GW * GH);
     const t0 = performance.now();
     for (let gy = 0; gy < GH; gy++)
       for (let gx = 0; gx < GW; gx++) {

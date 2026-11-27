@@ -21,7 +21,6 @@ import {
   UPKEEP_STATION,
   UPKEEP_COAL,
   UPKEEP_NUCLEAR,
-  CITY_FREEZE_MS,
   STEPS_PER_MONTH,
   POLICESTATION,
   FIRE_SPREAD_P,
@@ -31,12 +30,9 @@ import {
   FIRE_OUTBREAK_BASE_P,
   FIRE_OWNER_ONLINE_MS,
   FIRE_PREVENTED_P,
-  REGROW_MS,
-  REGROW_P,
   ABANDON_IDLE_DAYS,
   ABANDON_FREE_DAYS,
   SMALL_CITY_MAX_ITEMS,
-  SMALL_CITY_RELEASE_MS,
   NEIGHBOUR_DEMAND_MAX,
   RAIL_LINK_BOOST,
   RAIL_LINK_MAX,
@@ -172,6 +168,7 @@ import { waterNear, SEAPORT_WATER_RANGE } from './tools.ts';
 import { chance, randInt, log } from './util.ts';
 import { Disasters } from './disasters.ts';
 import { Elevation } from './elevation.ts';
+import { config } from './config.ts';
 
 /** Tax multiplier: tuned so a town of ~20 full R, 8 C, 8 I zones earns ~$2600 per game year. */
 /** Growth odds per tick: one house step / one density step, scaled by demand (0..1). */
@@ -185,13 +182,6 @@ const zeroBuilt = (): Record<string, number> => Object.fromEntries([...MILESTONE
 /** Zones powered by one plant, by its centre tile id. */
 const plantSupply = (id: number): number =>
   id === POWERPLANT ? COAL_POWER : id === NUCLEAR ? NUCLEAR_POWER : id === WINDFARM ? WIND_POWER : id === OFFSHORE ? OFFSHORE_POWER : 0;
-/** SMALL_CITY_RELEASE_MS can be overridden by the environment (tests use a few seconds). */
-const SMALL_RELEASE_MS = Number(process.env.SMALL_CITY_RELEASE_MS) || SMALL_CITY_RELEASE_MS;
-/** REGROW_MS and REGROW_P can be overridden by the environment (tests use a few seconds and a high chance). */
-const REGROW_EVERY_MS = Number(process.env.REGROW_MS) || REGROW_MS;
-const REGROW_CHANCE = Number(process.env.REGROW_P) || REGROW_P;
-/** CITY_FREEZE_MS can be overridden by the environment (tests use a few seconds). */
-const FREEZE_MS = Number(process.env.CITY_FREEZE_MS) || CITY_FREEZE_MS;
 /** test servers: every mayor counts as online (seen every step), so no city freezes and disasters strike anywhere */
 const ALL_ONLINE = process.env.ALL_ONLINE === '1';
 /** STEPS_PER_MONTH can be overridden too (tests use 1: a month per step, as before the slower calendar). */
@@ -256,6 +246,8 @@ export interface SimOptions {
   hazards?: Uint8Array;
   /** tile elevations (floods only rise over low land) */
   elevation?: Elevation;
+  /** the shipping water grid of an earlier sim on this world (devReset: it is the same, and slow to build) */
+  shippingWater?: Uint8Array;
 }
 
 interface PowerScan {
@@ -440,7 +432,7 @@ export class Sim {
     // Milestones must not depend on a city being simulated (frozen cities skip ticks): derive peak
     // population, standing milestone buildings and grandfathering for every city straight from the save.
     for (const p of players.players.values()) if (p.chunks.length > 0) this.initMilestones(p);
-    this.shipping = new ShippingPlanner(world);
+    this.shipping = new ShippingPlanner(world, opts.shippingWater);
     // Seed ports and airports from the save (frozen cities are not scanned until their mayor returns).
     const seed: PortInfo[] = [];
     for (const p of players.players.values())
@@ -576,7 +568,7 @@ export class Sim {
       }
       if (p.monument) continue; // monuments are never released
       const idle = this.players.idleDays(p, now);
-      const small = now - p.lastSeen >= SMALL_RELEASE_MS && this.builtItems(p, SMALL_CITY_MAX_ITEMS) < SMALL_CITY_MAX_ITEMS;
+      const small = now - p.lastSeen >= config.smallCityReleaseMs && this.builtItems(p, SMALL_CITY_MAX_ITEMS) < SMALL_CITY_MAX_ITEMS;
       if (idle >= ABANDON_FREE_DAYS || small) {
         const released = this.players.release(p);
         unclaimed.push(...released);
@@ -604,9 +596,9 @@ export class Sim {
     // (cheap, and an unattended city can't decline or go bankrupt). Their plants still feed the grid.
     this.frozen.clear();
     for (const p of this.players.players.values()) {
-      if (p.chunks.length > 0 && (p.monument || now - p.lastSeen >= FREEZE_MS)) this.frozen.add(p.id); // monuments stay frozen for good
+      if (p.chunks.length > 0 && (p.monument || now - p.lastSeen >= config.cityFreezeMs)) this.frozen.add(p.id); // monuments stay frozen for good
     }
-    if (now - this.lastRegrow >= REGROW_EVERY_MS) {
+    if (now - this.lastRegrow >= config.regrowMs) {
       this.lastRegrow = now;
       this.regrow();
       this.lap('regrow');
@@ -682,7 +674,7 @@ export class Sim {
       for (let dy = 0; dy < CHUNK; dy++) {
         const row = (cy * CHUNK + dy) * WORLD_W + cx * CHUNK;
         for (let dx = 0; dx < CHUNK; dx++) {
-          if (!isRubble(tiles[row + dx]) || !chance(REGROW_CHANCE)) continue;
+          if (!isRubble(tiles[row + dx]) || !chance(config.regrowP)) continue;
           const was = orig[dy * CHUNK + dx];
           if (isRubble(was)) continue;
           this.world.set(cx * CHUNK + dx, cy * CHUNK + dy, was);

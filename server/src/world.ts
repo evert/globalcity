@@ -111,6 +111,29 @@ export class World {
     this.landCache[ci] = -1;
   }
 
+  /**
+   * Put every chunk that was built on back as boot left it (from `pristine`) and forget all edits: no custom
+   * buildings, nothing dirty or pending (devReset; the generated landscape is kept, so this takes milliseconds).
+   * Restored chunks are marked for the zoomed-out map, which then catches up as usual.
+   */
+  resetToBoot(): number {
+    const n = this.pristine.size;
+    for (const [ci, view] of this.pristine) {
+      const { cx, cy } = chunkCoords(ci);
+      const base = cy * CHUNK * WORLD_W + cx * CHUNK;
+      for (let dy = 0; dy < CHUNK; dy++) this.tiles.set(view.subarray(dy * CHUNK, dy * CHUNK + CHUNK), base + dy * WORLD_W);
+      this.landCache[ci] = -1;
+      this.mapDirty.add(ci);
+    }
+    this.pristine.clear();
+    this.dirty.clear();
+    this.pending.clear();
+    this.loaded.clear();
+    this.railDirty = true;
+    this.buildings.clear();
+    return n;
+  }
+
   /** Copy of a chunk's tiles, row-major CHUNK*CHUNK, for sending/saving. */
   chunkView(cx: number, cy: number): Uint32Array {
     const out = new Uint32Array(CHUNK * CHUNK);

@@ -50,6 +50,13 @@ export class Buildings {
     return [...this.byAnchor.values()].map(({ kind, x, y }) => ({ kind, x, y }));
   }
 
+  /** Forget every building, without telling anyone (devReset: the world is back as it was at boot). */
+  clear(): void {
+    this.byAnchor.clear();
+    this.cover.clear();
+    this.dirty = false;
+  }
+
   load(list: CustomBuilding[]): void {
     for (const b of list)
       if (CUSTOM_BUILDINGS[b.kind] && Number.isInteger(b.x) && Number.isInteger(b.y)) {

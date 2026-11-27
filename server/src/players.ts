@@ -43,6 +43,7 @@ import {
 } from '@globalcity/shared';
 import { World, validChunk } from './world.ts';
 import type { Places } from './places.ts';
+import { config } from './config.ts';
 
 export interface PlayerRecord {
   id: string;
@@ -174,11 +175,6 @@ export function sanitizeCityName(raw: unknown): string | null {
   return s.length > 0 ? s : null;
 }
 
-export interface PlayersOptions {
-  /** length of an abandonment "day" in ms (default 86400000; tests shorten it) */
-  dayMs?: number;
-}
-
 export function emptyStats(funds: number): PlayerStats {
   return {
     funds,
@@ -222,10 +218,9 @@ export function unlockedOf(p: PlayerRecord): string[] {
   return [...new Set([...milestoneUnlocksFor(p.peakPop ?? 0), ...(p.grandfathered ?? []), ...(p.railLinked ? ['grandcentral'] : [])])];
 }
 
-/** The calendar month for seasonal buildings (0 = January, UTC). SEASON_MONTH=1..12 pretends another month (tests). */
+/** The calendar month for seasonal buildings (0 = January, UTC). SEASON_MONTH=1..12 pretends another month (tests, config.ts). */
 export function seasonMonth(): number {
-  const m = Number(process.env.SEASON_MONTH);
-  return Number.isInteger(m) && m >= 1 && m <= 12 ? m - 1 : new Date().getUTCMonth();
+  return config.seasonMonth !== null ? config.seasonMonth - 1 : new Date().getUTCMonth();
 }
 
 /** Recompute the milestone part of a player's stats from their record. */
@@ -275,17 +270,17 @@ export class Players {
   dirty = false;
   /** bumped whenever the claims map changes (consumers cache per version: neighbours, rail networks) */
   claimsVersion = 0;
-  readonly dayMs: number;
+  /** length of an abandonment "day" in ms (ABANDON_DAY_MS, config.ts; tests shorten it) */
+  get dayMs(): number {
+    return config.abandonDayMs;
+  }
   private neighbourCache = new Map<string, Set<string>>();
   private neighbourCacheVersion = -1;
 
   constructor(
     private readonly world: World,
     private readonly places: Places,
-    opts: PlayersOptions = {},
-  ) {
-    this.dayMs = opts.dayMs ?? 86_400_000;
-  }
+  ) {}
 
   create(name?: string | null): PlayerRecord {
     const id = crypto.randomUUID();

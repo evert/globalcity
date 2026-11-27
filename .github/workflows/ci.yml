@@ -18,18 +18,6 @@ jobs:
 
       - run: npm ci
 
-      - name: Check formatting
-        run: npm run fmt:check
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Build the client
-        run: npm run build
-
       # The server tests play on the real map (they look for land and water at real places), so CI needs the
       # generated world. Its sources (~300 MB) and the result are cached; the world is only regenerated when the
       # generator or the world's shape changes.
@@ -46,16 +34,35 @@ jobs:
           path: data/world-*
           key: world-${{ hashFiles('tools/src/gen-world.ts', 'tools/src/gen-places.ts', 'tools/fetch-terrain-data.sh', 'shared/src/constants.ts', 'shared/src/terrain.ts') }}
 
+      # Generating the world takes minutes on a cache miss: it runs in the background while the checks below run,
+      # and the tests wait for it. (Always started, so the wait has a step to wait for; it does nothing on a hit.)
       - name: Generate the world
-        if: steps.world.outputs.cache-hit != 'true'
+        id: gen-world
+        background: true
         run: |
+          if [ "${{ steps.world.outputs.cache-hit }}" = "true" ]; then echo "world from the cache"; exit 0; fi
           bash tools/fetch-terrain-data.sh
           npm run gen:world
 
-      - name: Server tests
+      - parallel:
+          - name: Check formatting
+            run: npm run fmt:check
+          - name: Lint
+            run: npm run lint
+          - name: Typecheck
+            run: npm run typecheck
+          - name: Build the client
+            run: npm run build
+
+      - name: Wait for the world
+        wait: gen-world
+
+      # Vitest runs the server tests in 4 workers, each against its own server (~800 MB each).
+      - name: Tests
         run: npm test
         env:
           TMPDIR: ${{ runner.temp }}
+          TEST_WORKERS: 4
 
       - name: Keep the test logs
         if: failure()

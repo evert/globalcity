@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "tsx test/predict.ts"
+    "test": "vitest run"
   },
   "dependencies": {
     "@globalcity/shared": "*"

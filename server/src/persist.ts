@@ -101,6 +101,13 @@ export class Persist {
     return { chunks, state };
   }
 
+  /** Delete the save (chunk files, state.json, buildings.json), leaving the directory as a fresh boot finds it (devReset). */
+  wipe(): void {
+    for (const name of fs.readdirSync(this.chunksDir)) fs.rmSync(path.join(this.chunksDir, name), { force: true });
+    fs.rmSync(this.stateFile, { force: true });
+    fs.rmSync(this.buildingsFile, { force: true });
+  }
+
   start(): void {
     this.timer = setInterval(() => {
       try {
