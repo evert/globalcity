@@ -32,7 +32,7 @@ describe('world population and climate history', () => {
     const cl = s.climate!;
     expect(cl, 'climate in the world stats').toBeTruthy();
     expect(cl.cleanShare).toBe(0);
-    expect(cl.emissions).toBe(5); // one coal plant, 5 Mt a year
+    expect(cl.emissions).toBe(2); // one coal plant, 2 Mt a year
     expect(cl.co2).toBeGreaterThan(START_PPM - 1);
     expect(cl.history.map((p) => p[0])).toEqual(h.map((p) => p[0]));
     expect(cl.warming).toBe(Math.round(cl.history[cl.history.length - 1][1] * 100) / 100);

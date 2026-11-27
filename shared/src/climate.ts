@@ -21,8 +21,9 @@ export const QUICK_SINK = 0.5;
 export const SLOW_SINK = 0.005;
 /** Gigatonnes of CO2 that raise the air's CO2 by one ppm. */
 export const GT_PER_PPM = 7.8;
-/** Megatonnes of CO2 a year: a coal plant (about a gigawatt), and an industrial zone. */
-export const COAL_PLANT_MT = 5;
+/** Megatonnes of CO2 a year: a coal plant (400 MW running ~60% of the time: ~2.1 TWh at ~0.95 t of CO2 per MWh),
+ *  and an industrial zone. */
+export const COAL_PLANT_MT = 2;
 export const INDUSTRY_ZONE_MT = 0.02;
 
 export interface ClimateState {

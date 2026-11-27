@@ -22,7 +22,7 @@ describe('climate model', () => {
   });
 
   it('emissions raise CO2 and warm the world, behind the equilibrium', () => {
-    const mt = yearEmissions(2000, 20000); // 2,000 coal plants and 20,000 factories: 10.4 Gt a year
+    const mt = yearEmissions(5000, 20000); // 5,000 coal plants and 20,000 factories: 10.4 Gt a year
     expect(mt).toBe(10_400);
     const s = run(startClimate(), 100, mt);
     expect(s.co2).toBeGreaterThan(START_PPM + 40);
