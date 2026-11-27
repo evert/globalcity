@@ -43,7 +43,7 @@ export const MIN_LAND_TILES_FIRST_CLAIM = 1024;
 export function minLandToClaim(owned: number): number {
   return owned <= 0 ? MIN_LAND_TILES_FIRST_CLAIM : MIN_LAND_TILES_TO_CLAIM;
 }
-export const MAX_CHUNKS_PER_PLAYER = 10; // a city is at most this many plots
+export const MAX_CHUNKS_PER_PLAYER = 15; // a city is at most this many plots
 export const TAX_RATE = 7; // percent, SimCity classic default
 // Budget. The clock runs 24/7 (one game year every 60 real seconds), so income is scaled hard:
 // a mid-size city nets roughly $8-12k per real hour while its mayor is online.

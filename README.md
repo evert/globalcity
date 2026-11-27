@@ -29,7 +29,7 @@ SimCity is a trademark of Electronic Arts; this project is not affiliated with E
   sheet of every tile in every look (the Micropolis art in other colours, shared/src/biomeart.ts).
 - The grid is split into 64 x 64 tile chunks. A chunk is the unit players claim and the
   unit the client streams. Your first claim is free; each further plot costs more than the last
-  ($25,000 for the second, rising 1.75x per plot, 10 plots max) and must touch a chunk you already own.
+  ($25,000 for the second, rising 1.75x per plot, 15 plots max) and must touch a chunk you already own.
 - A Node server holds the world in memory (one `Uint32Array`, Micropolis tile encoding plus looks),
   runs a simplified Micropolis simulation for every active city once per game month
   (5 seconds), and pushes tile deltas over WebSockets to clients subscribed to those chunks.
