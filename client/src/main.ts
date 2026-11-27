@@ -14,7 +14,7 @@ import { AppState } from './state.ts';
 import { UI } from './ui.ts';
 import { installLongPressTooltips } from './longpress.ts';
 import { loadSprites, SpriteEngine } from './sprites.ts';
-import { Precipitation } from './weather.ts';
+import { WeatherOverlay } from './weather.ts';
 
 /** Shareable view links: #x=4207&y=855&z=1 (tile coords of the view centre + zoom). */
 function applyHashCamera(renderer: Renderer): boolean {
@@ -92,7 +92,7 @@ async function boot(): Promise<void> {
   renderer.sprites = new SpriteEngine(map, spriteAssets);
   document.addEventListener('visibilitychange', () => renderer.invalidate()); // sprites pause while hidden, resume on return
   renderer.resizeToWindow();
-  new Precipitation(canvas, renderer, renderer.weather);
+  new WeatherOverlay(canvas, renderer, renderer.weather);
   if (!applyHashCamera(renderer)) renderer.showWorld();
   const actions = new Actions(state, net, renderer);
   const ui = new UI(state, net, renderer, actions, sheet, minimap);

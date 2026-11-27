@@ -2,9 +2,10 @@
 // whose red channel is cloud cover, green the rain or snow rate with its lowest bit set where it is snow, blue the
 // air temperature).
 //   zoomed out  clouds drift over the world map, darker where it rains, over the city lights (shaded by the night)
-//   zoomed in   the sky dims under cloud, and rain or snow falls across the screen where the camera is
+//   zoomed in   the sky dims under cloud; by day broken cloud casts drifting shadows; rain or snow falls across
+//               the screen where the camera is
 // Zoomed in it is always on. The zoomed-out clouds are off until the player turns them on (the Weather button);
-// that choice is remembered. `?weather=rain|snow|storm|clear` overrides what falls at the camera, to look at the effect.
+// that choice is remembered. `?weather=rain|snow|storm|broken|clear` overrides what falls at the camera, to look at the effect.
 import { WORLD_H, WORLD_W } from '@globalcity/shared';
 
 const W = 720,
@@ -35,6 +36,8 @@ const OVERRIDE: WeatherHere | null = (() => {
         return { cloud: 1, precip: 1, snow: false, temp: 18 };
       case 'snow':
         return { cloud: 1, precip: 0.6, snow: true, temp: -3 };
+      case 'broken':
+        return { cloud: 0.5, precip: 0, snow: false, temp: 22 };
       case 'clear':
         return { cloud: 0, precip: 0, snow: false, temp: 20 };
     }
@@ -201,21 +204,76 @@ interface Drop {
   ph: number; // sway phase (snow)
 }
 
+/** Cloud shadows: a tileable noise texture, one texture pixel per half tile, drifting with the wind. */
+const NOISE = 256;
+const SHADOW_TILES_PER_PX = 0.5;
+/** Darkest a cloud shadow gets (alpha), in full daylight. */
+const SHADOW_ALPHA = 0.3;
+/** Drift in tiles per second: west to east, a little south (the westerlies, sped up so it shows). */
+const DRIFT = { x: 0.45, y: 0.12 };
+
+/** Tileable fractal value noise, 0..1, NOISE x NOISE. */
+function cloudNoise(): Float32Array {
+  const out = new Float32Array(NOISE * NOISE);
+  let seed = 1234567;
+  const rand = (): number => (seed = (seed * 1103515245 + 12345) >>> 0) / 2 ** 32;
+  let amp = 1,
+    total = 0;
+  for (const cells of [4, 8, 16, 32]) {
+    const lattice = Float32Array.from({ length: cells * cells }, rand);
+    const at = (i: number, j: number): number => lattice[(j % cells) * cells + (i % cells)];
+    const step = NOISE / cells;
+    for (let y = 0; y < NOISE; y++)
+      for (let x = 0; x < NOISE; x++) {
+        const fx = x / step,
+          fy = y / step,
+          i = Math.floor(fx),
+          j = Math.floor(fy);
+        const sx = (fx - i) * (fx - i) * (3 - 2 * (fx - i)),
+          sy = (fy - j) * (fy - j) * (3 - 2 * (fy - j));
+        const top = at(i, j) * (1 - sx) + at(i + 1, j) * sx,
+          bottom = at(i, j + 1) * (1 - sx) + at(i + 1, j + 1) * sx;
+        out[y * NOISE + x] += (top * (1 - sy) + bottom * sy) * amp;
+      }
+    total += amp;
+    amp *= 0.5;
+  }
+  for (let i = 0; i < out.length; i++) out[i] /= total;
+  return out;
+}
+
+export interface SkyView {
+  isTileMode(): boolean;
+  cam: { x: number; y: number };
+  /** CSS px per tile */
+  tilePx(): number;
+  /** how dark it is (0..1) at a latitude and longitude */
+  night: { levelAt(lat: number, lon: number): number };
+}
+
 /**
- * Rain or snow falling across the screen while zoomed in, from the weather at the camera. A canvas of its own over
- * the map, animated only while something falls, so the map itself is not redrawn every frame for it.
+ * The weather over the zoomed-in view, on a canvas of its own over the map (animated only while there is something
+ * to show, so the map itself is not redrawn every frame for it):
+ *   cloud shadows  by day under broken cloud, drifting across the city; as much of the ground in shadow as the sky
+ *                  is covered (overcast skies cast no shadows: the map's overcast shade covers that)
+ *   rain or snow   falling across the screen
+ * From the weather at the camera.
  */
-export class Precipitation {
+export class WeatherOverlay {
   private readonly canvas = document.createElement('canvas');
   private readonly g = this.canvas.getContext('2d')!;
   private drops: Drop[] = [];
   private running = false;
   private last = 0;
+  private readonly t0 = performance.now();
   private readonly reduced = matchMedia('(prefers-reduced-motion: reduce)');
+  private noise: Float32Array | null = null;
+  private sorted: Float32Array | null = null;
+  private readonly shadowTex = new Map<number, HTMLCanvasElement>();
 
   constructor(
     mapCanvas: HTMLCanvasElement,
-    private readonly view: { isTileMode(): boolean; cam: { x: number; y: number } },
+    private readonly view: SkyView,
     private readonly weather: WeatherLayer,
   ) {
     Object.assign(this.canvas.style, { position: 'fixed', inset: '0', width: '100vw', height: '100vh', pointerEvents: 'none' });
@@ -224,22 +282,27 @@ export class Precipitation {
     setInterval(() => this.check(), 1000);
   }
 
-  /** What falls at the camera now, or null (zoomed out, nothing falling, or reduced motion). */
-  private here(): WeatherHere | null {
+  /** What to draw now, or null (zoomed out, nothing to show, or reduced motion). */
+  private sky(): { w: WeatherHere; shadow: number } | null {
     if (this.reduced.matches || document.hidden || !this.view.isTileMode()) return null;
-    const w = this.weather.at(this.view.cam.x, this.view.cam.y);
-    return w.precip >= 0.15 ? w : null;
+    const { x, y } = this.view.cam;
+    const w = this.weather.at(x, y);
+    const day = 1 - this.view.night.levelAt(90 - (y / WORLD_H) * 180, (x / WORLD_W) * 360 - 180);
+    // broken cloud casts shadows; a clear or an overcast sky doesn't
+    const broken = smooth(0.08, 0.2, w.cloud) * (1 - smooth(0.82, 0.97, w.cloud));
+    const shadow = day * broken;
+    return w.precip >= 0.15 || shadow > 0.03 ? { w, shadow } : null;
   }
 
   private check(): void {
-    if (this.running || !this.here()) return;
+    if (this.running || !this.sky()) return;
     this.running = true;
     this.last = performance.now();
     requestAnimationFrame((t) => this.frame(t));
   }
 
   private frame(now: number): void {
-    const w = this.here();
+    const sky = this.sky();
     const dpr = devicePixelRatio || 1,
       cw = Math.round(innerWidth * dpr),
       ch = Math.round(innerHeight * dpr);
@@ -249,13 +312,60 @@ export class Precipitation {
     }
     const g = this.g;
     g.clearRect(0, 0, cw, ch);
-    if (!w) {
+    if (!sky) {
       this.running = false;
       this.drops = [];
       return;
     }
     const dt = Math.min(0.1, (now - this.last) / 1000);
     this.last = now;
+    if (sky.shadow > 0.03) this.drawShadows(sky.w.cloud, sky.shadow, now, dpr, cw, ch);
+    if (sky.w.precip >= 0.15) this.drawPrecipitation(sky.w, dt, dpr, cw, ch);
+    requestAnimationFrame((t) => this.frame(t));
+  }
+
+  /** The shadow texture for a cloud cover: the noise thresholded so that share of it is in shadow, edges soft. */
+  private texture(cover: number): HTMLCanvasElement {
+    const key = Math.round(cover * 20);
+    let c = this.shadowTex.get(key);
+    if (c) return c;
+    this.noise ??= cloudNoise();
+    this.sorted ??= Float32Array.from(this.noise).sort();
+    const t = this.sorted[Math.min(this.sorted.length - 1, Math.floor((1 - key / 20) * this.sorted.length))];
+    c = document.createElement('canvas');
+    c.width = c.height = NOISE;
+    const g = c.getContext('2d')!;
+    const img = g.createImageData(NOISE, NOISE);
+    for (let i = 0; i < this.noise.length; i++) {
+      img.data[i * 4] = 8;
+      img.data[i * 4 + 1] = 14;
+      img.data[i * 4 + 2] = 30;
+      img.data[i * 4 + 3] = smooth(t - 0.05, t + 0.05, this.noise[i]) * 255;
+    }
+    g.putImageData(img, 0, 0);
+    this.shadowTex.set(key, c);
+    return c;
+  }
+
+  private drawShadows(cover: number, strength: number, now: number, dpr: number, cw: number, ch: number): void {
+    const pattern = this.g.createPattern(this.texture(cover), 'repeat');
+    if (!pattern) return;
+    const secs = (now - this.t0) / 1000;
+    const scale = this.view.tilePx() * dpr * SHADOW_TILES_PER_PX;
+    // the texture is anchored to the map (it stays put while panning) and drifts with the wind
+    const ox = (DRIFT.x * secs - this.view.cam.x) * this.view.tilePx() * dpr + cw / 2,
+      oy = (DRIFT.y * secs - this.view.cam.y) * this.view.tilePx() * dpr + ch / 2;
+    pattern.setTransform(new DOMMatrix([scale, 0, 0, scale, ox, oy]));
+    const g = this.g;
+    g.imageSmoothingEnabled = true;
+    g.globalAlpha = SHADOW_ALPHA * strength;
+    g.fillStyle = pattern;
+    g.fillRect(0, 0, cw, ch);
+    g.globalAlpha = 1;
+  }
+
+  private drawPrecipitation(w: WeatherHere, dt: number, dpr: number, cw: number, ch: number): void {
+    const g = this.g;
     // drops per screen: from a drizzle to a downpour, scaled with the screen's area
     const want = Math.round((w.snow ? 260 : 420) * w.precip * ((cw * ch) / (1600 * 1000 * dpr * dpr)) + 20);
     while (this.drops.length < want) this.drops.push(this.spawn(cw, ch, w.snow, true));
@@ -284,7 +394,6 @@ export class Precipitation {
       }
       g.stroke();
     }
-    requestAnimationFrame((t) => this.frame(t));
   }
 
   private spawn(cw: number, ch: number, snow: boolean, anywhere: boolean): Drop {
@@ -298,3 +407,8 @@ export class Precipitation {
     };
   }
 }
+
+const smooth = (a: number, b: number, v: number): number => {
+  const t = Math.min(1, Math.max(0, (v - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
