@@ -2,7 +2,7 @@
 .gradle/
 build/
 app/build/
-release/
+release
 local.properties
 *.jks
 *.keystore
