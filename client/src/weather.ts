@@ -185,6 +185,24 @@ export class WeatherLayer {
     return this.ready ? this.valid : null;
   }
 
+  /** Cloud cover (0..1) at a tile, bilinear: like at(x, y).cloud, without the allocation (called per pixel). */
+  cloudAt(tx: number, ty: number): number {
+    if (OVERRIDE) return OVERRIDE.cloud;
+    const d = this.data;
+    if (!d) return 0;
+    const fx = (tx / WORLD_W) * W - 0.5,
+      fy = Math.min(H - 1, Math.max(0, (ty / WORLD_H) * H - 0.5));
+    const x0 = Math.floor(fx),
+      y0 = Math.floor(fy),
+      ax = fx - x0,
+      ay = fy - y0;
+    const xa = (x0 + W) % W,
+      xb = (x0 + 1 + W) % W,
+      ra = y0 * W,
+      rb = Math.min(H - 1, y0 + 1) * W;
+    return ((d[(ra + xa) * 4] * (1 - ax) + d[(ra + xb) * 4] * ax) * (1 - ay) + (d[(rb + xa) * 4] * (1 - ax) + d[(rb + xb) * 4] * ax) * ay) / 255;
+  }
+
   /** The weather at a tile (bilinear between the grid's points). */
   at(tx: number, ty: number): WeatherHere {
     if (OVERRIDE) return OVERRIDE;
@@ -213,9 +231,11 @@ interface Drop {
   ph: number; // sway phase (snow)
 }
 
-/** Cloud shadows: a tileable noise texture, one texture pixel per half tile, drifting with the wind. */
+/** Cloud shadows: a tileable noise field, one point per half tile, drifting with the wind. */
 const NOISE = 256;
 const SHADOW_TILES_PER_PX = 0.5;
+/** The shadows are worked out at one point per this many device pixels, then smoothed up to the screen. */
+const SHADOW_STEP = 8;
 /** Darkest a cloud shadow gets (alpha), in full daylight. */
 const SHADOW_ALPHA = 0.3;
 /** Drift in tiles per second: west to east, a little south (the westerlies, sped up so it shows). */
@@ -277,8 +297,10 @@ export class WeatherOverlay {
   private readonly t0 = performance.now();
   private readonly reduced = matchMedia('(prefers-reduced-motion: reduce)');
   private noise: Float32Array | null = null;
-  private sorted: Float32Array | null = null;
-  private readonly shadowTex = new Map<number, HTMLCanvasElement>();
+  /** noise value above which that share of the field is in shadow, per percent of cloud cover */
+  private thresholds: Float32Array | null = null;
+  private readonly low = document.createElement('canvas');
+  private lowImg: ImageData | null = null;
 
   constructor(
     mapCanvas: HTMLCanvasElement,
@@ -295,16 +317,33 @@ export class WeatherOverlay {
     this.check();
   }
 
-  /** What to draw now, or null (zoomed out, nothing to show, or reduced motion). */
-  private sky(): { w: WeatherHere; shadow: number } | null {
+  /** What to draw now, or null (zoomed out, nothing to show, or reduced motion). `day` is the sunlight at the camera. */
+  private sky(): { w: WeatherHere; day: number; shadows: boolean } | null {
     if (this.reduced.matches || document.hidden || !this.view.isTileMode()) return null;
     const { x, y } = this.view.cam;
     const w = this.weather.at(x, y);
     const day = 1 - this.view.night.levelAt(90 - (y / WORLD_H) * 180, (x / WORLD_W) * 360 - 180);
-    // broken cloud casts shadows; a clear or an overcast sky doesn't
-    const broken = smooth(0.08, 0.2, w.cloud) * (1 - smooth(0.82, 0.97, w.cloud));
-    const shadow = day * broken;
-    return w.precip >= 0.15 || shadow > 0.03 ? { w, shadow } : null;
+    // shadows anywhere on screen: broken cloud at the centre, a corner or an edge
+    let shadows = false;
+    if (day > 0.03 && this.weather.ready) {
+      const half = (Math.max(innerWidth, innerHeight) / this.view.tilePx()) * 0.75;
+      for (const [dx, dy] of [
+        [0, 0],
+        [-1, -1],
+        [1, -1],
+        [-1, 1],
+        [1, 1],
+        [0, -1],
+        [0, 1],
+        [-1, 0],
+        [1, 0],
+      ])
+        if (broken(this.weather.cloudAt(x + dx * half, y + dy * half)) > 0.01) {
+          shadows = true;
+          break;
+        }
+    }
+    return w.precip >= 0.15 || shadows ? { w, day, shadows } : null;
   }
 
   /** The view moved or zoomed: start animating if there is now something to show. */
@@ -337,49 +376,69 @@ export class WeatherOverlay {
     }
     const dt = Math.min(0.1, (now - this.last) / 1000);
     this.last = now;
-    if (sky.shadow > 0.03) this.drawShadows(sky.w.cloud, sky.shadow, now, dpr, cw, ch);
+    if (sky.shadows) this.drawShadows(sky.day, now, dpr, cw, ch);
     if (sky.w.precip >= 0.15) this.drawPrecipitation(sky.w, dt, dpr, cw, ch);
     requestAnimationFrame((t) => this.frame(t));
   }
 
-  /** The shadow texture for a cloud cover: the noise thresholded so that share of it is in shadow, edges soft. */
-  private texture(cover: number): HTMLCanvasElement {
-    const key = Math.round(cover * 20);
-    let c = this.shadowTex.get(key);
-    if (c) return c;
-    this.noise ??= cloudNoise();
-    this.sorted ??= Float32Array.from(this.noise).sort();
-    const t = this.sorted[Math.min(this.sorted.length - 1, Math.floor((1 - key / 20) * this.sorted.length))];
-    c = document.createElement('canvas');
-    c.width = c.height = NOISE;
-    const g = c.getContext('2d')!;
-    const img = g.createImageData(NOISE, NOISE);
-    for (let i = 0; i < this.noise.length; i++) {
-      img.data[i * 4] = 8;
-      img.data[i * 4 + 1] = 14;
-      img.data[i * 4 + 2] = 30;
-      img.data[i * 4 + 3] = smooth(t - 0.05, t + 0.05, this.noise[i]) * 255;
+  /**
+   * Cloud shadows over the screen. Each point looks up the cloud cover where it is (so shadows thin out towards clear
+   * sky and fade into an overcast one, and panning never switches them all at once) and is in shadow where the
+   * drifting noise field, anchored to the map, rises above the level that leaves that share of the ground shaded.
+   */
+  private drawShadows(day: number, now: number, dpr: number, cw: number, ch: number): void {
+    const noise = (this.noise ??= cloudNoise());
+    const thresholds = (this.thresholds ??= (() => {
+      const sorted = Float32Array.from(noise).sort();
+      return Float32Array.from({ length: 101 }, (_, p) => sorted[Math.min(sorted.length - 1, Math.floor((1 - p / 100) * sorted.length))]);
+    })());
+    const lw = Math.ceil(cw / SHADOW_STEP),
+      lh = Math.ceil(ch / SHADOW_STEP);
+    if (this.low.width !== lw || this.low.height !== lh || !this.lowImg) {
+      this.low.width = lw;
+      this.low.height = lh;
+      this.lowImg = this.low.getContext('2d')!.createImageData(lw, lh);
+      for (let i = 0; i < lw * lh; i++) {
+        this.lowImg.data[i * 4] = 8;
+        this.lowImg.data[i * 4 + 1] = 14;
+        this.lowImg.data[i * 4 + 2] = 30;
+      }
     }
-    g.putImageData(img, 0, 0);
-    this.shadowTex.set(key, c);
-    return c;
-  }
-
-  private drawShadows(cover: number, strength: number, now: number, dpr: number, cw: number, ch: number): void {
-    const pattern = this.g.createPattern(this.texture(cover), 'repeat');
-    if (!pattern) return;
+    const px = this.lowImg.data;
     const secs = (now - this.t0) / 1000;
-    const scale = this.view.tilePx() * dpr * SHADOW_TILES_PER_PX;
-    // the texture is anchored to the map (it stays put while panning) and drifts with the wind
-    const ox = (DRIFT.x * secs - this.view.cam.x) * this.view.tilePx() * dpr + cw / 2,
-      oy = (DRIFT.y * secs - this.view.cam.y) * this.view.tilePx() * dpr + ch / 2;
-    pattern.setTransform(new DOMMatrix([scale, 0, 0, scale, ox, oy]));
+    const perTile = this.view.tilePx() * dpr,
+      { x: camX, y: camY } = this.view.cam;
+    const maxA = SHADOW_ALPHA * day * 255;
+    for (let j = 0; j < lh; j++) {
+      const ty = camY + ((j + 0.5) * SHADOW_STEP - ch / 2) / perTile;
+      const v = (ty - DRIFT.y * secs) / SHADOW_TILES_PER_PX;
+      const vj = Math.floor(v),
+        fv = v - vj,
+        r0 = (((vj % NOISE) + NOISE) % NOISE) * NOISE,
+        r1 = ((((vj + 1) % NOISE) + NOISE) % NOISE) * NOISE;
+      for (let i = 0; i < lw; i++) {
+        const tx = camX + ((i + 0.5) * SHADOW_STEP - cw / 2) / perTile;
+        const cover = this.weather.cloudAt(tx, ty);
+        const b = broken(cover);
+        let a = 0;
+        if (b > 0.01) {
+          const u = (tx - DRIFT.x * secs) / SHADOW_TILES_PER_PX;
+          const ui = Math.floor(u),
+            fu = u - ui,
+            c0 = ((ui % NOISE) + NOISE) % NOISE,
+            c1 = (c0 + 1) % NOISE;
+          const n = (noise[r0 + c0] * (1 - fu) + noise[r0 + c1] * fu) * (1 - fv) + (noise[r1 + c0] * (1 - fu) + noise[r1 + c1] * fu) * fv;
+          const t = thresholds[Math.round(cover * 100)];
+          a = smooth(t - 0.05, t + 0.05, n) * b * maxA;
+        }
+        px[(j * lw + i) * 4 + 3] = a;
+      }
+    }
+    this.low.getContext('2d')!.putImageData(this.lowImg, 0, 0);
     const g = this.g;
     g.imageSmoothingEnabled = true;
-    g.globalAlpha = SHADOW_ALPHA * strength;
-    g.fillStyle = pattern;
-    g.fillRect(0, 0, cw, ch);
-    g.globalAlpha = 1;
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(this.low, 0, 0, lw * SHADOW_STEP, lh * SHADOW_STEP);
   }
 
   private drawPrecipitation(w: WeatherHere, dt: number, dpr: number, cw: number, ch: number): void {
@@ -425,6 +484,9 @@ export class WeatherOverlay {
     };
   }
 }
+
+/** How much shadow a sky casts, 0..1: broken cloud does; a clear or an overcast sky doesn't. */
+const broken = (cover: number): number => smooth(0.08, 0.2, cover) * (1 - smooth(0.82, 0.97, cover));
 
 const smooth = (a: number, b: number, v: number): number => {
   const t = Math.min(1, Math.max(0, (v - a) / (b - a)));
