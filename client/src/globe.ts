@@ -2,7 +2,7 @@
 // with the real night (from the actual time), city lights on the night side, and the real clouds when they are on. Drag to
 // turn it, scroll or pinch to zoom; zooming in far enough, or double-clicking a spot, hands over to the flat map there.
 // One full-screen quad: each pixel works out where its ray meets the sphere, so there is no mesh to build.
-import { WORLD_H, WORLD_W, TILE_PX, mapLevels, subsolarPoint } from '@globalcity/shared';
+import { WORLD_H, WORLD_W, TILE_PX, mapLevels, subsolarPoint, onMoon } from '@globalcity/shared';
 import { MapTileLayer } from './maptiles.ts';
 import { sunNow } from './night.ts';
 import type { WeatherLayer } from './weather.ts';
@@ -27,6 +27,7 @@ uniform mat3 uRot;      // view -> world
 uniform vec3 uSun;      // world, unit
 uniform sampler2D uDay, uLights, uClouds;
 uniform float uClouds_on;
+uniform float uAir;     // 1 on the Earth; 0 on the Moon: no glow at the limb, no twilight, stars
 out vec4 outColor;
 const float PI = 3.14159265359;
 
@@ -42,8 +43,13 @@ void main() {
   if (r2 > 1.0) {
     // atmosphere: a thin blue glow just outside the limb
     float d = sqrt(r2) - 1.0;
-    float glow = exp(-d * 28.0) * 0.55;
-    outColor = vec4(space + vec3(0.35, 0.6, 1.0) * glow, 1.0);
+    float glow = exp(-d * 28.0) * 0.55 * uAir;
+    // stars: an integer hash per 3 px cell (a sin() hash shows rows on some GPUs)
+    uvec2 c = uvec2(floor(p / 3.0));
+    uint h = c.x * 1664525u + c.y * 1013904223u;
+    h ^= h >> 16; h *= 2246822519u; h ^= h >> 13; h *= 3266489917u; h ^= h >> 16;
+    float star = (1.0 - uAir) * step(0.9975, float(h & 65535u) / 65535.0);
+    outColor = vec4(space + vec3(0.35, 0.6, 1.0) * glow + vec3(0.8) * star, 1.0);
     return;
   }
   float z = sqrt(1.0 - r2);
@@ -56,7 +62,7 @@ void main() {
   // coloured, the night shade towards dark blue at 60%, city lights at 80% where it's dark, then the clouds, shaded
   // by the night themselves
   float elev = degrees(asin(clamp(dot(n, uSun), -1.0, 1.0)));
-  float t = clamp((2.0 - elev) / 12.0, 0.0, 1.0);
+  float t = uAir > 0.5 ? clamp((2.0 - elev) / 12.0, 0.0, 1.0) : clamp((0.5 - elev) / 1.5, 0.0, 1.0);
   float night = t * t * (3.0 - 2.0 * t);
   vec3 nightRGB = vec3(6.0, 10.0, 34.0) / 255.0;
   col = mix(col, nightRGB, night * 0.6);
@@ -67,7 +73,7 @@ void main() {
     col = mix(col, mix(c.rgb, nightRGB, night * 0.6), c.a);
   }
   // a faint haze right at the edge on the day side
-  col += vec3(0.25, 0.45, 0.9) * pow(1.0 - z, 4.0) * 0.3 * (1.0 - night);
+  col += vec3(0.25, 0.45, 0.9) * pow(1.0 - z, 4.0) * 0.3 * (1.0 - night) * uAir;
   outColor = vec4(col, 1.0);
 }`;
 
@@ -298,7 +304,8 @@ export class GlobeView {
     bind(0, tex.day, 'uDay');
     bind(1, tex.lights, 'uLights');
     bind(2, tex.clouds, 'uClouds');
-    gl.uniform1f(u('uClouds_on'), this.weather.cloudsShown ? 1 : 0);
+    gl.uniform1f(u('uClouds_on'), this.weather.cloudsShown && !onMoon() ? 1 : 0);
+    gl.uniform1f(u('uAir'), onMoon() ? 0 : 1);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     this.tiles.maybeRefresh();
   }

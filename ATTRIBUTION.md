@@ -61,6 +61,14 @@ The world's biomes (desert, steppe, tundra, boreal forest, ice sheets), its fore
 
 - Clouds, rain and snow come from the NOAA Global Forecast System (GFS, 0.25 degree), National Centers for Environmental Prediction, fetched each hour from the NOAA Open Data Dissemination program on AWS (https://registry.opendata.aws/noaa-gfs-bdp-pds/). US government work, public domain.
 
+## The Moon
+
+The Moon world (`tools/src/gen-moon.ts`, data/world-moon) is made from public-domain NASA and USGS data:
+
+- Elevation: Smith, D.E., et al., Lunar Orbiter Laser Altimeter (LOLA) Gridded Data Record, LDEM_16 (16 pixels per degree), NASA Planetary Data System, LRO-L-LOLA-4-GDR-V1.0. https://pds-geosciences.wustl.edu/missions/lro/lola.htm. Used for the hillshade that draws the craters, and stored per tile in elevation.bin.
+- Albedo: Clementine UVVIS 750 nm Global Mosaic 118 m v2, USGS Astrogeology Science Center / NASA. https://astrogeology.usgs.gov/search/map/moon_clementine_uvvis_global_mosaic_118m. The dark maria and bright highlands.
+- Names: Gazetteer of Planetary Nomenclature, International Astronomical Union (IAU) Working Group for Planetary System Nomenclature, USGS Astrogeology Science Center. https://planetarynames.wr.usgs.gov. Moon bases are named after craters, maria and landing sites.
+
 ## Trademarks and non-affiliation
 
 "SimCity" is a trademark of Electronic Arts Inc. GlobalCity is not affiliated with, sponsored by, or endorsed by Electronic Arts, Maxis, Will Wright or Don Hopkins. In line with the Micropolis additional terms, this project does not use the SimCity name, and modified versions must not be presented as the original program.

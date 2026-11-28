@@ -1,12 +1,36 @@
-// The real sun over the game's Earth. The world map is equirectangular (tile x -> longitude, y -> latitude),
+// The real sun over the game's Earth (or Moon, planet.ts). The world map is equirectangular (tile x -> longitude, y -> latitude),
 // so day and night follow the actual time: night falls on each city when it is night there. Cosmetic only;
 // the simulation does not depend on it. Accuracy (about a degree, a few minutes of time) is plenty for shading.
 import { WORLD_W, WORLD_H } from './constants.ts';
+import { PLANET } from './planet.ts';
 
 const RAD = Math.PI / 180;
 
-/** Latitude/longitude (degrees) where the sun is straight overhead at time `ms` (Unix ms). */
+/** Latitude/longitude (degrees) where the sun is straight overhead at time `ms` (Unix ms), on this planet. */
 export function subsolarPoint(ms: number): { lat: number; lon: number } {
+  return PLANET === 'moon' ? lunarSubsolarPoint(ms) : earthSubsolarPoint(ms);
+}
+
+/**
+ * Where the sun is overhead on the Moon (selenographic degrees). The Moon keeps one face to the Earth, so the
+ * sun's place follows the phase: overhead on the far side at new moon (longitude 180), on the near side at full
+ * moon (0), on the eastern limb at first quarter (90). One lunar day is a synodic month, 29.5 days. The Moon's
+ * elongation from the sun with its biggest periodic terms (Meeus, ch. 47-48) is within half a degree; libration is
+ * left out. The sun stays within 1.5 degrees of the lunar equator.
+ */
+export function lunarSubsolarPoint(ms: number): { lat: number; lon: number } {
+  const T = (ms / 86_400_000 + 2440587.5 - 2451545.0) / 36525; // Julian centuries since J2000.0
+  const D = (297.8501921 + 445267.1114034 * T) * RAD, // mean elongation
+    M = (357.5291092 + 35999.0502909 * T) * RAD, // the sun's mean anomaly
+    Mp = (134.9633964 + 477198.8675055 * T) * RAD, // the Moon's mean anomaly
+    F = (93.272095 + 483202.0175233 * T) * RAD; // argument of latitude
+  const elong = D / RAD + 6.289 * Math.sin(Mp) - 2.1 * Math.sin(M) + 1.274 * Math.sin(2 * D - Mp) + 0.658 * Math.sin(2 * D);
+  const lon = ((((180 - elong) % 360) + 540) % 360) - 180;
+  return { lat: 1.54 * Math.sin(F), lon };
+}
+
+/** Where the sun is overhead on the Earth. */
+export function earthSubsolarPoint(ms: number): { lat: number; lon: number } {
   const d = ms / 86_400_000 + 2440587.5 - 2451545.0; // days since J2000.0
   const g = (357.529 + 0.98560028 * d) * RAD; // mean anomaly
   const q = 280.459 + 0.98564736 * d; // mean longitude
@@ -25,9 +49,11 @@ export function sunElevation(lat: number, lon: number, sub: { lat: number; lon: 
   return Math.asin(Math.max(-1, Math.min(1, s))) / RAD;
 }
 
-/** How dark it is, 0 (day) .. 1 (night): fades in from sunset (+2 deg) to the end of civil twilight (-10 deg). */
+/** How dark it is, 0 (day) .. 1 (night): fades in from sunset (+2 deg) to the end of civil twilight (-10 deg); on
+ *  the Moon over a degree and a half. */
 export function nightLevel(elevation: number): number {
-  const t = Math.max(0, Math.min(1, (2 - elevation) / 12));
+  // on the Moon there is no twilight: dark as soon as the sun's disc is gone (the sharp lunar terminator)
+  const t = PLANET === 'moon' ? Math.max(0, Math.min(1, (0.5 - elevation) / 1.5)) : Math.max(0, Math.min(1, (2 - elevation) / 12));
   return t * t * (3 - 2 * t); // smoothstep
 }
 

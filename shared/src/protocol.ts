@@ -1,4 +1,5 @@
 import type { ActiveDisaster } from './disasters.ts';
+import type { Planet } from './planet.ts';
 import type { ToolId } from './tools.ts';
 import type { AirportInfo } from './flights.ts';
 import type { SantaTree } from './santa.ts';
@@ -247,7 +248,10 @@ export type ServerMsg =
       t: 'welcome';
       player: PlayerPublic & { token: string };
       stats: PlayerStats;
-      world: { w: number; h: number; chunk: number };
+      /** planet: 'moon' on the Moon (absent = the Earth) */
+      world: { w: number; h: number; chunk: number; planet?: Planet };
+      /** the other planets' games, to switch to (PLANETS on the server): name and the client's URL */
+      planets?: { planet: Planet; url: string }[];
       claims: ClaimInfo[];
       online: number;
       time: GameTime;

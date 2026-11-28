@@ -50,6 +50,10 @@ the server at boot.
 - `generatedAt`: any string that changes whenever the landscape does. It names the world to clients: the zoomed-out
   map images of untouched land are cached by it.
 - `version`: the `base.bin` layout, 2.
+- `planet`: `"moon"` for the Moon (`npm run gen:moon -w tools`, `tools/src/gen-moon.ts`); absent for the Earth. On
+  the Moon the six biomes are six shades of regolith (`shared/src/biomeart.ts`), the sun follows the lunar day,
+  there is no weather, and cities are moon bases (`shared/src/planet.ts`). Each planet is its own server; `PLANETS`
+  (`server/src/index.ts`) links them in the client.
 - Anything else is for people: the generator records its sources and the layout, the fixture its named sites.
 
 ### base.bin

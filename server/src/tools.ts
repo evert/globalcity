@@ -5,6 +5,8 @@ import {
   type ToolId,
   type QueryInfo,
   WORLD_W,
+  PLANET,
+  moonName,
   Biome,
   baseBiome,
   baseIsFrozen,
@@ -176,6 +178,7 @@ export function queryTile(ctx: BuildCtx, x: number, y: number): QueryInfo {
   }
   const c = chunkOf(x, y);
   const owner = players.ownerOf(c.cx, c.cy);
+  if (PLANET === 'moon') name = moonName(name);
   const info: QueryInfo = { x, y, tile: v, name, powered };
   if (owner) info.owner = players.publicOf(owner);
   if (zonePopN !== undefined) {
@@ -213,9 +216,18 @@ const GROUND_NAMES: Record<Biome, string> = {
   [Biome.Boreal]: 'Snowy ground',
   [Biome.Snow]: 'Ice sheet',
 };
+/** The Moon's regolith shades (tools/src/gen-moon.ts): dark maria, the plains between, bright highlands. */
+const MOON_GROUND_NAMES: Record<Biome, string> = {
+  [Biome.Desert]: 'Mare basalt',
+  [Biome.Steppe]: 'Mare basalt',
+  [Biome.Temperate]: 'Regolith',
+  [Biome.Tundra]: 'Regolith',
+  [Biome.Boreal]: 'Highland regolith',
+  [Biome.Snow]: 'Highland regolith',
+};
 function terrainName(v: number, base: number): string {
   const id = v & LOMASK;
-  if (isDirt(v)) return GROUND_NAMES[baseBiome(base)] ?? 'Dirt';
+  if (isDirt(v)) return PLANET === 'moon' ? MOON_GROUND_NAMES[baseBiome(base)] : (GROUND_NAMES[baseBiome(base)] ?? 'Dirt');
   if (isWater(v))
     return baseIsFrozen(base)
       ? id >= FIRSTRIVEDGE && id <= LASTRIVEDGE

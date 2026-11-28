@@ -286,9 +286,9 @@ export const MILESTONE_ORDER: readonly MilestoneBuilding[] = [
  *  can't be held back from all its milestones by the time of year. */
 export const isSeasonal = (b: MilestoneBuilding): boolean => MILESTONE_BUILDINGS[b].months !== undefined;
 /** The milestones proper: the population ladder without the seasonal buildings. */
-export const MILESTONE_LADDER: readonly MilestoneBuilding[] = MILESTONE_ORDER.filter((b) => !isSeasonal(b));
+export let MILESTONE_LADDER: readonly MilestoneBuilding[] = MILESTONE_ORDER.filter((b) => !isSeasonal(b));
 /** Everything the Milestones panel lists: the population ladder plus Grand Central (unlocked by a rail link). */
-export const MILESTONE_TOTAL = MILESTONE_LADDER.length + 1;
+export let MILESTONE_TOTAL = MILESTONE_LADDER.length + 1;
 /** Percentage of milestones a city has unlocked, from its unlocked list (ladder, grandfathered and grandcentral). */
 export const milestonePercent = (unlocked: readonly string[]): number =>
   Math.round((100 * new Set(unlocked.filter((b) => b === 'grandcentral' || (MILESTONE_LADDER as readonly string[]).includes(b))).size) / MILESTONE_TOTAL);
@@ -314,6 +314,83 @@ export function nextMilestone(peakPop: number): { building: MilestoneBuilding; p
 export function milestoneForCentre(id: number): MilestoneBuilding | null {
   for (const b of MILESTONE_ORDER) if (MILESTONE_BUILDINGS[b].centres.includes(id)) return b;
   return null;
+}
+
+// ---- The Moon ----
+/** Tools that make no sense on the Moon (no water): left out of the toolbar and the milestones. */
+export const MOON_HIDDEN_TOOLS: readonly ToolId[] = ['seaport', 'offshore'];
+/**
+ * A city on the Moon is a moon base (planet.ts calls this once, at boot, before anything shows a name): the same
+ * game under other names. Zones are habitats, commerce and mines; the wind farm is a solar array (the Moon's sheet
+ * draws panels in its place, tools/src/gen-sheet.ts); there are no seaports or offshore wind farms.
+ */
+export function configureMoonTools(): void {
+  const rename: Partial<Record<ToolId, string>> = {
+    park: 'Greenhouse',
+    residential: 'Habitat zone',
+    commercial: 'Commerce zone',
+    industrial: 'Mining zone',
+    fire: 'Emergency station',
+    police: 'Security post',
+    coal: 'Fuel cell plant',
+    nuclear: 'Fusion reactor',
+    stadium: 'Low-gravity arena',
+    airport: 'Spaceport',
+    cityhall: 'Base command',
+    windfarm: 'Solar array',
+    university: 'Research institute',
+    grandcentral: 'Lunar Central',
+  };
+  for (const [id, name] of Object.entries(rename) as [ToolId, string][]) {
+    TOOLS[id].name = name;
+    if (isMilestoneTool(id)) MILESTONE_BUILDINGS[id].name = name;
+  }
+  TOOLS.coal.tradeoff = `Cheap power, ${fmtPower(COAL_POWER)}, but the fuel comes up from Earth and its exhaust drags down land value for a dozen tiles around.`;
+  TOOLS.nuclear.tradeoff = `${fmtPower(NUCLEAR_POWER)} of clean power from lunar helium-3, if you can find the $${TOOLS.nuclear.cost.toLocaleString('en-US')} up front.`;
+  TOOLS.windfarm.tradeoff = `Clean and cheap to run under a sky that is never cloudy, but a few panels make only ${fmtPower(WIND_POWER)}, so a solar base needs lots of land.`;
+  MILESTONE_BUILDINGS.windfarm.benefits = [
+    `${fmtPower(WIND_POWER)} of clean power: a field of panels, so a base runs on many of them`,
+    "No pollution, silent: neighbours don't mind",
+    `$${gameYearAmount(UPKEEP_WIND).toLocaleString('en-US')} a year to run`,
+  ];
+  MILESTONE_BUILDINGS.stadium.benefits = ['Residential demand boost', 'Hosts low-gravity football: mind the long kicks', 'Needs power'];
+  MILESTONE_BUILDINGS.airport.benefits = [
+    'Commercial demand boost once another mayor has a spaceport',
+    'Shuttles fly between your base and theirs',
+    'Some pollution',
+    'Needs power',
+  ];
+  MILESTONE_BUILDINGS.university.benefits = MILESTONE_BUILDINGS.university.benefits.map((b) => b.replace('police', 'security'));
+  MILESTONE_BUILDINGS.cityhall.benefits = MILESTONE_BUILDINGS.cityhall.benefits.map((b) => b.replace('city', 'base'));
+  MILESTONE_LADDER = MILESTONE_LADDER.filter((b) => !MOON_HIDDEN_TOOLS.includes(b));
+  MILESTONE_TOTAL = MILESTONE_LADDER.length + 1;
+}
+
+/** Earth names of things (the query popup's) and their names on a moon base, by the start of the name. */
+const MOON_NAMES: readonly [string, string][] = [
+  ['Residential', 'Habitat'],
+  ['Commercial', 'Commerce'],
+  ['Industrial', 'Mining'],
+  ['Hospital', 'Medical bay'],
+  ['Church', 'Chapel'],
+  ['City hall', 'Base command'],
+  ['Wind farm', 'Solar array'],
+  ['Airport', 'Spaceport'],
+  ['Coal power plant', 'Fuel cell plant'],
+  ['Nuclear power plant', 'Fusion reactor'],
+  ['Fire station', 'Emergency station'],
+  ['Police station', 'Security post'],
+  ['Stadium', 'Low-gravity arena'],
+  ['University', 'Research institute'],
+  ['Grand Central', 'Lunar Central'],
+  ['Park', 'Greenhouse'],
+  ['Woods', 'Greenhouse'],
+  ['Fountain', 'Greenhouse'],
+];
+/** The moon base's name for a thing named `name` on the Earth (unchanged when it has none). */
+export function moonName(name: string): string {
+  for (const [earth, moon] of MOON_NAMES) if (name.startsWith(earth)) return moon + name.slice(earth.length);
+  return name;
 }
 
 // ---- Custom-building layer ----

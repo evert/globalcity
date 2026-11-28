@@ -1,6 +1,7 @@
 // Canvas 2D renderer: tile mode (chunk canvases blitted from the sprite sheet) and
 // overview mode (minimap + claim rectangles). Redraws only when invalidated.
 import {
+  onMoon,
   CHUNK,
   CHUNKS_X,
   CHUNKS_Y,
@@ -60,6 +61,7 @@ const NIGHT_MAP_LIGHTS = 0.8;
 /** Night level (0..1) at which a plot's lights switch on: halfway through dusk, the sun about 4° below the horizon. */
 const LIGHTS_ON = 0.5;
 import { MapTileLayer } from './maptiles.ts';
+import { DomeLayer } from './domes.ts';
 import { WORLD_W as FLIGHT_WORLD_W } from '@globalcity/shared';
 
 export interface Camera {
@@ -239,6 +241,8 @@ export class Renderer extends Emitter<RendererEvents> {
   private disasterTimer: ReturnType<typeof setTimeout> | null = null;
   /** every tile in every look (shared/src/looks.ts); until it loads, tiles are drawn from the plain sheet */
   skins: SpriteSheet | null = null;
+  /** the Moon's glass domes over habitats (created on the Moon only) */
+  private domes: DomeLayer | null = null;
   /** scratch canvas the zoomed-out map's night lights are drawn into before the night mask is applied */
   private lightsLayer: HTMLCanvasElement | null = null;
   /** real-time day and night (the actual sun over the actual Earth) */
@@ -1060,6 +1064,18 @@ export class Renderer extends Emitter<RendererEvents> {
         this.invalidate();
       }, customAnimMs);
     }
+    // 1. the Moon: habitats and commerce under glass domes
+    if (onMoon())
+      (this.domes ??= new DomeLayer(this.map)).draw(
+        g,
+        r.cx0,
+        r.cy0,
+        r.cx1,
+        r.cy1,
+        (x) => this.dx(x),
+        (y) => this.dy(y),
+        this.tilePx() * this.dpr,
+      );
     // 1a. weather: the city dims where it rains (cloud shadows and what falls are drawn over everything, see WeatherOverlay)
     if (this.weather.ready) {
       g.imageSmoothingEnabled = true;
@@ -1718,6 +1734,7 @@ export class Renderer extends Emitter<RendererEvents> {
     const dirty = this.map.takeDirty();
     for (const [key, idxs] of dirty) {
       this.nightLights?.markDirty(key);
+      this.domes?.markDirty(key);
       const cc = this.chunkCanvases.get(key);
       if (!cc) continue;
       if (idxs.length && idxs[0] === DIRTY_ALL) {

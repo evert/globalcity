@@ -1,7 +1,7 @@
 // Asset loading: the Micropolis sprite sheet and the world minimap, each with a
 // procedural fallback so the client keeps working when the files are missing.
 import * as T from '@globalcity/shared';
-import { TILE_PX, LIGHTNINGBOLT, TILE_COUNT } from '@globalcity/shared';
+import { TILE_PX, LIGHTNINGBOLT, TILE_COUNT, PLANET } from '@globalcity/shared';
 
 export interface SpriteSheet {
   image: CanvasImageSource;
@@ -181,8 +181,11 @@ export function drawTile(g: CanvasRenderingContext2D, sheet: SpriteSheet, id: nu
   g.drawImage(sheet.image, sx, sy, ts, ts, dx, dy, dw, dh);
 }
 
-/** The sheet of every tile in every look (biomes, ice, transitions; shared/src/looks.ts), or null without one. */
-export async function loadSkinSheet(url = versioned('/assets/micropolis/skins.png')): Promise<SpriteSheet | null> {
+/** The sheet of every tile in every look (biomes, ice, transitions; shared/src/looks.ts), or null without one.
+ *  The Moon has its own, in shades of regolith. */
+export async function loadSkinSheet(
+  url = versioned(PLANET === 'moon' ? '/assets/micropolis/skins-moon.png' : '/assets/micropolis/skins.png'),
+): Promise<SpriteSheet | null> {
   try {
     const img = await loadImage(url);
     return { image: img, cols: T.SHEET_COLS, tileSize: TILE_PX, count: T.SHEET_TILES, procedural: false };

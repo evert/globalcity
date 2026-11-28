@@ -14,6 +14,7 @@ import { Biome, BIOME_COUNT, BASE_WATER, baseBiome, baseIsFrozen } from './terra
 import { OvClass, OV_DARK, OV_CLASS_MASK, overviewClass, overviewByte, OVERVIEW_PALETTE } from './overview.ts';
 import { biomeMapColours, ICE_RGB, ICE_SPECK_RGB } from './biomeart.ts';
 import { LOMASK } from './tiles.ts';
+import { PLANET } from './planet.ts';
 
 export const MAP_REGION = 256;
 /** Levels 0..mapLevels()-1; the top one shows the whole world in one image. (Functions, not constants: they follow
@@ -58,10 +59,12 @@ export function mapRegionVersion(v: ArrayLike<number>, level: number, rx: number
 // 0..15: the overview classes (buildings, roads, ...; the Dirt/Water/Trees entries are replaced by terrain below)
 // 16 + biome*4 + 0 ground, +1 ground speck, +2 trees, +3 trees speck
 // MAP_WATER (+1 speck), MAP_ICE (+1 speck)
+// MAP_MOON_BASE + biome*4 + 0..3: the same for the Moon's regolith (biomeart.ts)
 export const MAP_TERRAIN_BASE = 16;
 export const MAP_WATER = MAP_TERRAIN_BASE + BIOME_COUNT * 4;
 export const MAP_ICE = MAP_WATER + 2;
-export const MAP_PALETTE_SIZE = MAP_ICE + 2;
+export const MAP_MOON_BASE = MAP_ICE + 2;
+export const MAP_PALETTE_SIZE = MAP_MOON_BASE + BIOME_COUNT * 4;
 export const MAP_PALETTE: readonly (readonly [number, number, number])[] = (() => {
   const p: [number, number, number][] = OVERVIEW_PALETTE.map((c) => [c[0], c[1], c[2]]);
   for (let b = 0; b < BIOME_COUNT; b++) {
@@ -70,6 +73,10 @@ export const MAP_PALETTE: readonly (readonly [number, number, number])[] = (() =
     p.push([...c.ground], [...c.speck], [...c.trees], darker(c.trees));
   }
   p.push([0x66, 0x66, 0xe6], [0x33, 0x33, 0xc8], [...ICE_RGB], [...ICE_SPECK_RGB]);
+  for (let b = 0; b < BIOME_COUNT; b++) {
+    const c = biomeMapColours(b as Biome, 'moon');
+    p.push([...c.ground], [...c.speck], [...c.trees], [...c.speck]);
+  }
   return p;
 })();
 
@@ -88,8 +95,9 @@ export const MAP_CLASS_OF_ID: Uint8Array = (() => {
 /** Day palette index (without speck) for a tile value and its terrain byte. */
 export function mapIndex(v: number, terrain: number): number {
   const c = MAP_CLASS_OF_ID[v & LOMASK];
-  if (c === OvClass.Dirt) return MAP_TERRAIN_BASE + baseBiome(terrain) * 4;
-  if (c === OvClass.Trees) return MAP_TERRAIN_BASE + baseBiome(terrain) * 4 + 2;
+  const tb = PLANET === 'moon' ? MAP_MOON_BASE : MAP_TERRAIN_BASE;
+  if (c === OvClass.Dirt) return tb + baseBiome(terrain) * 4;
+  if (c === OvClass.Trees) return tb + baseBiome(terrain) * 4 + 2;
   if (c === OvClass.Water) return terrain & BASE_WATER && baseIsFrozen(terrain) ? MAP_ICE : MAP_WATER;
   return c;
 }

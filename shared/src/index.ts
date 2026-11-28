@@ -18,3 +18,4 @@ export * from './looks.ts';
 export * from './disasters.ts';
 export * from './build.ts';
 export * from './climate.ts';
+export * from './planet.ts';

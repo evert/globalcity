@@ -4,15 +4,30 @@
 //   - ground transitions: bare ground and trees of one biome with some corners frayed into another
 //   - ice transitions: frozen water with some corners open
 // Run after art/sheet/build_sheet.py whenever tiles.png or the palettes change:  npm run gen:sheet -w tools
+// PLANET=moon builds the Moon's sheet, skins-moon.png, in the regolith palettes.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { TILE_PX, SHEET_COLS, SHEET_TILES, SKIN_COUNT, recolourSheet, describeLook, sheetEntries } from '@globalcity/shared';
+import {
+  TILE_PX,
+  SHEET_COLS,
+  SHEET_TILES,
+  SKIN_COUNT,
+  WINDBASE,
+  recolourSheet,
+  describeLook,
+  sheetEntries,
+  configurePlanet,
+  groundPalettes,
+  PLANET,
+  type Biome,
+} from '@globalcity/shared';
 import { readPng, writePngRgb } from './png.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const SRC = resolve(ROOT, 'client/public/assets/micropolis/tiles.png');
-const OUT = resolve(ROOT, 'client/public/assets/micropolis/skins.png');
+configurePlanet(process.env.PLANET);
+const OUT = resolve(ROOT, `client/public/assets/micropolis/${PLANET === 'moon' ? 'skins-moon' : 'skins'}.png`);
 const T = TILE_PX;
 
 const base = readPng(readFileSync(SRC));
@@ -22,7 +37,49 @@ const skins: Uint8Array[] = [];
 for (let s = 0; s < SKIN_COUNT; s++) {
   const px = base.px.slice();
   recolourSheet(px, base.w, base.h, T, s);
+  if (PLANET === 'moon') paintSolarArray(px, groundPalettes()[(s >> 1) as Biome].dirt);
   skins.push(px);
+}
+
+/**
+ * The Moon's wind farm is a solar array (shared/src/tools.ts, configureMoonTools): the 4x4 wind farm tiles redrawn
+ * as four rows of panels on the regolith, tilted toward the sun, each row casting a short shadow, with an inverter
+ * hut in the corner. Drawn in the Micropolis way: flat colours, a light top edge, dark cell lines.
+ */
+function paintSolarArray(px: Uint8Array, ground: number): void {
+  const S = 4 * T; // the farm is 4x4 tiles
+  const put = (x: number, y: number, c: number) => {
+    const k = WINDBASE + Math.floor(y / T) * 4 + Math.floor(x / T);
+    const o = ((Math.floor(k / srcCols) * T + (y % T)) * base.w + (k % srcCols) * T + (x % T)) * 4;
+    px[o] = (c >> 16) & 255;
+    px[o + 1] = (c >> 8) & 255;
+    px[o + 2] = c & 255;
+  };
+  const PANEL = 0x23356e,
+    CELL = 0x4766b0,
+    EDGE = 0xa8bce8,
+    FRAME = 0x6c6c74,
+    SHADOW = 0x34322f;
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) put(x, y, ground);
+  // four rows of panels, 11 px deep with 5 px between rows
+  for (let r = 0; r < 4; r++) {
+    const y0 = 3 + r * 15;
+    const x0 = 3,
+      x1 = r === 3 ? S - 18 : S - 4; // the last row leaves room for the hut
+    for (let y = y0; y < y0 + 11; y++)
+      for (let x = x0; x < x1; x++) {
+        const edge = y === y0,
+          frame = x === x0 || x === x1 - 1 || y === y0 + 10;
+        const cell = (x - x0) % 6 === 5 || (y - y0) % 4 === 3;
+        put(x, y, edge ? EDGE : frame ? FRAME : cell ? CELL : PANEL);
+      }
+    for (let y = y0 + 11; y < y0 + 13; y++) for (let x = x0 + 1; x < x1; x++) put(x, y, SHADOW);
+  }
+  // the inverter hut: a little white box with a dark door and a shadow
+  for (let y = S - 15; y < S - 4; y++)
+    for (let x = S - 14; x < S - 3; x++) put(x, y, y === S - 15 ? 0xffffff : x === S - 14 || x === S - 4 ? 0xa0a0a8 : 0xdcdce4);
+  for (let y = S - 10; y < S - 4; y++) for (let x = S - 10; x < S - 7; x++) put(x, y, 0x3c3c46);
+  for (let y = S - 4; y < S - 2; y++) for (let x = S - 13; x < S - 2; x++) put(x, y, SHADOW);
 }
 
 // How much of a tile belongs to its frayed corners, per pixel: 1 at a corner, fading to 0 about two thirds of

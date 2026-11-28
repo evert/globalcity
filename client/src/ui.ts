@@ -47,7 +47,7 @@ import {
   chunkOf,
   lonLatToTile,
 } from '@globalcity/shared';
-import { DISASTERS, DISASTER_COUNT, Disaster, type WorldStats } from '@globalcity/shared';
+import { DISASTERS, DISASTER_COUNT, Disaster, type WorldStats, onMoon, MOON_HIDDEN_TOOLS, type Planet } from '@globalcity/shared';
 import type { Actions } from './actions.ts';
 import type { Minimap, SpriteSheet } from './assets.ts';
 import { iconDpr, ToolIcons } from './icons.ts';
@@ -428,7 +428,9 @@ export class UI {
 
   private buildToolbar(): void {
     const bar = el('div', { id: 'toolbar' });
+    if (onMoon()) for (const g of TOOL_GROUPS) g.members = g.members.filter((id) => !MOON_HIDDEN_TOOLS.includes(id));
     for (const id of TOOL_ORDER) {
+      if (onMoon() && MOON_HIDDEN_TOOLS.includes(id)) continue;
       const t = TOOLS[id];
       const icon = el('canvas', { class: 'icon' });
       this.icons.paint(icon, id, TOOL_ICON_PX, TOOL_ICON_OPTS);
@@ -846,9 +848,9 @@ export class UI {
     const built = el(
       'div',
       { class: 'ws-grid small' },
-      tile(n(s.zones.res), 'Residential', 'residential zones'),
-      tile(n(s.zones.com), 'Commercial', 'commercial zones'),
-      tile(n(s.zones.ind), 'Industrial', 'industrial zones'),
+      tile(n(s.zones.res), onMoon() ? 'Habitat' : 'Residential', 'residential zones'),
+      tile(n(s.zones.com), onMoon() ? 'Commerce' : 'Commercial', 'commercial zones'),
+      tile(n(s.zones.ind), onMoon() ? 'Mining' : 'Industrial', 'industrial zones'),
       tile(n(s.roads), 'road tiles'),
       tile(n(s.rail), 'rail tiles'),
       tile(n(s.powerLines), 'power line tiles'),
@@ -1492,6 +1494,8 @@ export class UI {
   private overlayToggle!: HTMLButtonElement;
   private overlayBody!: HTMLElement;
   private weatherBtn!: HTMLButtonElement;
+  /** zoomed out: a button per other planet (the server's PLANETS), each its own game */
+  private planetRow!: HTMLElement;
   private globeBtn!: HTMLButtonElement;
   /** switch between the globe and the flat map (set by main.ts); returns whether the globe is now showing */
   onGlobeToggle: (() => boolean) | null = null;
@@ -1545,11 +1549,13 @@ export class UI {
       this.refreshWeatherBtn();
     };
     this.globeBtn = el('button', { class: 'btn ov-toggle hidden', type: 'button', title: 'See the world as a globe' }, '🌐 Globe');
+    this.planetRow = el('div', { class: 'ov-row hidden' });
     this.globeBtn.onclick = () => this.setGlobeShown(this.onGlobeToggle?.() ?? false);
     this.overlayBar = el(
       'div',
       { id: 'overlays', class: 'panel' },
       el('div', { class: 'ov-row' }, this.globeBtn, this.weatherBtn),
+      this.planetRow,
       this.overlayToggle,
       this.overlayBody,
     );
@@ -1576,11 +1582,30 @@ export class UI {
     const tile = this.renderer.isTileMode();
     if (tile === this.overlayTileMode) return;
     this.overlayTileMode = tile;
-    this.weatherBtn.classList.toggle('hidden', tile);
+    this.weatherBtn.classList.toggle('hidden', tile || onMoon()); // no weather on the Moon
     this.globeBtn.classList.toggle('hidden', tile || !this.onGlobeToggle);
+    this.planetRow.classList.toggle('hidden', tile || !this.planetRow.childElementCount);
     this.overlayToggle.classList.toggle('hidden', !tile);
     this.overlayBody.classList.toggle('hidden', !tile || this.overlayToggle.getAttribute('aria-expanded') !== 'true');
     this.overlayBar.classList.toggle('open', tile && this.overlayToggle.getAttribute('aria-expanded') === 'true');
+  }
+  /** The other planets' games (from the welcome): a button for each, zoomed out. */
+  setPlanets(list: { planet: Planet; url: string }[]): void {
+    this.planetRow.replaceChildren(
+      ...list.map((p) =>
+        el(
+          'a',
+          {
+            class: 'btn ov-toggle',
+            href: p.url,
+            title: p.planet === 'moon' ? 'Fly to the Moon: build a moon base (its own world, mayors and cities)' : 'Back to the Earth',
+          },
+          p.planet === 'moon' ? '🌙 Moon' : '🌍 Earth',
+        ),
+      ),
+    );
+    this.overlayTileMode = null;
+    this.refreshOverlayMode();
   }
   /** The globe opened or closed (from its button, or by zooming into the flat map). */
   setGlobeShown(on: boolean): void {

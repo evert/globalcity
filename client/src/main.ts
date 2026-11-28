@@ -1,6 +1,6 @@
 // Bootstrap: load assets, wire net <-> state <-> map <-> renderer <-> ui <-> input.
 import type { ChunkFrame, ServerMsg } from '@globalcity/shared';
-import { chunkKey, configureWorld } from '@globalcity/shared';
+import { chunkKey, configureWorld, configurePlanet, PLANET, type Planet } from '@globalcity/shared';
 import { Actions } from './actions.ts';
 import { handleServerMsg } from './dispatch.ts';
 import { loadSpriteSheet, loadSkinSheet, proceduralMinimap } from './assets.ts';
@@ -66,6 +66,7 @@ async function boot(): Promise<void> {
   const early: ({ msg: ServerMsg } | { chunk: ChunkFrame })[] = [];
   const offEarly = [net.on('msg', (msg) => early.push({ msg })), net.on('chunk', (chunk) => early.push({ chunk }))];
   let sized: Promise<void> = Promise.resolve();
+  let planets: { planet: Planet; url: string }[] = [];
   if (!demo) {
     const waiting = bootNotice();
     const offStatus = net.on('status', (s) => (waiting.textContent = s));
@@ -73,6 +74,8 @@ async function boot(): Promise<void> {
       const off = net.on('msg', (msg) => {
         if (msg.t !== 'welcome') return;
         configureWorld(msg.world.w, msg.world.h);
+        configurePlanet(msg.world.planet);
+        planets = msg.planets ?? [];
         off();
         offStatus();
         waiting.remove();
@@ -82,7 +85,7 @@ async function boot(): Promise<void> {
     net.connect();
   }
 
-  const [[sheet, skins, spriteAssets]] = await Promise.all([Promise.all([loadSpriteSheet(), loadSkinSheet(), loadSprites()]), sized]);
+  const [[sheet, spriteAssets], skins] = await Promise.all([Promise.all([loadSpriteSheet(), loadSprites()]), sized.then(() => loadSkinSheet())]);
   // the corner minimap starts plain and becomes the server's whole-world map image once that loads
   const minimap = proceduralMinimap();
 
@@ -96,7 +99,8 @@ async function boot(): Promise<void> {
   const sky = new WeatherOverlay(canvas, renderer, renderer.weather);
   if (!applyHashCamera(renderer)) renderer.showWorld();
   const actions = new Actions(state, net, renderer);
-  const ui = new UI(state, net, renderer, actions, sheet, minimap);
+  const ui = new UI(state, net, renderer, actions, PLANET === 'moon' && skins ? skins : sheet, minimap); // the Moon's icons from its own art (solar arrays)
+  ui.setPlanets(planets);
   // the globe: opened from the zoomed-out map; zooming in on it (or double-clicking a spot) comes back to the flat map
   const globe: GlobeView = new GlobeView(
     canvas,

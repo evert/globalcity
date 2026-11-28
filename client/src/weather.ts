@@ -6,7 +6,7 @@
 //               where it rains; rain or snow falls across the screen where the camera is
 // Zoomed in it is always on. The zoomed-out clouds are off until the player turns them on (the Weather button);
 // that choice is remembered. `?weather=rain|snow|storm|broken|clear` overrides what falls at the camera, to look at the effect.
-import { WORLD_H, WORLD_W } from '@globalcity/shared';
+import { WORLD_H, WORLD_W, onMoon } from '@globalcity/shared';
 
 const W = 720,
   H = 360;
@@ -106,7 +106,7 @@ export class WeatherLayer {
   private started = false;
   /** Start fetching the weather: now, then every POLL_MS. */
   start(): void {
-    if (this.started) return;
+    if (this.started || onMoon()) return; // no weather on the Moon
     this.started = true;
     void this.poll();
     setInterval(() => {

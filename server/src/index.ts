@@ -19,11 +19,30 @@
 //              Disasters never strike with DEV_HOOKS.
 //   NOTIFY_DB  world reset notification sign-ups (SQLite; default notify.db beside the save directory, so it
 //              survives the world reset)
-//   WEATHER    "off": no real weather (clouds, rain and snow from NOAA GFS, fetched hourly; see weather.ts)
+//   WEATHER    "off": no real weather (clouds, rain and snow from NOAA GFS, fetched hourly; see weather.ts). The
+//              Moon (base.json "planet": "moon", tools/src/gen-moon.ts) never has weather.
+//   PLANETS    the other planets' games, offered in the client as a planet switch: comma-separated
+//              <planet>=<client URL>, e.g. "moon=https://moon.example.com" on the Earth's server and
+//              "earth=https://example.com" on the Moon's (each planet is its own server, world and save)
 
 import os from 'node:os';
 import path from 'node:path';
-import { TICK_MS, DEFAULT_PORT, WORLD_W, WORLD_H, CHUNKS_X, CHUNKS_Y, STEPS_PER_MONTH, EARTH_W, EARTH_H, configureWorld } from '@globalcity/shared';
+import {
+  TICK_MS,
+  DEFAULT_PORT,
+  WORLD_W,
+  WORLD_H,
+  CHUNKS_X,
+  CHUNKS_Y,
+  STEPS_PER_MONTH,
+  EARTH_W,
+  EARTH_H,
+  configureWorld,
+  configurePlanet,
+  PLANET,
+  PLANETS,
+  type Planet,
+} from '@globalcity/shared';
 import { bootWorld } from './world.ts';
 import { Players } from './players.ts';
 import { Places } from './places.ts';
@@ -45,7 +64,7 @@ const MAP_REFRESH_MS = 10_000;
 const root = path.resolve(import.meta.dirname, '../..');
 const worldDir = path.resolve(root, process.env.WORLD_DIR || `data/world-${EARTH_W}x${EARTH_H}`);
 /** The world's description (base.json): its size, and generatedAt, which identifies it. */
-const worldInfo = ((): { w?: unknown; h?: unknown; generatedAt?: unknown } => {
+const worldInfo = ((): { w?: unknown; h?: unknown; generatedAt?: unknown; planet?: unknown } => {
   try {
     return JSON.parse(fs.readFileSync(path.join(worldDir, 'base.json'), 'utf8'));
   } catch {
@@ -54,6 +73,7 @@ const worldInfo = ((): { w?: unknown; h?: unknown; generatedAt?: unknown } => {
 })();
 // before anything that depends on the world's size is built
 configureWorld(typeof worldInfo.w === 'number' ? worldInfo.w : EARTH_W, typeof worldInfo.h === 'number' ? worldInfo.h : EARTH_H);
+configurePlanet(worldInfo.planet);
 const baseFile = path.join(worldDir, 'base.bin');
 const placesFile = path.join(worldDir, 'places.json');
 const saveDir = path.resolve(root, process.env.DATA_DIR || 'data/save');
@@ -93,7 +113,7 @@ const simOptions: SimOptions = { randomFires: !devHooks, hazards, elevation };
 let sim = new Sim(world, players, simOptions);
 simOptions.shippingWater = sim.shipping.water;
 const notify = new Notify(path.resolve(root, process.env.NOTIFY_DB || path.join(path.dirname(saveDir), 'notify.db')), devHooks);
-const weather = process.env.WEATHER === 'off' ? null : new Weather();
+const weather = process.env.WEATHER === 'off' || PLANET === 'moon' ? null : new Weather();
 weather?.start();
 const net = new Net(world, players, sim, clientDist, root, {
   devHooks,
@@ -101,8 +121,19 @@ const net = new Net(world, players, sim, clientDist, root, {
   mapTiles,
   notify,
   weather: weather ?? undefined,
+  planets: parsePlanets(process.env.PLANETS),
   devReset: devHooks ? devReset : undefined,
 });
+
+/** PLANETS (above): the other planets' games. */
+function parsePlanets(env: string | undefined): { planet: Planet; url: string }[] {
+  const out: { planet: Planet; url: string }[] = [];
+  for (const part of (env ?? '').split(',')) {
+    const m = part.trim().match(/^([a-z]+)=(\S+)$/);
+    if (m && (PLANETS as readonly string[]).includes(m[1]) && m[1] !== PLANET) out.push({ planet: m[1] as Planet, url: m[2] });
+  }
+  return out;
+}
 
 /**
  * devReset (DEV_HOOKS only, for the tests): everything back to how this server booted on an empty save, keeping

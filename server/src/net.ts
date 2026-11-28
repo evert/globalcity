@@ -15,6 +15,8 @@ import path from 'node:path';
 import { WebSocketServer, WebSocket, type RawData } from 'ws';
 import {
   WORLD_W,
+  PLANET,
+  type Planet,
   WORLD_H,
   CHUNK,
   CHUNKS_X,
@@ -135,6 +137,8 @@ export interface NetOptions {
   notify?: Notify;
   /** real weather (/api/weather) */
   weather?: Weather;
+  /** the other planets' games, offered in the client (PLANETS, see index.ts) */
+  planets?: { planet: Planet; url: string }[];
   /** devReset (dev hooks only): reset everything but the network layer and return the new players and sim, or
    *  an error message when this server can't be reset */
   devReset?: () => { players: Players; sim: Sim } | string;
@@ -150,6 +154,7 @@ export class Net {
   readonly admin: Admin;
   private readonly notify: Notify | null;
   private readonly weather: Weather | null;
+  private readonly planets: { planet: Planet; url: string }[];
   private leaderboard: Leaderboard;
   private worldStats: WorldStatsCounter;
   private readonly devHooks: boolean;
@@ -181,6 +186,7 @@ export class Net {
     );
     this.notify = opts.notify ?? null;
     this.weather = opts.weather ?? null;
+    this.planets = opts.planets ?? [];
     this.leaderboard = new Leaderboard(players);
     this.worldStats = new WorldStatsCounter(world, players, sim);
     if (this.devHooks) log('DEV_HOOKS enabled: devIgnite/devFunds/devTraffic/devPeak/devIdle/devRailLink/devPlace/devDisaster accepted');
@@ -883,7 +889,8 @@ export class Net {
       t: 'welcome',
       player: { ...this.players.publicOf(p), token: p.token },
       stats: p.stats,
-      world: { w: WORLD_W, h: WORLD_H, chunk: CHUNK },
+      world: { w: WORLD_W, h: WORLD_H, chunk: CHUNK, ...(PLANET === 'moon' ? { planet: PLANET } : {}) },
+      ...(this.planets.length ? { planets: this.planets } : {}),
       claims: this.players.allClaims(),
       online: this.onlineCount(),
       time: { ...this.players.time },
