@@ -6,6 +6,7 @@ import { WORLD_H, WORLD_W, TILE_PX, mapLevels, subsolarPoint } from '@globalcity
 import { MapTileLayer } from './maptiles.ts';
 import { sunNow } from './night.ts';
 import type { WeatherLayer } from './weather.ts';
+import { Satellite, type GlobeCamera } from './satellite.ts';
 
 /** The map texture is never wider than this (map images to fetch and to keep: 4096 is 128 of them on the Earth). */
 const MAX_TEX_W = 4096;
@@ -96,6 +97,7 @@ export class GlobeView {
   private shown = false;
   private scheduled = false;
   onClose: () => void = () => {};
+  private readonly satellite: Satellite;
 
   constructor(
     after: HTMLElement,
@@ -104,6 +106,7 @@ export class GlobeView {
   ) {
     Object.assign(this.canvas.style, { position: 'fixed', inset: '0', width: '100vw', height: '100vh', display: 'none', touchAction: 'none', cursor: 'grab' });
     after.after(this.canvas);
+    this.satellite = new Satellite(this.canvas, () => (this.shown ? this.camera() : null));
     this.gl = this.canvas.getContext('webgl2', { antialias: true, alpha: false });
     this.tiles.onUpdate = () => this.scheduleUpload();
     weather.subscribe(() => this.invalidate());
@@ -128,6 +131,7 @@ export class GlobeView {
     this.radius = Math.min(w, h) * START_RADIUS;
     this.shown = true;
     this.canvas.style.display = 'block';
+    this.satellite.start();
     this.tiles.maybeRefresh();
     this.compose();
     this.invalidate();
@@ -136,6 +140,34 @@ export class GlobeView {
   hide(): void {
     this.shown = false;
     this.canvas.style.display = 'none';
+    this.satellite.stop();
+  }
+
+  /** The view -> world rotation's columns (the shader's uRot): turn by latitude about x, then longitude about y. */
+  private rotation(): number[] {
+    const cl = Math.cos(this.lon),
+      sl = Math.sin(this.lon),
+      ca = Math.cos(-this.lat),
+      sa = Math.sin(-this.lat);
+    // Ry(lon) * Rx(-lat), column-major
+    return [cl, 0, -sl, sl * sa, ca, cl * sa, sl * ca, -sa, cl * ca];
+  }
+
+  /** World (Earth radii) to screen (CSS px), for things drawn over the globe. */
+  private camera(): GlobeCamera {
+    const m = this.rotation();
+    const { w, h } = this.host.cssSize();
+    const r = this.radius;
+    return {
+      radius: r,
+      project: ([x, y, z]) => {
+        // the rotation is orthonormal: world -> view is its transpose
+        const vx = m[0] * x + m[1] * y + m[2] * z,
+          vy = m[3] * x + m[4] * y + m[5] * z,
+          vz = m[6] * x + m[7] * y + m[8] * z;
+        return { x: w / 2 + vx * r, y: h / 2 - vy * r, z: vz };
+      },
+    };
   }
 
   // ---------- textures ----------
@@ -278,13 +310,7 @@ export class GlobeView {
     gl.uniform2f(u('uRes'), W, H);
     gl.uniform2f(u('uCentre'), W / 2, H / 2);
     gl.uniform1f(u('uRadius'), this.radius * dpr);
-    // view -> world: turn by latitude about x, then by longitude about y (column-major)
-    const cl = Math.cos(this.lon),
-      sl = Math.sin(this.lon),
-      ca = Math.cos(-this.lat),
-      sa = Math.sin(-this.lat);
-    // Ry(lon) * Rx(-lat)
-    const m = [cl, 0, -sl, sl * sa, ca, cl * sa, sl * ca, -sa, cl * ca];
+    const m = this.rotation();
     gl.uniformMatrix3fv(u('uRot'), false, m);
     const s = subsolarPoint(sunNow());
     const slat = (s.lat * Math.PI) / 180,
