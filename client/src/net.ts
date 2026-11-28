@@ -21,6 +21,15 @@ export type NetEvents = {
 };
 
 export function loadIdentity(): Identity {
+  // a link that opens the game as a given mayor (#mayor=<id>.<token>): kept like any other identity, and the token
+  // taken out of the address bar at once
+  const m = location.hash.match(/^#mayor=([\w-]+)\.([\w-]+)$/);
+  if (m) {
+    const id: Identity = { id: m[1], token: m[2] };
+    saveIdentity(id);
+    history.replaceState(null, '', location.pathname + location.search);
+    return id;
+  }
   try {
     const raw = localStorage.getItem(ID_KEY);
     if (raw) {
