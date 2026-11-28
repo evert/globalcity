@@ -25,6 +25,13 @@ import {
   clamp,
   inWorld,
   sheetIndex,
+  lookOf,
+  skinLook,
+  Biome,
+  SKIN_COUNT,
+  ICE_LOOK_BASE,
+  LOOK_BITS,
+  LOOK_SHIFT,
   Disaster,
   DISASTERS,
   TICK_MS,
@@ -50,7 +57,7 @@ import { FlightLayer, ShipLayer, SantaLayer } from './flights.ts';
 import { OverlayLayer } from './overlays.ts';
 import { CustomLayer } from './custom.ts';
 import { NightLayer, NIGHT_REFRESH_MS } from './night.ts';
-import { WeatherLayer, snowCover } from './weather.ts';
+import { WeatherLayer } from './weather.ts';
 import { NightLights, type NightImage } from './nightlights.ts';
 
 /** How much of the night shade the zoomed-in city gets: dim, never dark, so building stays easy at night. */
@@ -110,6 +117,22 @@ interface ChunkCanvas {
   anim: Set<number>;
   frame: Map<number, number>;
   res: number;
+  /** per tile: drawn as snowy ground (real weather), as of weather.snowVersion snowVer; null: no snow here */
+  snow: Uint8Array | null;
+  snowVer: number;
+}
+
+/**
+ * Tile value v drawn as snowy ground: plain ground, trees, buildings and shores in the boreal skin (snowy ground,
+ * snow-laden trees), border transitions too. Ice sheets and snowy ground already are; frozen water stays frozen.
+ */
+export function snowyLook(v: number): number {
+  const look = lookOf(v);
+  if (look >= ICE_LOOK_BASE) return v; // ice against open water
+  const frozen = look < SKIN_COUNT && (look & 1) === 1;
+  const biome = look < SKIN_COUNT ? look >> 1 : -1;
+  if (biome === Biome.Boreal || biome === Biome.Snow) return v;
+  return (v & ~LOOK_BITS) | (skinLook(Biome.Boreal, frozen) << LOOK_SHIFT);
 }
 
 export function isFireTile(v: number): boolean {
@@ -311,6 +334,7 @@ export class Renderer extends Emitter<RendererEvents> {
       }, NIGHT_REFRESH_MS);
     if (this.animated) {
       this.weather.onChange = () => this.invalidate();
+      this.mapTiles.snow = this.weather; // the zoomed-out map shows the snow lying on the ground
       this.weather.start();
     }
     this.customs.load();
@@ -1003,7 +1027,7 @@ export class Renderer extends Emitter<RendererEvents> {
         if (x1 <= 0 || y1 <= 0 || x0 >= W || y0 >= H) continue;
         const key = chunkKey(cx, cy);
         let cc = this.chunkCanvases.get(key);
-        if (!cc || cc.res < res) {
+        if (!cc || cc.res < res || cc.snowVer !== this.weather.snowVersion) {
           // missing, or too coarse for this zoom (the coarse one stands in until the sharper one is built)
           const tiles = this.map.getChunk(cx, cy);
           if (tiles && built < CHUNK_BUILD_BUDGET) {
@@ -1060,11 +1084,9 @@ export class Renderer extends Emitter<RendererEvents> {
         this.invalidate();
       }, customAnimMs);
     }
-    // 1a. weather: snow lying on the city (a speckle anchored to the map), and the city dims where it rains (cloud
-    // shadows and what falls are drawn over everything, see WeatherOverlay)
+    // 1a. weather: the city dims where it rains (snow lying is drawn in the tiles themselves; cloud shadows and what
+    // falls are drawn over everything, see WeatherOverlay)
     if (this.weather.ready) {
-      const cover = snowCover(this.weather.at(this.cam.x, this.cam.y).snowDepth);
-      if (cover > 0) this.drawSnowSpeckle(g, cover, W, H);
       g.imageSmoothingEnabled = true;
       this.drawWorldImage(g, this.weather.shade, this.weather.shade.width, this.weather.shade.height, 0, 0, W, H);
       g.imageSmoothingEnabled = false;
@@ -1345,39 +1367,6 @@ export class Renderer extends Emitter<RendererEvents> {
     g.drawImage(img, sx(x0), sy(y0), sx(x1) - sx(x0), sy(y1) - sy(y0), x0, y0, x1 - x0, y1 - y0);
   }
 
-  /** A white speckle of snow over the zoomed-in city, as thick as `cover` (0..1), anchored to the map so it pans with it. */
-  private drawSnowSpeckle(g: CanvasRenderingContext2D, cover: number, W: number, H: number): void {
-    const tex = (this.snowTex ??= (() => {
-      const c = document.createElement('canvas');
-      c.width = c.height = 32;
-      const sg = c.getContext('2d')!;
-      let seed = 987654321;
-      const rand = (): number => (seed = (seed * 1103515245 + 12345) >>> 0) / 2 ** 32;
-      for (let y = 0; y < 32; y++)
-        for (let x = 0; x < 32; x++) {
-          const r = rand();
-          if (r < 0.5) {
-            sg.fillStyle = r < 0.08 ? '#d8e2f0' : '#ffffff'; // a few bluish flecks in the white
-            sg.fillRect(x, y, 1, 1);
-          }
-        }
-      return c;
-    })());
-    const pattern = g.createPattern(tex, 'repeat');
-    if (!pattern) return;
-    const s = this.tilePx() * this.dpr * 0.25; // four flecks to a tile
-    const period = 32 * s;
-    const mod = (a: number): number => ((a % period) + period) % period;
-    pattern.setTransform(new DOMMatrix([s, 0, 0, s, mod(this.dx(0)), mod(this.dy(0))]));
-    g.save();
-    g.imageSmoothingEnabled = false;
-    g.globalAlpha = 0.6 * cover;
-    g.fillStyle = pattern;
-    g.fillRect(0, 0, W, H);
-    g.restore();
-  }
-  private snowTex: HTMLCanvasElement | null = null;
-
   /** Chunks under a rectangle of the screen (device pixels). */
   private chunkRectOf(x0: number, y0: number, x1: number, y1: number): ChunkRect {
     const s = this.tilePx() * this.dpr;
@@ -1405,11 +1394,6 @@ export class Renderer extends Emitter<RendererEvents> {
     g.imageSmoothingEnabled = false;
     if (this.mapTiles.ready) this.mapTiles.draw(g, 'day', level, view, rx0, ry0, rx1, ry1);
     else this.drawWorldImage(g, this.minimap.image, this.minimap.width, this.minimap.height, rx0, ry0, rx1, ry1);
-    // snow lying on the ground (real weather), under the night
-    if (this.weather.ready) {
-      g.imageSmoothingEnabled = true;
-      this.drawWorldImage(g, this.weather.snow, this.weather.snow.width, this.weather.snow.height, rx0, ry0, rx1, ry1);
-    }
     // night: the real-time shade over the whole map, then the lights of the cities on the dark side, then the clouds
     // (real weather, shaded by the night themselves) over both
     g.imageSmoothingEnabled = true;
@@ -1724,6 +1708,7 @@ export class Renderer extends Emitter<RendererEvents> {
     // building's tiles show the bare ground of their biome: its image is drawn on top, and where the image is
     // transparent (the Christmas tree's grounds) the local sand, grass or snow shows through.
     const kind = isCustomTile(v) ? DIRT : frameId;
+    if (cc.snow?.[idx]) v = snowyLook(v); // snow lying (real weather): the tile in the snowy biome's art
     if (this.skins) drawTile(cc.g, this.skins, sheetIndex(v, kind), tx, ty, r, r);
     else drawTile(cc.g, this.sheet, kind, tx, ty, r, r);
     if (this.shouldBolt(v, own)) drawTile(cc.g, this.sheet, LIGHTNINGBOLT, tx, ty, r, r);
@@ -1747,7 +1732,17 @@ export class Renderer extends Emitter<RendererEvents> {
     canvas.width = canvas.height = CHUNK * res;
     const g = canvas.getContext('2d', { alpha: false })!;
     g.imageSmoothingEnabled = false;
-    const cc: ChunkCanvas = { key, canvas, g, lastUse: this.frame, anim: new Set(), frame: new Map(), res };
+    const cc: ChunkCanvas = { key, canvas, g, lastUse: this.frame, anim: new Set(), frame: new Map(), res, snow: null, snowVer: this.weather.snowVersion };
+    if (this.weather.ready) {
+      const snow = new Uint8Array(CHUNK * CHUNK);
+      let any = false;
+      for (let i = 0; i < CHUNK * CHUNK; i++)
+        if (this.weather.isSnowy(cx * CHUNK + (i % CHUNK) + 0.5, cy * CHUNK + Math.floor(i / CHUNK) + 0.5)) {
+          snow[i] = 1;
+          any = true;
+        }
+      if (any) cc.snow = snow;
+    }
     const own = this.state.ownsChunk(cx, cy);
     for (let i = 0; i < CHUNK * CHUNK; i++) this.drawTileAt(cc, tiles, i, own);
     this.chunkCanvases.set(key, cc);

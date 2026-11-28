@@ -1,8 +1,8 @@
 // Real weather over the map (server/src/weather.ts: NOAA's GFS forecast for the current hour, as a 0.5-degree image:
 // the sky above, red cloud cover, green the rain or snow rate with its lowest bit set where it is snow, blue the air
 // temperature; the ground below, red the snow lying, green and blue the wind).
-//   snow        lies on the ground wherever it really does: white on the zoomed-out map and the globe, a snowy
-//               speckle over the city zoomed in
+//   snow        lies on the ground wherever it really does: the ground is drawn in the snowy biome's art (white
+//               ground, snow-laden trees) zoomed in, on the zoomed-out map and on the globe; patchy under 2.5 cm
 //   zoomed out  clouds drift over the world map, darker where it rains, over the city lights (shaded by the night)
 //   zoomed in   by day clouds cast drifting shadows, as much of the ground as the sky is covered; the city dims
 //               where it rains; rain or snow falls across the screen where the camera is
@@ -67,10 +67,10 @@ export class WeatherLayer {
   readonly clouds = document.createElement('canvas');
   /** the zoomed-in view's rain gloom: a dark veil where it rains (the clouds themselves are the shadows) */
   readonly shade = document.createElement('canvas');
-  /** snow lying on the ground: white, alpha by depth */
-  readonly snow = document.createElement('canvas');
   /** bumped whenever a new hour arrives or the layer is turned on or off */
   version = 0;
+  /** bumped whenever a new hour arrives: what is drawn snowy (isSnowy) may have changed */
+  snowVersion = 0;
   /** the player wants the clouds on the zoomed-out map */
   enabled = readEnabled();
   /** an hour has arrived */
@@ -93,8 +93,8 @@ export class WeatherLayer {
   private shadedKey = '';
 
   constructor() {
-    this.clouds.width = this.shade.width = this.snow.width = W;
-    this.clouds.height = this.shade.height = this.snow.height = H;
+    this.clouds.width = this.shade.width = W;
+    this.clouds.height = this.shade.height = H;
   }
 
   /** the zoomed-out clouds are showing: on and loaded */
@@ -148,6 +148,7 @@ export class WeatherLayer {
       this.paint();
       this.ready = true;
       this.version++;
+      this.snowVersion++;
       this.changed();
     } catch {
       /* no weather: the map just stays clear */
@@ -157,12 +158,9 @@ export class WeatherLayer {
   private paint(): void {
     const d = this.data!;
     const cg = this.clouds.getContext('2d')!,
-      sg = this.shade.getContext('2d')!,
-      ng = this.snow.getContext('2d')!;
+      sg = this.shade.getContext('2d')!;
     const ci = cg.createImageData(W, H),
-      si = sg.createImageData(W, H),
-      ni = ng.createImageData(W, H);
-    const gd = this.ground;
+      si = sg.createImageData(W, H);
     for (let i = 0; i < W * H * 4; i += 4) {
       const cover = d[i] / 255,
         p = (d[i + 1] & 0xfe) / 248;
@@ -173,16 +171,37 @@ export class WeatherLayer {
       ci.data[i + 2] = grey + p * 12; // rain clouds a touch blue
       ci.data[i + 3] = a * 255;
       si.data[i + 3] = Math.min(0.3, p * 0.3) * 255;
-      // snow lying: a dusting shows, full white from about 15 cm
-      const cm = gd ? gd[i] : 0;
-      ni.data[i] = 246;
-      ni.data[i + 1] = 249;
-      ni.data[i + 2] = 255;
-      ni.data[i + 3] = snowCover(cm / 100) * 0.85 * 255;
     }
     cg.putImageData(ci, 0, 0);
     sg.putImageData(si, 0, 0);
-    ng.putImageData(ni, 0, 0);
+  }
+
+  /** Snow lying at a tile (m), bilinear between the grid's points: like at(x, y).snowDepth, without the allocation. */
+  snowDepthAt(tx: number, ty: number): number {
+    if (OVERRIDE) return OVERRIDE.snowDepth;
+    const d = this.ground;
+    if (!d) return 0;
+    const fx = (tx / WORLD_W) * W - 0.5,
+      fy = Math.min(H - 1, Math.max(0, (ty / WORLD_H) * H - 0.5));
+    const x0 = Math.floor(fx),
+      y0 = Math.floor(fy),
+      ax = fx - x0,
+      ay = fy - y0;
+    const xa = (x0 + W) % W,
+      xb = (x0 + 1 + W) % W,
+      ra = y0 * W,
+      rb = Math.min(H - 1, y0 + 1) * W;
+    return ((d[(ra + xa) * 4] * (1 - ax) + d[(ra + xb) * 4] * ax) * (1 - ay) + (d[(rb + xa) * 4] * (1 - ax) + d[(rb + xb) * 4] * ax) * ay) / 100;
+  }
+
+  /**
+   * Is the ground at a tile drawn snowy? From 2.5 cm everywhere; a thinner dusting in patches (a noise field a few
+   * tiles across, so it lies in drifts rather than in single tiles).
+   */
+  isSnowy(tx: number, ty: number): boolean {
+    const depth = this.snowDepthAt(tx, ty);
+    if (depth <= 0.005) return false;
+    return depth >= 0.025 || (depth - 0.005) / 0.02 >= snowPatch(tx, ty);
   }
 
   /** The clouds with the night shade on them (only where there is cloud), to draw over the city lights. */
@@ -529,8 +548,20 @@ export class WeatherOverlay {
   }
 }
 
-/** How white snow of this depth (m) makes the ground, 0..1: a dusting shows, fully white from about 15 cm. */
-export const snowCover = (depth: number): number => (depth <= 0.005 ? 0 : Math.min(1, 0.25 + (depth / 0.15) * 0.75));
+/** How much of a thin dusting (0..1) a tile needs to be snowy, 0.15..0.95: smooth value noise, 6 tiles a cell. */
+function snowPatch(tx: number, ty: number): number {
+  const fx = tx / 6,
+    fy = ty / 6,
+    x0 = Math.floor(fx),
+    y0 = Math.floor(fy),
+    ax = fx - x0,
+    ay = fy - y0;
+  const h = (x: number, y: number): number => ((((x * 73856093) ^ (y * 19349663)) >>> 0) % 1000) / 1000;
+  const sx = ax * ax * (3 - 2 * ax),
+    sy = ay * ay * (3 - 2 * ay);
+  const v = (h(x0, y0) * (1 - sx) + h(x0 + 1, y0) * sx) * (1 - sy) + (h(x0, y0 + 1) * (1 - sx) + h(x0 + 1, y0 + 1) * sx) * sy;
+  return 0.15 + v * 0.8;
+}
 
 /** How strong the shadows are, 0..1: none under a nearly clear sky, full from a fifth of the sky covered (how much
  *  of the ground they cover is the cover itself, see drawShadows). */

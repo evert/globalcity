@@ -2,7 +2,39 @@
 // screen are fetched, at the level whose pixels are about one screen pixel, so the work per frame and the data
 // per visit stay the same however many cities there are. Images are decoded off the main thread
 // (createImageBitmap) and kept in a small LRU; a region that isn't loaded yet is drawn from a coarser level.
-import { WORLD_W, WORLD_H, MAP_REGION, mapLevels, mapL0Cols, mapRegionGrid, mapRegionSize, mapRegionVersion, type MapManifest } from '@globalcity/shared';
+import {
+  WORLD_W,
+  WORLD_H,
+  MAP_REGION,
+  MAP_PALETTE,
+  MAP_TERRAIN_BASE,
+  BIOME_COUNT,
+  Biome,
+  mapLevels,
+  mapL0Cols,
+  mapRegionGrid,
+  mapRegionSize,
+  mapRegionVersion,
+  type MapManifest,
+} from '@globalcity/shared';
+
+/** Where snow lies (the real weather, weather.ts): the day map draws snowy ground there. */
+export interface SnowSource {
+  /** bumped whenever where it is snowy may have changed */
+  snowVersion: number;
+  isSnowy(tx: number, ty: number): boolean;
+}
+/** Ground and tree colours of the day palette (packed RGB) -> the same in the snowy biome (boreal: snowy ground,
+ *  snow-laden forest, which reads dark green from afar). Ice sheets and snowy ground stay as they are. */
+const SNOWY: Map<number, number> = (() => {
+  const m = new Map<number, number>();
+  const pack = (c: readonly number[]): number => (c[0] << 16) | (c[1] << 8) | c[2];
+  for (let b = 0; b < BIOME_COUNT; b++) {
+    if (b === Biome.Boreal || b === Biome.Snow) continue;
+    for (let k = 0; k < 4; k++) m.set(pack(MAP_PALETTE[MAP_TERRAIN_BASE + b * 4 + k]), pack(MAP_PALETTE[MAP_TERRAIN_BASE + Biome.Boreal * 4 + k]));
+  }
+  return m;
+})();
 
 export type MapKind = 'day' | 'lights';
 const MANIFEST_MS = 30_000;
@@ -13,6 +45,9 @@ interface Entry {
   img: ImageBitmap;
   ver: number;
   lastUse: number;
+  /** the image with snowy ground where it snows (null: none here), for snow version snowVer */
+  snowy?: HTMLCanvasElement | null;
+  snowVer?: number;
 }
 
 /** Maps world tile coordinates to device pixels on the canvas being drawn. */
@@ -36,7 +71,48 @@ export class MapTileLayer {
   /** the whole world at the top level (256 x 128), once loaded: the corner minimap */
   onWorldImage: (img: ImageBitmap) => void = () => {};
 
+  /** where snow lies: the day map shows snowy ground there */
+  snow: SnowSource | null = null;
+
   constructor(private readonly base = '/map') {}
+
+  /** A day image as it is drawn: with snowy ground where the snow lies (worked out once per region per hour). */
+  private withSnow(e: Entry, level: number, rx: number, ry: number): ImageBitmap | HTMLCanvasElement {
+    const snow = this.snow;
+    if (!snow) return e.img;
+    if (e.snowVer !== snow.snowVersion) {
+      e.snowVer = snow.snowVersion;
+      e.snowy = null;
+      const w = e.img.width,
+        h = e.img.height,
+        span = MAP_REGION << level,
+        step = 1 << level;
+      const c = document.createElement('canvas');
+      c.width = w;
+      c.height = h;
+      const g = c.getContext('2d', { willReadFrequently: true })!;
+      g.drawImage(e.img, 0, 0);
+      const im = g.getImageData(0, 0, w, h),
+        d = im.data;
+      let n = 0;
+      for (let y = 0, o = 0; y < h; y++) {
+        const ty = ry * span + y * step + step / 2;
+        for (let x = 0; x < w; x++, o += 4) {
+          const to = SNOWY.get((d[o] << 16) | (d[o + 1] << 8) | d[o + 2]);
+          if (to === undefined || !snow.isSnowy(rx * span + x * step + step / 2, ty)) continue;
+          d[o] = to >> 16;
+          d[o + 1] = (to >> 8) & 255;
+          d[o + 2] = to & 255;
+          n++;
+        }
+      }
+      if (n) {
+        g.putImageData(im, 0, 0);
+        e.snowy = c;
+      }
+    }
+    return e.snowy ?? e.img;
+  }
 
   get ready(): boolean {
     return this.manifest !== null;
@@ -168,7 +244,8 @@ export class MapTileLayer {
           dh = view.y(wy1) - dy0;
         const img = this.want(kind, level, rx, ry);
         if (img) {
-          g.drawImage(img, 0, 0, w, h, dx0, dy0, dw, dh);
+          const e = this.bitmaps.get(`${kind}/${level}/${rx}/${ry}`)!;
+          g.drawImage(kind === 'day' ? this.withSnow(e, level, rx, ry) : img, 0, 0, w, h, dx0, dy0, dw, dh);
           continue;
         }
         missing++;
@@ -183,7 +260,7 @@ export class MapTileLayer {
             sy = (wy0 - ay * aspan) >> L;
           const sw = Math.max(1, (w << level) >> L),
             sh = Math.max(1, (h << level) >> L);
-          g.drawImage(e.img, sx, sy, sw, sh, dx0, dy0, dw, dh);
+          g.drawImage(kind === 'day' ? this.withSnow(e, L, ax, ay) : e.img, sx, sy, sw, sh, dx0, dy0, dw, dh);
           break;
         }
       }
