@@ -163,10 +163,10 @@ export class GlobeView {
         c.height = h;
       }
     const view = { x: (tx: number) => (tx / WORLD_W) * w, y: (ty: number) => (ty / WORLD_H) * h };
-    const dg = this.dayCanvas.getContext('2d')!;
+    const dg = this.dayCanvas.getContext('2d', { willReadFrequently: true })!;
     dg.imageSmoothingEnabled = false;
     this.tiles.draw(dg, 'day', level, view, 0, 0, w, h);
-    const lg = this.lightsCanvas.getContext('2d')!;
+    const lg = this.lightsCanvas.getContext('2d', { willReadFrequently: true })!;
     lg.clearRect(0, 0, w, h);
     lg.imageSmoothingEnabled = false;
     this.tiles.draw(lg, 'lights', level, view, 0, 0, w, h);
@@ -227,10 +227,16 @@ export class GlobeView {
     return true;
   }
 
-  private upload(gl: WebGL2RenderingContext, t: WebGLTexture, src: TexImageSource): void {
+  /**
+   * Upload a canvas as a texture, by its pixels: handing WebGL the canvas itself comes out with red and blue swapped
+   * on some phone GPUs (oceans brown, deserts blue), while the bytes of getImageData are always in RGBA order.
+   */
+  private upload(gl: WebGL2RenderingContext, t: WebGLTexture, src: HTMLCanvasElement): void {
+    const img = src.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, src.width, src.height);
     gl.bindTexture(gl.TEXTURE_2D, t);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, src.width, src.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, img.data);
   }
 
   // ---------- drawing ----------
