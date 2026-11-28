@@ -1060,7 +1060,7 @@ export class Renderer extends Emitter<RendererEvents> {
         this.invalidate();
       }, customAnimMs);
     }
-    // 1a. weather: the sky dims under cloud and rain (cloud shadows and what falls are drawn over everything, see WeatherOverlay)
+    // 1a. weather: the city dims where it rains (cloud shadows and what falls are drawn over everything, see WeatherOverlay)
     if (this.weather.ready) {
       g.imageSmoothingEnabled = true;
       this.drawWorldImage(g, this.weather.shade, this.weather.shade.width, this.weather.shade.height, 0, 0, W, H);

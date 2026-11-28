@@ -2,8 +2,8 @@
 // whose red channel is cloud cover, green the rain or snow rate with its lowest bit set where it is snow, blue the
 // air temperature).
 //   zoomed out  clouds drift over the world map, darker where it rains, over the city lights (shaded by the night)
-//   zoomed in   the sky dims under cloud; by day broken cloud casts drifting shadows; rain or snow falls across
-//               the screen where the camera is
+//   zoomed in   by day clouds cast drifting shadows, as much of the ground as the sky is covered; the city dims
+//               where it rains; rain or snow falls across the screen where the camera is
 // Zoomed in it is always on. The zoomed-out clouds are off until the player turns them on (the Weather button);
 // that choice is remembered. `?weather=rain|snow|storm|broken|clear` overrides what falls at the camera, to look at the effect.
 import { WORLD_H, WORLD_W } from '@globalcity/shared';
@@ -58,7 +58,7 @@ function readEnabled(): boolean {
 export class WeatherLayer {
   /** the zoomed-out map's clouds: white to rain-grey, alpha by cover */
   readonly clouds = document.createElement('canvas');
-  /** the zoomed-in view's overcast: a dark veil by cover and rain */
+  /** the zoomed-in view's rain gloom: a dark veil where it rains (the clouds themselves are the shadows) */
   readonly shade = document.createElement('canvas');
   /** bumped whenever a new hour arrives or the layer is turned on or off */
   version = 0;
@@ -157,7 +157,7 @@ export class WeatherLayer {
       ci.data[i + 1] = grey;
       ci.data[i + 2] = grey + p * 12; // rain clouds a touch blue
       ci.data[i + 3] = a * 255;
-      si.data[i + 3] = Math.min(0.4, cover * 0.16 + p * 0.25) * 255;
+      si.data[i + 3] = Math.min(0.3, p * 0.3) * 255;
     }
     cg.putImageData(ci, 0, 0);
     sg.putImageData(si, 0, 0);
@@ -283,8 +283,8 @@ export interface SkyView {
 /**
  * The weather over the zoomed-in view, on a canvas of its own over the map (animated only while there is something
  * to show, so the map itself is not redrawn every frame for it):
- *   cloud shadows  by day under broken cloud, drifting across the city; as much of the ground in shadow as the sky
- *                  is covered (overcast skies cast no shadows: the map's overcast shade covers that)
+ *   cloud shadows  by day, drifting across the city: as much of the ground in shadow as the sky is covered where it
+ *                  is, from scattered patches under a few clouds to nearly all of it under an overcast sky
  *   rain or snow   falling across the screen
  * From the weather at the camera.
  */
@@ -323,7 +323,7 @@ export class WeatherOverlay {
     const { x, y } = this.view.cam;
     const w = this.weather.at(x, y);
     const day = 1 - this.view.night.levelAt(90 - (y / WORLD_H) * 180, (x / WORLD_W) * 360 - 180);
-    // shadows anywhere on screen: broken cloud at the centre, a corner or an edge
+    // shadows anywhere on screen: cloud at the centre, a corner or an edge
     let shadows = false;
     if (day > 0.03 && this.weather.ready) {
       const half = (Math.max(innerWidth, innerHeight) / this.view.tilePx()) * 0.75;
@@ -383,7 +383,7 @@ export class WeatherOverlay {
 
   /**
    * Cloud shadows over the screen. Each point looks up the cloud cover where it is (so shadows thin out towards clear
-   * sky and fade into an overcast one, and panning never switches them all at once) and is in shadow where the
+   * sky and close up under an overcast one, and panning never switches them all at once) and is in shadow where the
    * drifting noise field, anchored to the map, rises above the level that leaves that share of the ground shaded.
    */
   private drawShadows(day: number, now: number, dpr: number, cw: number, ch: number): void {
@@ -485,8 +485,9 @@ export class WeatherOverlay {
   }
 }
 
-/** How much shadow a sky casts, 0..1: broken cloud does; a clear or an overcast sky doesn't. */
-const broken = (cover: number): number => smooth(0.08, 0.2, cover) * (1 - smooth(0.82, 0.97, cover));
+/** How strong the shadows are, 0..1: none under a nearly clear sky, full from a fifth of the sky covered (how much
+ *  of the ground they cover is the cover itself, see drawShadows). */
+const broken = (cover: number): number => smooth(0.08, 0.2, cover);
 
 const smooth = (a: number, b: number, v: number): number => {
   const t = Math.min(1, Math.max(0, (v - a) / (b - a)));
