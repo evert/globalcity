@@ -223,7 +223,7 @@ async function boot(): Promise<void> {
   }
 
   // expose for debugging in the console
-  (window as unknown as { gc: unknown }).gc = { state, map, net, renderer, actions, ui };
+  (window as unknown as { gc: unknown }).gc = { state, map, net, renderer, actions, ui, globe };
 }
 
 // Offline fallback page (and what makes the game installable as an Android app); not during self-tests.

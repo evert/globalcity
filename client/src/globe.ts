@@ -1,5 +1,5 @@
-// The world as a 3D globe (WebGL): the zoomed-out map's own images wrapped around a sphere, lit by the real sun
-// (day and night from the actual time), city lights on the night side, and the real clouds when they are on. Drag to
+// The world as a 3D globe (WebGL): the zoomed-out map's own images wrapped around a sphere, in the flat map's colours,
+// with the real night (from the actual time), city lights on the night side, and the real clouds when they are on. Drag to
 // turn it, scroll or pinch to zoom; zooming in far enough, or double-clicking a spot, hands over to the flat map there.
 // One full-screen quad: each pixel works out where its ray meets the sphere, so there is no mesh to build.
 import { WORLD_H, WORLD_W, TILE_PX, mapLevels, subsolarPoint } from '@globalcity/shared';
@@ -7,8 +7,8 @@ import { MapTileLayer } from './maptiles.ts';
 import { sunNow } from './night.ts';
 import type { WeatherLayer } from './weather.ts';
 
-/** The map texture: the world at this many pixels across (or the world's own width when smaller). */
-const TEX_W = 4096;
+/** The map texture is never wider than this (map images to fetch and to keep: 4096 is 128 of them on the Earth). */
+const MAX_TEX_W = 4096;
 /** Globe radius as a share of the smaller screen side when it opens. */
 const START_RADIUS = 0.42;
 /** Zoomed in past this radius (in screen sides), the globe hands over to the flat map. */
@@ -30,12 +30,8 @@ uniform float uClouds_on;
 out vec4 outColor;
 const float PI = 3.14159265359;
 
-vec4 sampleSeamless(sampler2D t, float lon, float v) {
-  // two parameterisations of longitude, so the date line seam doesn't pick the smallest mipmap
-  vec2 a = vec2(fract(lon / (2.0 * PI) + 0.5), v), b = vec2(fract(lon / (2.0 * PI)), v);
-  vec2 dax = dFdx(a), day = dFdy(a), dbx = dFdx(b), dby = dFdy(b);
-  bool useB = abs(dax.x) + abs(day.x) > abs(dbx.x) + abs(dby.x);
-  return useB ? textureGrad(t, vec2(fract(b.x + 0.5), v), dbx, dby) : textureGrad(t, a, dax, day);
+vec4 sampleAt(sampler2D t, float lon, float v) {
+  return texture(t, vec2(fract(lon / (2.0 * PI) + 0.5), v));
 }
 
 void main() {
@@ -55,23 +51,23 @@ void main() {
   float lat = asin(clamp(n.y, -1.0, 1.0));
   float lon = atan(n.x, n.z);
   float v = 0.5 - lat / PI;
-  vec3 col = sampleSeamless(uDay, lon, v).rgb;
-  float sun = dot(n, uSun);
-  float day = smoothstep(-0.08, 0.12, sun);
-  float lambert = 0.55 + 0.45 * clamp(sun * 1.4, 0.0, 1.0);
-  vec3 lit = col * lambert;
-  vec3 night = col * vec3(0.05, 0.07, 0.14);
-  vec4 lights = sampleSeamless(uLights, lon, v);
-  night += lights.rgb * lights.a * 0.9;
-  col = mix(night, lit, day);
+  vec3 col = sampleAt(uDay, lon, v).rgb;
+  // the same colours as the flat map (night.ts, renderer.ts): no extra daylight shading on art that is already
+  // coloured, the night shade towards dark blue at 60%, city lights at 80% where it's dark, then the clouds, shaded
+  // by the night themselves
+  float elev = degrees(asin(clamp(dot(n, uSun), -1.0, 1.0)));
+  float t = clamp((2.0 - elev) / 12.0, 0.0, 1.0);
+  float night = t * t * (3.0 - 2.0 * t);
+  vec3 nightRGB = vec3(6.0, 10.0, 34.0) / 255.0;
+  col = mix(col, nightRGB, night * 0.6);
+  vec4 lights = sampleAt(uLights, lon, v);
+  col = mix(col, lights.rgb, min(1.0, night * 2.5) * lights.a * 0.8);
   if (uClouds_on > 0.5) {
-    vec4 c = sampleSeamless(uClouds, lon, v);
-    vec3 cloud = c.rgb * mix(0.06, 1.0, day);
-    col = mix(col, cloud, c.a);
+    vec4 c = sampleAt(uClouds, lon, v);
+    col = mix(col, mix(c.rgb, nightRGB, night * 0.6), c.a);
   }
-  // limb: a little atmosphere haze towards the edge, brighter on the day side
-  float rim = pow(1.0 - z, 3.0);
-  col += vec3(0.25, 0.45, 0.9) * rim * (0.15 + 0.6 * day);
+  // a faint haze right at the edge on the day side
+  col += vec3(0.25, 0.45, 0.9) * pow(1.0 - z, 4.0) * 0.3 * (1.0 - night);
   outColor = vec4(col, 1.0);
 }`;
 
@@ -143,15 +139,24 @@ export class GlobeView {
   }
 
   // ---------- textures ----------
+  /**
+   * The map level to wrap around the globe: like the flat map, the server's own level whose pixels are about one
+   * device pixel at the globe's size (its cities stay their own crisp pixels instead of being averaged into mud).
+   */
   private texSize(): { w: number; h: number; level: number } {
-    const w = Math.min(TEX_W, WORLD_W);
-    const level = Math.min(mapLevels() - 1, Math.max(0, Math.round(Math.log2(WORLD_W / w))));
+    const dpr = Math.min(2, devicePixelRatio || 1);
+    const around = 2 * Math.PI * this.radius * dpr; // the globe's circumference in device pixels
+    const finest = Math.ceil(Math.log2(WORLD_W / Math.min(MAX_TEX_W, WORLD_W)));
+    const level = Math.min(mapLevels() - 1, Math.max(finest, 0, Math.round(Math.log2(WORLD_W / around))));
     return { w: WORLD_W >> level, h: WORLD_H >> level, level };
   }
+  private composedLevel = -1;
 
   /** Draw the map images into the texture canvases (missing regions come from coarser levels meanwhile). */
   private compose(): void {
     const { w, h, level } = this.texSize();
+    this.composedLevel = level;
+    this.texVersion = -1; // upload again
     for (const c of [this.dayCanvas, this.lightsCanvas])
       if (c.width !== w || c.height !== h) {
         c.width = w;
@@ -207,17 +212,18 @@ export class GlobeView {
     const loc = gl.getAttribLocation(prog, 'aPos');
     gl.enableVertexAttribArray(loc);
     gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-    const mk = (): WebGLTexture => {
+    const mk = (filter: number): WebGLTexture => {
       const t = gl.createTexture()!;
       gl.bindTexture(gl.TEXTURE_2D, t);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
       return t;
     };
-    this.tex = { day: mk(), lights: mk(), clouds: mk() };
+    // the map's pixels stay crisp, as on the flat map; the clouds are smooth
+    this.tex = { day: mk(gl.NEAREST), lights: mk(gl.NEAREST), clouds: mk(gl.LINEAR) };
     return true;
   }
 
@@ -225,7 +231,6 @@ export class GlobeView {
     gl.bindTexture(gl.TEXTURE_2D, t);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
-    gl.generateMipmap(gl.TEXTURE_2D);
   }
 
   // ---------- drawing ----------
@@ -251,6 +256,7 @@ export class GlobeView {
       this.canvas.height = H;
     }
     const tex = this.tex!;
+    if (this.texSize().level !== this.composedLevel) this.compose();
     if (this.texVersion !== this.tiles.version) {
       this.texVersion = this.tiles.version;
       this.upload(gl, tex.day, this.dayCanvas);
