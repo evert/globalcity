@@ -1131,6 +1131,10 @@ a {
 #overlays .ov-body.hidden {
   display: none;
 }
+#overlays .ov-row {
+  display: flex;
+  gap: 4px;
+}
 #overlays .ov-toggle {
   font-size: 12px;
   padding: 3px 8px;

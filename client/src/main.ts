@@ -15,6 +15,7 @@ import { UI } from './ui.ts';
 import { installLongPressTooltips } from './longpress.ts';
 import { loadSprites, SpriteEngine } from './sprites.ts';
 import { WeatherOverlay } from './weather.ts';
+import { GlobeView } from './globe.ts';
 
 /** Shareable view links: #x=4207&y=855&z=1 (tile coords of the view centre + zoom). */
 function applyHashCamera(renderer: Renderer): boolean {
@@ -96,6 +97,37 @@ async function boot(): Promise<void> {
   if (!applyHashCamera(renderer)) renderer.showWorld();
   const actions = new Actions(state, net, renderer);
   const ui = new UI(state, net, renderer, actions, sheet, minimap);
+  // the globe: opened from the zoomed-out map; zooming in on it (or double-clicking a spot) comes back to the flat map
+  const globe: GlobeView = new GlobeView(
+    canvas,
+    {
+      showFlat: (tx, ty, zoom) => {
+        globe.hide();
+        ui.setGlobeShown(false);
+        renderer.setCamera(tx, ty, zoom);
+      },
+      cssSize: () => ({ w: innerWidth, h: innerHeight }),
+    },
+    renderer.weather,
+  );
+  if (globe.supported) {
+    ui.onGlobeToggle = () => {
+      if (globe.isShown) {
+        globe.hide();
+        return false;
+      }
+      globe.show(renderer.cam.x, renderer.cam.y);
+      return true;
+    };
+    ui.setGlobeShown(false);
+    // anything that flies the flat map into a city (Go to my city, a link) closes the globe
+    renderer.on('camera', () => {
+      if (globe.isShown && renderer.isTileMode()) {
+        globe.hide();
+        ui.setGlobeShown(false);
+      }
+    });
+  }
   installLongPressTooltips();
   const input = new Input(renderer, state, actions, {
     onQueryClick: (x, y) => ui.queryPendingAt(x, y),

@@ -1494,6 +1494,9 @@ export class UI {
   private overlayToggle!: HTMLButtonElement;
   private overlayBody!: HTMLElement;
   private weatherBtn!: HTMLButtonElement;
+  private globeBtn!: HTMLButtonElement;
+  /** switch between the globe and the flat map (set by main.ts); returns whether the globe is now showing */
+  onGlobeToggle: (() => boolean) | null = null;
   private overlayTileMode: boolean | null = null;
   private buildOverlayBar(): void {
     const btns = OVERLAY_MODES.map((m) => {
@@ -1543,7 +1546,15 @@ export class UI {
       this.renderer.weather.setEnabled(!this.renderer.weather.enabled);
       this.refreshWeatherBtn();
     };
-    this.overlayBar = el('div', { id: 'overlays', class: 'panel' }, this.weatherBtn, this.overlayToggle, this.overlayBody);
+    this.globeBtn = el('button', { class: 'btn ov-toggle hidden', type: 'button', title: 'See the world as a globe' }, '🌐 Globe');
+    this.globeBtn.onclick = () => this.setGlobeShown(this.onGlobeToggle?.() ?? false);
+    this.overlayBar = el(
+      'div',
+      { id: 'overlays', class: 'panel' },
+      el('div', { class: 'ov-row' }, this.globeBtn, this.weatherBtn),
+      this.overlayToggle,
+      this.overlayBody,
+    );
     this.root.append(this.overlayBar);
     let open = false;
     try {
@@ -1568,9 +1579,18 @@ export class UI {
     if (tile === this.overlayTileMode) return;
     this.overlayTileMode = tile;
     this.weatherBtn.classList.toggle('hidden', tile);
+    this.globeBtn.classList.toggle('hidden', tile || !this.onGlobeToggle);
     this.overlayToggle.classList.toggle('hidden', !tile);
     this.overlayBody.classList.toggle('hidden', !tile || this.overlayToggle.getAttribute('aria-expanded') !== 'true');
     this.overlayBar.classList.toggle('open', tile && this.overlayToggle.getAttribute('aria-expanded') === 'true');
+  }
+  /** The globe opened or closed (from its button, or by zooming into the flat map). */
+  setGlobeShown(on: boolean): void {
+    this.globeBtn.textContent = on ? '🗺 Flat map' : '🌐 Globe';
+    this.globeBtn.classList.toggle('active', on);
+    this.globeBtn.title = on ? 'Back to the flat map' : 'See the world as a globe';
+    this.overlayTileMode = null;
+    this.refreshOverlayMode();
   }
   private refreshWeatherBtn(): void {
     const on = this.renderer.weather.enabled;
