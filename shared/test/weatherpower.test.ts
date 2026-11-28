@@ -1,6 +1,16 @@
 // Power from the weather (weatherpower.ts): the shapes the game relies on.
 import { describe, it, expect } from 'vitest';
-import { windShare, solarShare, WIND_PEAK, WIND_TYPICAL_SHARE, OFFSHORE_PEAK, OFFSHORE_TYPICAL_SHARE, WIND_POWER, OFFSHORE_POWER } from '../src/index.ts';
+import {
+  snowOnRoads,
+  windShare,
+  solarShare,
+  WIND_PEAK,
+  WIND_TYPICAL_SHARE,
+  OFFSHORE_PEAK,
+  OFFSHORE_TYPICAL_SHARE,
+  WIND_POWER,
+  OFFSHORE_POWER,
+} from '../src/index.ts';
 
 describe('wind', () => {
   it('nothing in a calm, more as it blows, capped at 60%, off in a storm', () => {
@@ -30,5 +40,15 @@ describe('solar', () => {
     expect(solarShare(30, 0)).toBeLessThan(solarShare(60, 0));
     expect(solarShare(90, 1)).toBeCloseTo(0.25);
     expect(solarShare(90, 0.5)).toBeGreaterThan(0.9); // a half cloudy sky barely dims it
+  });
+});
+
+describe('snow on the roads', () => {
+  it('lying snow counts fully from 10 cm; falling snow at least half', () => {
+    expect(snowOnRoads(0, false)).toBe(0);
+    expect(snowOnRoads(0.05, false)).toBeCloseTo(0.5);
+    expect(snowOnRoads(0.5, false)).toBe(1);
+    expect(snowOnRoads(0, true)).toBe(0.5);
+    expect(snowOnRoads(0.08, true)).toBeCloseTo(0.8);
   });
 });

@@ -1082,10 +1082,12 @@ export class UI {
     // traffic
     const traffic = Math.max(0, Math.min(1, s?.traffic ?? 0));
     const word = trafficLabel(traffic);
-    this.trafficWord.textContent = word ? `${word} traffic` : '';
+    const snowy = (s?.snowyRoads ?? 0) > 0;
+    this.trafficWord.textContent = word ? `${snowy ? '❄ ' : ''}${word} traffic` : '';
     this.trafficFill.style.width = `${Math.round(traffic * 100)}%`;
     this.trafficFill.className = `fill ${word}`;
     this.trafficText.classList.toggle('hidden', !word);
+    this.trafficText.title = snowy ? `${TRAFFIC_HELP} Snow on the roads (real weather) slows every drive, so the traffic is heavier.` : TRAFFIC_HELP;
   }
 
   /** Second line of the power widget: what we buy/sell over the borders and what it costs/earns. */
@@ -2328,7 +2330,13 @@ export class UI {
     const c = Math.round(w.temp);
     const at = wx.validAt;
     const when = at ? new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'now';
-    return [el('div', { class: 'qrow', text: `${sky}, ${c} °C`, title: `Real weather here at ${when}: NOAA GFS forecast` })];
+    const kmh = Math.round(Math.hypot(w.windU, w.windV) * 3.6);
+    const cm = Math.round(w.snowDepth * 100);
+    const extra = [cm >= 1 ? `${cm} cm of snow on the ground` : '', kmh >= 5 ? `wind ${kmh} km/h` : ''].filter(Boolean).join(', ');
+    return [
+      el('div', { class: 'qrow', text: `${sky}, ${c} °C`, title: `Real weather here at ${when}: NOAA GFS forecast` }),
+      ...(extra ? [el('div', { class: 'qrow muted', text: extra })] : []),
+    ];
   }
 
   /** Where a plane or ship is going, where from, and what it carries (cargo is cosmetic, the same for everyone). */

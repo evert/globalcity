@@ -1,6 +1,8 @@
-// Real weather over the map (server/src/weather.ts: NOAA's GFS forecast for the current hour, as a 0.5-degree image
-// whose red channel is cloud cover, green the rain or snow rate with its lowest bit set where it is snow, blue the
-// air temperature).
+// Real weather over the map (server/src/weather.ts: NOAA's GFS forecast for the current hour, as a 0.5-degree image:
+// the sky above, red cloud cover, green the rain or snow rate with its lowest bit set where it is snow, blue the air
+// temperature; the ground below, red the snow lying, green and blue the wind).
+//   snow        lies on the ground wherever it really does: white on the zoomed-out map and the globe, a snowy
+//               speckle over the city zoomed in
 //   zoomed out  clouds drift over the world map, darker where it rains, over the city lights (shaded by the night)
 //   zoomed in   by day clouds cast drifting shadows, as much of the ground as the sky is covered; the city dims
 //               where it rains; rain or snow falls across the screen where the camera is
@@ -22,6 +24,11 @@ export interface WeatherHere {
   snow: boolean;
   /** air temperature 2 m above the ground, degC (null without weather) */
   temp: number | null;
+  /** snow on the ground, m */
+  snowDepth: number;
+  /** wind 10 m above the ground, m/s towards the east and the north */
+  windU: number;
+  windV: number;
 }
 
 /** The rain rate in mm/h for a `precip` value. */
@@ -31,15 +38,15 @@ const OVERRIDE: WeatherHere | null = (() => {
   try {
     switch (new URLSearchParams(location.search).get('weather')) {
       case 'rain':
-        return { cloud: 1, precip: 0.5, snow: false, temp: 12 };
+        return { cloud: 1, precip: 0.5, snow: false, temp: 12, snowDepth: 0, windU: 4, windV: 0 };
       case 'storm':
-        return { cloud: 1, precip: 1, snow: false, temp: 18 };
+        return { cloud: 1, precip: 1, snow: false, temp: 18, snowDepth: 0, windU: 12, windV: -4 };
       case 'snow':
-        return { cloud: 1, precip: 0.6, snow: true, temp: -3 };
+        return { cloud: 1, precip: 0.6, snow: true, temp: -3, snowDepth: 0.2, windU: 3, windV: 1 };
       case 'broken':
-        return { cloud: 0.5, precip: 0, snow: false, temp: 22 };
+        return { cloud: 0.5, precip: 0, snow: false, temp: 22, snowDepth: 0, windU: 6, windV: 2 };
       case 'clear':
-        return { cloud: 0, precip: 0, snow: false, temp: 20 };
+        return { cloud: 0, precip: 0, snow: false, temp: 20, snowDepth: 0, windU: 2, windV: 0 };
     }
   } catch {
     /* no location (tests) */
@@ -60,6 +67,8 @@ export class WeatherLayer {
   readonly clouds = document.createElement('canvas');
   /** the zoomed-in view's rain gloom: a dark veil where it rains (the clouds themselves are the shadows) */
   readonly shade = document.createElement('canvas');
+  /** snow lying on the ground: white, alpha by depth */
+  readonly snow = document.createElement('canvas');
   /** bumped whenever a new hour arrives or the layer is turned on or off */
   version = 0;
   /** the player wants the clouds on the zoomed-out map */
@@ -77,13 +86,15 @@ export class WeatherLayer {
     for (const fn of this.listeners) fn();
   }
   private data: Uint8ClampedArray | null = null;
+  /** the image's ground half: snow depth, wind */
+  private ground: Uint8ClampedArray | null = null;
   private valid: number | null = null;
   private readonly shaded = document.createElement('canvas');
   private shadedKey = '';
 
   constructor() {
-    this.clouds.width = this.shade.width = W;
-    this.clouds.height = this.shade.height = H;
+    this.clouds.width = this.shade.width = this.snow.width = W;
+    this.clouds.height = this.shade.height = this.snow.height = H;
   }
 
   /** the zoomed-out clouds are showing: on and loaded */
@@ -128,10 +139,11 @@ export class WeatherLayer {
       await img.decode();
       const c = document.createElement('canvas');
       c.width = W;
-      c.height = H;
+      c.height = H * 2;
       const g = c.getContext('2d', { willReadFrequently: true })!;
-      g.drawImage(img, 0, 0, W, H);
+      g.drawImage(img, 0, 0, W, H * 2);
       this.data = g.getImageData(0, 0, W, H).data;
+      this.ground = img.naturalHeight >= H * 2 ? g.getImageData(0, H, W, H).data : null; // older servers: the sky only
       this.valid = valid;
       this.paint();
       this.ready = true;
@@ -145,9 +157,12 @@ export class WeatherLayer {
   private paint(): void {
     const d = this.data!;
     const cg = this.clouds.getContext('2d')!,
-      sg = this.shade.getContext('2d')!;
+      sg = this.shade.getContext('2d')!,
+      ng = this.snow.getContext('2d')!;
     const ci = cg.createImageData(W, H),
-      si = sg.createImageData(W, H);
+      si = sg.createImageData(W, H),
+      ni = ng.createImageData(W, H);
+    const gd = this.ground;
     for (let i = 0; i < W * H * 4; i += 4) {
       const cover = d[i] / 255,
         p = (d[i + 1] & 0xfe) / 248;
@@ -158,9 +173,16 @@ export class WeatherLayer {
       ci.data[i + 2] = grey + p * 12; // rain clouds a touch blue
       ci.data[i + 3] = a * 255;
       si.data[i + 3] = Math.min(0.3, p * 0.3) * 255;
+      // snow lying: a dusting shows, full white from about 15 cm
+      const cm = gd ? gd[i] : 0;
+      ni.data[i] = 246;
+      ni.data[i + 1] = 249;
+      ni.data[i + 2] = 255;
+      ni.data[i + 3] = snowCover(cm / 100) * 0.85 * 255;
     }
     cg.putImageData(ci, 0, 0);
     sg.putImageData(si, 0, 0);
+    ng.putImageData(ni, 0, 0);
   }
 
   /** The clouds with the night shade on them (only where there is cloud), to draw over the city lights. */
@@ -207,7 +229,7 @@ export class WeatherLayer {
   at(tx: number, ty: number): WeatherHere {
     if (OVERRIDE) return OVERRIDE;
     const d = this.data;
-    if (!d) return { cloud: 0, precip: 0, snow: false, temp: null };
+    if (!d) return { cloud: 0, precip: 0, snow: false, temp: null, snowDepth: 0, windU: 0, windV: 0 };
     const fx = (tx / WORLD_W) * W - 0.5,
       fy = Math.min(H - 1, Math.max(0, (ty / WORLD_H) * H - 0.5));
     const x0 = Math.floor(fx),
@@ -219,7 +241,21 @@ export class WeatherLayer {
     const lerp = (ch: number): number =>
       (at(x0, y0, ch) * (1 - ax) + at(x0 + 1, y0, ch) * ax) * (1 - ay) + (at(x0, y0 + 1, ch) * (1 - ax) + at(x0 + 1, y0 + 1, ch) * ax) * ay;
     const snow = px(Math.round(fx), Math.round(fy), 1) & 1; // the nearest point: a yes or no doesn't blend
-    return { cloud: lerp(0) / 255, precip: lerp(1) / 248, snow: snow === 1, temp: lerp(2) / 2 - 60 };
+    const gd = this.ground;
+    const g = (ch: number): number => {
+      if (!gd) return ch === 0 ? 0 : 128;
+      const q = (x: number, y: number): number => gd[(Math.min(H - 1, y) * W + ((x + W) % W)) * 4 + ch];
+      return (q(x0, y0) * (1 - ax) + q(x0 + 1, y0) * ax) * (1 - ay) + (q(x0, y0 + 1) * (1 - ax) + q(x0 + 1, y0 + 1) * ax) * ay;
+    };
+    return {
+      cloud: lerp(0) / 255,
+      precip: lerp(1) / 248,
+      snow: snow === 1,
+      temp: lerp(2) / 2 - 60,
+      snowDepth: g(0) / 100,
+      windU: g(1) / 4 - 32,
+      windV: g(2) / 4 - 32,
+    };
   }
 }
 
@@ -238,8 +274,8 @@ const SHADOW_TILES_PER_PX = 0.5;
 const SHADOW_STEP = 8;
 /** Darkest a cloud shadow gets (alpha), in full daylight. */
 const SHADOW_ALPHA = 0.3;
-/** Drift in tiles per second: west to east, a little south (the westerlies, sped up so it shows). */
-const DRIFT = { x: 0.45, y: 0.12 };
+/** Cloud shadows drift with the real wind at the camera, sped up so it shows: tiles per second per m/s. */
+const DRIFT_PER_MS = 0.06;
 
 /** Tileable fractal value noise, 0..1, NOISE x NOISE. */
 function cloudNoise(): Float32Array {
@@ -294,7 +330,8 @@ export class WeatherOverlay {
   private drops: Drop[] = [];
   private running = false;
   private last = 0;
-  private readonly t0 = performance.now();
+  /** how far the cloud shadows have drifted, tiles (with the wind at the camera, frame by frame) */
+  private drift = { x: 0, y: 0 };
   private readonly reduced = matchMedia('(prefers-reduced-motion: reduce)');
   private noise: Float32Array | null = null;
   /** noise value above which that share of the field is in shadow, per percent of cloud cover */
@@ -376,7 +413,9 @@ export class WeatherOverlay {
     }
     const dt = Math.min(0.1, (now - this.last) / 1000);
     this.last = now;
-    if (sky.shadows) this.drawShadows(sky.day, now, dpr, cw, ch);
+    this.drift.x += sky.w.windU * DRIFT_PER_MS * dt;
+    this.drift.y -= sky.w.windV * DRIFT_PER_MS * dt; // north is up the screen
+    if (sky.shadows) this.drawShadows(sky.day, dpr, cw, ch);
     if (sky.w.precip >= 0.15) this.drawPrecipitation(sky.w, dt, dpr, cw, ch);
     requestAnimationFrame((t) => this.frame(t));
   }
@@ -386,7 +425,7 @@ export class WeatherOverlay {
    * sky and close up under an overcast one, and panning never switches them all at once) and is in shadow where the
    * drifting noise field, anchored to the map, rises above the level that leaves that share of the ground shaded.
    */
-  private drawShadows(day: number, now: number, dpr: number, cw: number, ch: number): void {
+  private drawShadows(day: number, dpr: number, cw: number, ch: number): void {
     const noise = (this.noise ??= cloudNoise());
     const thresholds = (this.thresholds ??= (() => {
       const sorted = Float32Array.from(noise).sort();
@@ -405,13 +444,12 @@ export class WeatherOverlay {
       }
     }
     const px = this.lowImg.data;
-    const secs = (now - this.t0) / 1000;
     const perTile = this.view.tilePx() * dpr,
       { x: camX, y: camY } = this.view.cam;
     const maxA = SHADOW_ALPHA * day * 255;
     for (let j = 0; j < lh; j++) {
       const ty = camY + ((j + 0.5) * SHADOW_STEP - ch / 2) / perTile;
-      const v = (ty - DRIFT.y * secs) / SHADOW_TILES_PER_PX;
+      const v = (ty - this.drift.y) / SHADOW_TILES_PER_PX;
       const vj = Math.floor(v),
         fv = v - vj,
         r0 = (((vj % NOISE) + NOISE) % NOISE) * NOISE,
@@ -422,7 +460,7 @@ export class WeatherOverlay {
         const b = broken(cover);
         let a = 0;
         if (b > 0.01) {
-          const u = (tx - DRIFT.x * secs) / SHADOW_TILES_PER_PX;
+          const u = (tx - this.drift.x) / SHADOW_TILES_PER_PX;
           const ui = Math.floor(u),
             fu = u - ui,
             c0 = ((ui % NOISE) + NOISE) % NOISE,
@@ -443,6 +481,8 @@ export class WeatherOverlay {
 
   private drawPrecipitation(w: WeatherHere, dt: number, dpr: number, cw: number, ch: number): void {
     const g = this.g;
+    // rain leans with the wind (a 20 m/s wind: about 30 degrees), snow drifts with it
+    const slant = Math.max(-0.6, Math.min(0.6, w.windU / 20));
     // drops per screen: from a drizzle to a downpour, scaled with the screen's area
     const want = Math.round((w.snow ? 260 : 420) * w.precip * ((cw * ch) / (1600 * 1000 * dpr * dpr)) + 20);
     while (this.drops.length < want) this.drops.push(this.spawn(cw, ch, w.snow, true));
@@ -452,7 +492,9 @@ export class WeatherOverlay {
       for (const d of this.drops) {
         d.y += d.v * dt;
         d.ph += dt;
-        d.x += Math.sin(d.ph * 1.3) * 18 * dt * dpr;
+        d.x += (Math.sin(d.ph * 1.3) * 18 + w.windU * 6) * dt * dpr;
+        if (d.x < -40) d.x += cw + 80; // blown off one side: back in at the other
+        else if (d.x > cw + 40) d.x -= cw + 80;
         if (d.y > ch + 4) Object.assign(d, this.spawn(cw, ch, true, false));
         g.beginPath();
         g.arc(d.x, d.y, d.s, 0, Math.PI * 2);
@@ -464,10 +506,12 @@ export class WeatherOverlay {
       g.beginPath();
       for (const d of this.drops) {
         d.y += d.v * dt;
-        d.x -= d.v * 0.12 * dt;
+        d.x += d.v * slant * dt;
+        if (d.x < -40) d.x += cw + 80;
+        else if (d.x > cw + 40) d.x -= cw + 80;
         if (d.y > ch + 20) Object.assign(d, this.spawn(cw, ch, false, false));
         g.moveTo(d.x, d.y);
-        g.lineTo(d.x + d.s * 0.12, d.y - d.s);
+        g.lineTo(d.x - d.s * slant, d.y - d.s);
       }
       g.stroke();
     }
@@ -484,6 +528,9 @@ export class WeatherOverlay {
     };
   }
 }
+
+/** How white snow of this depth (m) makes the ground, 0..1: a dusting shows, fully white from about 15 cm. */
+export const snowCover = (depth: number): number => (depth <= 0.005 ? 0 : Math.min(1, 0.25 + (depth / 0.15) * 0.75));
 
 /** How strong the shadows are, 0..1: none under a nearly clear sky, full from a fifth of the sky covered (how much
  *  of the ground they cover is the cover itself, see drawShadows). */

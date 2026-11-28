@@ -1,5 +1,6 @@
-// Power from the weather: wind farms follow the real wind and solar farms the real sun and clouds, hour by hour
-// (server/src/weather.ts has the weather; the simulation asks for every plant each step). Coal and nuclear don't care.
+// The weather in the simulation (server/src/weather.ts has it; the simulation asks each step): wind farms follow the
+// real wind and solar farms the real sun and clouds, hour by hour (coal and nuclear don't care); snow on the roads
+// slows the traffic; heavy rain makes floods likelier.
 // When there is no weather (not fetched yet, or turned off) wind runs at a typical share and solar assumes a half
 // cloudy sky; solar still follows the sun, so it makes nothing at night either way.
 
@@ -14,6 +15,15 @@ export const OFFSHORE_TYPICAL_SHARE = 0.4;
 export const TYPICAL_CLOUD = 0.5;
 /** A solar farm's output averaged over a day and night at mid latitudes (for labels: about 30 MW). */
 export const SOLAR_TYPICAL_SHARE = 0.2;
+
+/** How snowy a place's roads are, 0..1: snow lying (full from 10 cm) or falling (at least half). */
+export function snowOnRoads(snowDepth: number, snowing: boolean): number {
+  return Math.max(Math.min(1, Math.max(0, snowDepth) / 0.1), snowing ? 0.5 : 0);
+}
+/** Snowy roads make drives this much slower at most: more cars on the road at once, so more traffic. */
+export const SNOW_TRAFFIC = 0.6;
+/** Rain this heavy (mm/h) makes a flood five times as likely in a city that can flood; lighter rain less so. */
+export const FLOOD_RAIN_MM_H = 8;
 
 /**
  * Share (0..1) of a wind farm's peak at a 10 m wind speed (m/s, averaged over a weather grid square). Turbine hubs,

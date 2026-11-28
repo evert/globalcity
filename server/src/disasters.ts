@@ -23,6 +23,7 @@ import {
   DISASTER_STEP_P,
   DISASTER_MIN_POP,
   hazardBit,
+  FLOOD_RAIN_MM_H,
   isWater,
   isTree,
   isWire,
@@ -59,6 +60,12 @@ const QUAKE_SHAKE_MS = 12_000;
 
 const rand = Math.random;
 const randInt = (n: number): number => Math.floor(rand() * n);
+/** A random index, each in proportion to its weight. */
+const pickWeighted = (weights: number[]): number => {
+  let r = rand() * weights.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < weights.length; i++) if ((r -= weights[i]) < 0) return i;
+  return weights.length - 1;
+};
 const rubble = (): number => (RUBBLE + randInt(4)) | BULLBIT;
 const floodTile = (): number => (FLOOD + randInt(4)) | BULLBIT;
 const isFlood = (v: number): boolean => {
@@ -88,6 +95,8 @@ interface Run {
 export interface DisasterHooks {
   ignite(x: number, y: number): boolean;
   isFrozen(id: string): boolean;
+  /** the real weather at a tile (heavy rain makes floods likelier), if the server has it */
+  weatherAt?(x: number, y: number): { rate: number } | null;
 }
 
 /** `playerId` '*': for everyone else playing (the stricken city's mayor gets their own message). */
@@ -134,6 +143,13 @@ export class Disasters {
     return t;
   }
 
+  /** How much likelier a flood is in city p right now: up to 5x in heavy rain (FLOOD_RAIN_MM_H) at its first plot. */
+  floodWeight(p: PlayerRecord): number {
+    const first = p.chunks[0] ? parseChunkKey(p.chunks[0]) : null;
+    const w = first ? this.hooks.weatherAt?.((first.cx + 0.5) * CHUNK, (first.cy + 0.5) * CHUNK) : null;
+    return 1 + 4 * Math.min(1, (w?.rate ?? 0) / FLOOD_RAIN_MM_H);
+  }
+
   /** Disasters possible somewhere in a city (HAZARD bits over its plots). */
   hazardsOf(p: PlayerRecord): number {
     let h = 0;
@@ -162,18 +178,22 @@ export class Disasters {
     // that can be struck (its mayor online, big enough, a hazard on its land, not struck in the last few hours),
     // picked at random
     if (random && now - this.lastStrike >= minGapMs() && rand() < stepP()) {
-      const candidates: { p: PlayerRecord; kinds: Disaster[] }[] = [];
+      // each possible disaster weighs 1, but a flood more while it is raining hard there (real weather); a city weighs
+      // the average of its disasters', so without weather every city is as likely as before
+      const candidates: { p: PlayerRecord; kinds: Disaster[]; weights: number[]; weight: number }[] = [];
       for (const p of online) {
         if (p.stats.population < DISASTER_MIN_POP || p.monument) continue;
         if (now - (p.lastDisaster ?? 0) < cityGapMs()) continue; // spared a while after the last one
         const h = this.hazardsOf(p);
         const kinds: Disaster[] = [];
         for (let d = 0; d < DISASTER_COUNT; d++) if (h & hazardBit(d)) kinds.push(d);
-        if (kinds.length) candidates.push({ p, kinds });
+        if (!kinds.length) continue;
+        const weights = kinds.map((k) => (k === Disaster.Flood ? this.floodWeight(p) : 1));
+        candidates.push({ p, kinds, weights, weight: weights.reduce((a, b) => a + b, 0) / weights.length });
       }
       if (candidates.length) {
-        const c = candidates[randInt(candidates.length)];
-        this.start(c.p, c.kinds[randInt(c.kinds.length)], now);
+        const c = candidates[pickWeighted(candidates.map((x) => x.weight))];
+        this.start(c.p, c.kinds[pickWeighted(c.weights)], now);
       }
     }
     if (moved || this.runs.length !== before) this.version++;

@@ -121,6 +121,7 @@ export interface PlayerStats {
   policeStations: number; // powered police stations
   specials: { stadium: number; seaport: number; airport: number }; // powered, counted for demand boosts
   traffic: number; // 0..1 average road density in the city (for the UI)
+  snowyRoads?: number; // 0..1 how snowy the city's roads are (real weather): drives are slower, traffic heavier
   // Milestones
   peakPop: number; // highest population reached (milestones are based on it)
   nextMilestone: number | null; // population needed for the next unlock (null when all are reached)

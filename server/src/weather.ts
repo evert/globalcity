@@ -11,8 +11,8 @@
 //            rain at all is at least 8); the lowest bit is set where it falls as snow
 //     blue   air temperature 2 m above the ground, (degC + 60) * 2: -60 to +67.5 degC in half degrees
 //   rows 360-719 (the ground)
-//     red    snow on the ground, cm (255 = 2.55 m or more)
-//     green  wind 10 m above the ground towards the east, (m/s + 32) * 4
+//     red    snow on the ground, cm (whole cm below 10, then 5 cm steps; 255 = 2.55 m or more)
+//     green  wind 10 m above the ground towards the east, (whole m/s + 32) * 4
 //     blue   ... towards the north, the same
 import type http from 'node:http';
 import { decodeGrib2, type GribField } from './grib.ts';
@@ -314,9 +314,10 @@ export function encodeGrid(g: WeatherGrid): Uint8Array {
     const mmh = g.rate[i];
     rgb[o + 1] = (mmh > 0 ? Math.max(STEP, q(Math.sqrt(Math.min(1, mmh / HEAVY_MM_H)) * 248, 248)) : 0) | g.snowing[i];
     rgb[o + 2] = byte((g.temp[i] + 60) * 2);
-    rgb[p] = byte(g.snowDepth[i] * 100);
-    rgb[p + 1] = byte((g.windU[i] + 32) * 4);
-    rgb[p + 2] = byte((g.windV[i] + 32) * 4);
+    const cm = g.snowDepth[i] * 100;
+    rgb[p] = byte(cm < 10 ? cm : Math.round(cm / 5) * 5); // whole cm while it's thin, 5 cm steps once the ground is white
+    rgb[p + 1] = byte(Math.round(g.windU[i] + 32) * 4); // whole m/s: plenty for drifting clouds, and it compresses
+    rgb[p + 2] = byte(Math.round(g.windV[i] + 32) * 4);
   }
   return rgb;
 }

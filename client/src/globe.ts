@@ -1,6 +1,7 @@
 // The world as a 3D globe (WebGL): the zoomed-out map's own images wrapped around a sphere, in the flat map's colours,
-// with the real night (from the actual time), city lights on the night side, and the real clouds when they are on. Drag to
-// turn it, scroll or pinch to zoom; zooming in far enough, or double-clicking a spot, hands over to the flat map there.
+// with the real snow on the ground and the real night (from the actual time), city lights on the night side, and the
+// real clouds when they are on. Drag to turn it, scroll or pinch to zoom; zooming in far enough, or double-clicking
+// a spot, hands over to the flat map there.
 // One full-screen quad: each pixel works out where its ray meets the sphere, so there is no mesh to build.
 import { WORLD_H, WORLD_W, TILE_PX, mapLevels, subsolarPoint } from '@globalcity/shared';
 import { MapTileLayer } from './maptiles.ts';
@@ -25,7 +26,7 @@ uniform vec2 uCentre;   // globe centre, device pixels
 uniform float uRadius;  // device pixels
 uniform mat3 uRot;      // view -> world
 uniform vec3 uSun;      // world, unit
-uniform sampler2D uDay, uLights, uClouds;
+uniform sampler2D uDay, uLights, uClouds, uSnow;
 uniform float uClouds_on;
 out vec4 outColor;
 const float PI = 3.14159265359;
@@ -52,6 +53,8 @@ void main() {
   float lon = atan(n.x, n.z);
   float v = 0.5 - lat / PI;
   vec3 col = sampleAt(uDay, lon, v).rgb;
+  vec4 snow = sampleAt(uSnow, lon, v); // snow lying (real weather)
+  col = mix(col, snow.rgb, snow.a);
   // the same colours as the flat map (night.ts, renderer.ts): no extra daylight shading on art that is already
   // coloured, the night shade towards dark blue at 60%, city lights at 80% where it's dark, then the clouds, shaded
   // by the night themselves
@@ -82,7 +85,7 @@ export class GlobeView {
   readonly canvas = document.createElement('canvas');
   private readonly gl: WebGL2RenderingContext | null;
   private prog: WebGLProgram | null = null;
-  private tex: { day: WebGLTexture; lights: WebGLTexture; clouds: WebGLTexture } | null = null;
+  private tex: { day: WebGLTexture; lights: WebGLTexture; clouds: WebGLTexture; snow: WebGLTexture } | null = null;
   private readonly tiles = new MapTileLayer();
   private readonly dayCanvas = document.createElement('canvas');
   private readonly lightsCanvas = document.createElement('canvas');
@@ -223,7 +226,7 @@ export class GlobeView {
       return t;
     };
     // the map's pixels stay crisp, as on the flat map; the clouds are smooth
-    this.tex = { day: mk(gl.NEAREST), lights: mk(gl.NEAREST), clouds: mk(gl.LINEAR) };
+    this.tex = { day: mk(gl.NEAREST), lights: mk(gl.NEAREST), clouds: mk(gl.LINEAR), snow: mk(gl.LINEAR) };
     return true;
   }
 
@@ -271,6 +274,7 @@ export class GlobeView {
     if (this.cloudVersion !== this.weather.version && this.weather.ready) {
       this.cloudVersion = this.weather.version;
       this.upload(gl, tex.clouds, this.weather.clouds);
+      this.upload(gl, tex.snow, this.weather.snow);
     }
     gl.viewport(0, 0, W, H);
     gl.useProgram(this.prog);
@@ -298,6 +302,7 @@ export class GlobeView {
     bind(0, tex.day, 'uDay');
     bind(1, tex.lights, 'uLights');
     bind(2, tex.clouds, 'uClouds');
+    bind(3, tex.snow, 'uSnow');
     gl.uniform1f(u('uClouds_on'), this.weather.cloudsShown ? 1 : 0);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     this.tiles.maybeRefresh();

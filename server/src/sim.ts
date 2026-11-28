@@ -135,8 +135,6 @@ import {
   WINDFARM,
   OFFSHORE,
   SCHOOL,
-  WIND_POWER,
-  OFFSHORE_POWER,
   WIND_PEAK,
   OFFSHORE_PEAK,
   SOLAR_PEAK,
@@ -146,6 +144,8 @@ import {
   UPKEEP_SOLAR,
   windShare,
   solarShare,
+  snowOnRoads,
+  SNOW_TRAFFIC,
   subsolarPoint,
   sunElevation,
   UPKEEP_WIND,
@@ -453,6 +453,7 @@ export class Sim {
     this.disasters = new Disasters(world, players, opts.hazards ?? new Uint8Array(CHUNKS_X * CHUNKS_Y), this.elevation, {
       ignite: (x, y) => this.ignite(x, y),
       isFrozen: (id) => this.frozen.has(id),
+      weatherAt: (x, y) => this.weather?.at(x, y, WORLD_W, WORLD_H) ?? null,
     });
     this.seedFireChunks();
     // Saved chunks may hold traffic tiles from before the restart; density starts at 0, so redraw them plain.
@@ -1111,6 +1112,12 @@ export class Sim {
   // -------------------------------------------------------------------------
   private cityStep(p: PlayerRecord, power: PowerScan, newMonth: boolean): void {
     const tiles = this.world.tiles;
+    // snow on the city's roads (real weather, at its first plot) slows its drives: more traffic on the roads
+    const first = p.chunks[0] ? parseChunkKey(p.chunks[0]) : null;
+    const wx = first ? this.weather?.at((first.cx + 0.5) * CHUNK, (first.cy + 0.5) * CHUNK, WORLD_W, WORLD_H) : null;
+    const snowy = wx ? snowOnRoads(wx.snowDepth, wx.snowing) : 0;
+    p.stats.snowyRoads = round4(snowy);
+    this.trafficAdd = Math.round(TRAFFIC_ADD * (1 + SNOW_TRAFFIC * snowy));
     const c: CityCounters = {
       R: 0,
       C: 0,
@@ -1707,9 +1714,11 @@ export class Sim {
     }
     if (!arr) return;
     const k = (y - cy * CHUNK) * CHUNK + (x - cx * CHUNK);
-    arr[k] = Math.min(255, arr[k] + TRAFFIC_ADD);
+    arr[k] = Math.min(255, arr[k] + this.trafficAdd);
   }
   private lastDensityChunk = -1;
+  /** density a drive adds per road tile in the city being stepped (more on snowy roads) */
+  private trafficAdd = TRAFFIC_ADD;
   private lastDensityArr: Uint8Array | null = null;
 
   /** One drive from a road tile next to the 3x3 zone centred at (x,y). */

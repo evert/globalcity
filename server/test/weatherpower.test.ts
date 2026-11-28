@@ -1,6 +1,7 @@
 // Wind and solar follow the weather (weatherpower.ts, set here with devWeather): a wind farm makes nothing in a
 // calm and its most in a gale; a solar farm (unlocked at 120,000 people, a 4x4 custom building) makes most with the
-// sun high in a clear sky, a quarter of that under overcast, and nothing at night. Coal doesn't care.
+// sun high in a clear sky, a quarter of that under overcast, and nothing at night. Coal doesn't care. Snow on the
+// roads is in the city's stats (it makes the traffic heavier).
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { SOLAR_PEAK, WIND_PEAK, COAL_POWER, solarShare, windShare } from '@globalcity/shared';
 import { TestClient, resetServer, settle, sleep, TICK } from './support/client.ts';
@@ -53,6 +54,15 @@ describe('power from the weather', () => {
     expect(await weather({ ...wind, sun: 60, cloud: 1 }), 'overcast').toBe(Math.round(SOLAR_PEAK * solarShare(60, 1)));
     expect(await weather({ ...wind, sun: -5, cloud: 0 }), 'night').toBe(0);
     expect(c.stats!.built.solar, 'counted as built').toBe(1);
+  });
+
+  it('snow on the roads: lying snow counts fully from 10 cm, falling snow at least half', async () => {
+    await weather({ snowDepth: 0.3 });
+    expect(c.stats!.snowyRoads).toBe(1);
+    await weather({ snowDepth: 0, snowing: true });
+    expect(c.stats!.snowyRoads).toBe(0.5);
+    await weather({ snowDepth: 0, snowing: false });
+    expect(c.stats!.snowyRoads).toBe(0);
   });
 
   it('coal makes the same whatever the weather', async () => {

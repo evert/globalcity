@@ -53,12 +53,20 @@ export function encodeRgbPng(w: number, h: number, rgb: Uint8Array): Buffer {
   ihdr.writeUInt32BE(h, 4);
   ihdr[8] = 8;
   ihdr[9] = 2; // 8-bit, RGB
-  const raw = Buffer.alloc((w * 3 + 1) * h);
-  for (let y = 0; y < h; y++) raw.set(rgb.subarray(y * w * 3, (y + 1) * w * 3), y * (w * 3 + 1) + 1);
+  // filter 1 (Sub) on every row: each byte stored as the difference from the same channel one pixel to the left, which
+  // turns smooth fields like the weather into runs of small numbers that deflate well (smaller here than Paeth)
+  const stride = w * 3;
+  const raw = Buffer.alloc((stride + 1) * h);
+  for (let y = 0; y < h; y++) {
+    const o = y * (stride + 1),
+      src = y * stride;
+    raw[o] = 1;
+    for (let i = 0; i < stride; i++) raw[o + 1 + i] = (rgb[src + i] - (i >= 3 ? rgb[src + i - 3] : 0)) & 0xff;
+  }
   return Buffer.concat([
     Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
     chunk('IHDR', ihdr),
-    chunk('IDAT', zlib.deflateSync(raw, { level: 6 })),
+    chunk('IDAT', zlib.deflateSync(raw, { level: 9 })), // once an hour: worth the extra effort
     chunk('IEND', new Uint8Array(0)),
   ]);
 }
