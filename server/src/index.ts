@@ -89,18 +89,19 @@ const hazards = (() => {
   return h;
 })();
 const elevation = new Elevation(path.join(worldDir, 'elevation.bin'));
-const simOptions: SimOptions = { randomFires: !devHooks, hazards, elevation };
+// the real weather: fetched unless WEATHER=off (tests); test servers can still set one with devWeather
+const weather = new Weather();
+if (process.env.WEATHER !== 'off') weather.start();
+const simOptions: SimOptions = { randomFires: !devHooks, hazards, elevation, weather };
 let sim = new Sim(world, players, simOptions);
 simOptions.shippingWater = sim.shipping.water;
 const notify = new Notify(path.resolve(root, process.env.NOTIFY_DB || path.join(path.dirname(saveDir), 'notify.db')), devHooks);
-const weather = process.env.WEATHER === 'off' ? null : new Weather();
-weather?.start();
 const net = new Net(world, players, sim, clientDist, root, {
   devHooks,
   dataDir: saveDir,
   mapTiles,
   notify,
-  weather: weather ?? undefined,
+  weather,
   devReset: devHooks ? devReset : undefined,
 });
 
@@ -117,6 +118,7 @@ function devReset(): { players: Players; sim: Sim } | string {
   const chunks = world.resetToBoot();
   persist.wipe();
   resetConfig();
+  weather.override = null;
   notify.resetForTests();
   players = new Players(world, places);
   persist = new Persist(world, players, saveDir);

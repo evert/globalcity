@@ -1,6 +1,6 @@
 // A minimal GRIB2 reader for the weather fields (server/src/weather.ts): one message on a regular latitude/longitude
-// grid (grid template 3.0), packed with complex packing and spatial differencing (data template 5.3), which is how
-// NOAA's GFS publishes them. Anything else is rejected rather than misread. Layout per the WMO GRIB2 manual (FM 92);
+// grid (grid template 3.0), packed with complex packing and spatial differencing (data template 5.3), with or
+// without a bitmap of the points that have a value (snow depth: land only), which is how NOAA's GFS publishes them. Anything else is rejected rather than misread. Layout per the WMO GRIB2 manual (FM 92);
 // the unpacking follows NCEP's g2clib (comunpack.c).
 
 export interface GribField {
@@ -81,14 +81,18 @@ export function decodeGrib2(buf: Uint8Array): GribField {
   if (buf[g + 71] & 0xb0) throw new Error(`GRIB2: scanning mode ${buf[g + 71]} not supported`);
   const dj = nj > 1 ? (lat1 - lat0) / (nj - 1) : 0;
 
-  // section 6: no bitmap (every grid point has a value)
-  if (buf[sec[6] + 5] !== 255) throw new Error('GRIB2: bitmaps are not supported');
+  // section 6: a bitmap (indicator 0: one bit per grid point, set where there is a value, e.g. snow depth only over
+  // land) or none (255: every grid point has one)
+  const bitmapFlag = buf[sec[6] + 5];
+  if (bitmapFlag !== 0 && bitmapFlag !== 255) throw new Error(`GRIB2: bitmap indicator ${bitmapFlag} not supported`);
+  const bitmapAt = sec[6] + 6;
 
   // section 5: how the values are packed
   const r = sec[5];
   const n = u32(buf, r + 5);
   if (u16(buf, r + 9) !== 3) throw new Error(`GRIB2: data template 5.${u16(buf, r + 9)}, only 5.3 (complex packing, spatial differencing) is supported`);
-  if (n !== ni * nj) throw new Error('GRIB2: value count does not match the grid');
+  if (bitmapFlag === 255 && n !== ni * nj) throw new Error('GRIB2: value count does not match the grid');
+  if (bitmapFlag === 0 && u32(buf, sec[6]) < 6 + Math.ceil((ni * nj) / 8)) throw new Error('GRIB2: bitmap too short');
   const R = dv.getFloat32(r + 11),
     E = s16(buf, r + 15),
     D = s16(buf, r + 17),
@@ -154,7 +158,14 @@ export function decodeGrib2(buf: Uint8Array): GribField {
   }
   const scale = 2 ** E,
     dec = 10 ** -D;
-  const values = new Float32Array(n);
-  for (let i = 0; i < n; i++) values[i] = missing[i] ? NaN : (R + raw[i] * scale) * dec;
+  const packed = (i: number): number => (missing[i] ? NaN : (R + raw[i] * scale) * dec);
+  const values = new Float32Array(ni * nj);
+  if (bitmapFlag === 255) for (let i = 0; i < n; i++) values[i] = packed(i);
+  else {
+    // the packed values belong, in order, to the grid points whose bit is set; the rest have none
+    let k2 = 0;
+    for (let i = 0; i < ni * nj; i++) values[i] = (buf[bitmapAt + (i >> 3)] >> (7 - (i & 7))) & 1 && k2 < n ? packed(k2++) : NaN;
+    if (k2 !== n) throw new Error('GRIB2: bitmap and values do not match');
+  }
   return { ni, nj, lat0, lon0, di, dj, values };
 }

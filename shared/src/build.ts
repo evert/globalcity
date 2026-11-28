@@ -420,6 +420,7 @@ export function applyBuildRules(
     case 'grandcentral':
       return placeCustom(world, p, tool.custom!, tool.cost, x0, y0);
     case 'christmastree':
+    case 'solar':
       return placeCustom(world, p, tool.custom!, tool.cost, x0, y0);
     default:
       return placeZone(world, p, tool.base!, tool.size, tool.cost, x0, y0);

@@ -137,6 +137,17 @@ import {
   SCHOOL,
   WIND_POWER,
   OFFSHORE_POWER,
+  WIND_PEAK,
+  OFFSHORE_PEAK,
+  SOLAR_PEAK,
+  WIND_TYPICAL_SHARE,
+  OFFSHORE_TYPICAL_SHARE,
+  TYPICAL_CLOUD,
+  UPKEEP_SOLAR,
+  windShare,
+  solarShare,
+  subsolarPoint,
+  sunElevation,
   UPKEEP_WIND,
   UPKEEP_OFFSHORE,
   UPKEEP_SCHOOL,
@@ -164,6 +175,7 @@ import { type World, chunkIndex, chunkCoords, type ChunkIndex } from './world.ts
 import type { AirportInfo, PortInfo, ActiveDisaster } from '@globalcity/shared';
 import { CHUNKS_X, CHUNKS_Y } from '@globalcity/shared';
 import type { Players, PlayerRecord } from './players.ts';
+import type { Weather } from './weather.ts';
 import { unlockedOf, refreshMilestoneStats, seasonMonth, earn, spend, repayLifeline, closeYear, budgetStats } from './players.ts';
 import { ShippingPlanner } from './shipping.ts';
 import { zoneKind, isPlantCenter, countHouses, plopZone, findZoneCenter, isBuildingTile, clearFootprint } from './zones.ts';
@@ -185,8 +197,6 @@ const POWER_FILL_CAP = 200_000;
 /** A count of 0 for every milestone building (so a destroyed one reads 0, not missing). */
 const zeroBuilt = (): Record<string, number> => Object.fromEntries([...MILESTONE_ORDER, 'grandcentral'].map((b) => [b, 0]));
 /** Zones powered by one plant, by its centre tile id. */
-const plantSupply = (id: number): number =>
-  id === POWERPLANT ? COAL_POWER : id === NUCLEAR ? NUCLEAR_POWER : id === WINDFARM ? WIND_POWER : id === OFFSHORE ? OFFSHORE_POWER : 0;
 /** test servers: every mayor counts as online (seen every step), so no city freezes and disasters strike anywhere */
 const ALL_ONLINE = process.env.ALL_ONLINE === '1';
 /** STEPS_PER_MONTH can be overridden too (tests use 1: a month per step, as before the slower calendar). */
@@ -253,6 +263,8 @@ export interface SimOptions {
   elevation?: Elevation;
   /** the shipping water grid of an earlier sim on this world (devReset: it is the same, and slow to build) */
   shippingWater?: Uint8Array;
+  /** the real weather (weather.ts): wind and solar output, snowy roads, floods after heavy rain */
+  weather?: Weather;
 }
 
 interface PowerScan {
@@ -370,6 +382,8 @@ export class Sim {
   readonly disasters: Disasters;
   /** metres above sea level per tile (the world generator's elevation.bin) */
   readonly elevation: Elevation;
+  /** the real weather, when the server has it (wind and solar output, snowy roads, floods after heavy rain) */
+  readonly weather: Weather | null;
   private disastersVersion = 0;
   /** powered police station centres: last tick's list (read by landValue) and the one being collected */
   private police: number[] = [];
@@ -435,6 +449,7 @@ export class Sim {
     );
     this.randomFires = opts.randomFires ?? true;
     this.elevation = opts.elevation ?? new Elevation(null);
+    this.weather = opts.weather ?? null;
     this.disasters = new Disasters(world, players, opts.hazards ?? new Uint8Array(CHUNKS_X * CHUNKS_Y), this.elevation, {
       ignite: (x, y) => this.ignite(x, y),
       isFrozen: (id) => this.frozen.has(id),
@@ -905,7 +920,7 @@ export class Sim {
         const i = queue[head++];
         const v = tiles[i];
         if (v & ZONEBIT) {
-          if (isPlantCenter(v)) plants.push(i);
+          if (this.isPlant(i, v)) plants.push(i);
           else zones.push(i);
         }
         if (tail >= POWER_FILL_CAP) continue;
@@ -946,7 +961,7 @@ export class Sim {
     // Seed fills from every plant in every active city (frozen ones too: their plants keep feeding neighbours).
     for (const p of seedCities) {
       this.forEachChunkTile(p, (i) => {
-        if (isPlantCenter(tiles[i]) && !grid.has(i)) fill(i);
+        if (this.isPlant(i, tiles[i]) && !grid.has(i)) fill(i);
       });
     }
     // Apply PWRBIT to active cities' tiles (only changed tiles are written -> broadcast).
@@ -1008,7 +1023,7 @@ export class Sim {
     };
     for (const i of plants) {
       const c = cityOf(i);
-      if (c) c.supply += plantSupply(tiles[i] & LOMASK);
+      if (c) c.supply += this.plantOutput(i, tiles[i]);
     }
     for (const i of zones) {
       const c = cityOf(i);
@@ -1152,16 +1167,24 @@ export class Sim {
       }
       if (kind === 'wind') {
         c.plants++;
-        c.supply += WIND_POWER;
+        c.supply += this.plantOutput(i, v);
         c.upkeep.power += UPKEEP_WIND;
         c.built.windfarm = (c.built.windfarm ?? 0) + 1;
         return;
       }
       if (kind === 'offshore') {
         c.plants++;
-        c.supply += OFFSHORE_POWER;
+        c.supply += this.plantOutput(i, v);
         c.upkeep.power += UPKEEP_OFFSHORE;
         c.built.offshore = (c.built.offshore ?? 0) + 1;
+        return;
+      }
+      if (this.isPlant(i, v)) {
+        // a solar farm (custom layer): a plant, not a consumer
+        c.plants++;
+        c.supply += this.plantOutput(i, v);
+        c.upkeep.power += UPKEEP_SOLAR;
+        c.built.solar = (c.built.solar ?? 0) + 1;
         return;
       }
       c.zones++;
@@ -1624,6 +1647,39 @@ export class Sim {
   // -------------------------------------------------------------------------
 
   /** Add TRAFFIC_ADD (saturating) to the density of road tile (x,y) if its chunk is claimed (maps are created lazily). */
+  /** Is tile i a power plant's centre: a tile plant, or a solar farm on the custom layer? */
+  private isPlant(i: number, v: number): boolean {
+    if (isPlantCenter(v)) return true;
+    return (v & ZONEBIT) !== 0 && (v & LOMASK) === CUSTOMCENTRE && this.world.buildings.at(i % WORLD_W, Math.floor(i / WORLD_W))?.kind === 'solar';
+  }
+
+  /** The sun's position, recomputed at most once a minute. */
+  private sun = { at: -Infinity, sub: subsolarPoint(0) };
+  private subsolar(now: number): { lat: number; lon: number } {
+    if (now - this.sun.at >= 60_000) this.sun = { at: now, sub: subsolarPoint(now) };
+    return this.sun.sub;
+  }
+
+  /** What the plant centred at tile i makes right now, MW: coal and nuclear always the same, wind and solar from the
+   *  weather there (weatherpower.ts). */
+  plantOutput(i: number, v: number): number {
+    const id = v & LOMASK;
+    if (id === POWERPLANT) return COAL_POWER;
+    if (id === NUCLEAR) return NUCLEAR_POWER;
+    const x = i % WORLD_W,
+      y = Math.floor(i / WORLD_W);
+    const w = this.weather?.at(x, y, WORLD_W, WORLD_H) ?? null;
+    if (id === WINDFARM) return Math.round(WIND_PEAK * (w ? windShare(w.wind, false) : WIND_TYPICAL_SHARE));
+    if (id === OFFSHORE) return Math.round(OFFSHORE_PEAK * (w ? windShare(w.wind, true) : OFFSHORE_TYPICAL_SHARE));
+    if (id === CUSTOMCENTRE && this.world.buildings.at(x, y)?.kind === 'solar') {
+      const lat = 90 - (y / WORLD_H) * 180,
+        lon = (x / WORLD_W) * 360 - 180;
+      const sun = this.weather?.override?.sun ?? sunElevation(lat, lon, this.subsolar(Date.now()));
+      return Math.round(SOLAR_PEAK * solarShare(sun, w ? w.cloud : TYPICAL_CLOUD));
+    }
+    return 0;
+  }
+
   /** Dev hook (DEV_HOOKS=1): add `amount` traffic density to road tile (x,y). Returns false off-road / unclaimed. */
   devTraffic(x: number, y: number, amount: number): boolean {
     if (!isRoad(this.world.get(x, y))) return false;

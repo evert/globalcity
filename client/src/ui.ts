@@ -41,6 +41,7 @@ import {
   TOOLS,
   TOOL_ORDER,
   PLANT_OUTPUT,
+  WEATHER_PLANTS,
   GRAND_CENTRAL,
   WORLD_H,
   WORLD_W,
@@ -68,7 +69,7 @@ type WorldTab = 'stats' | 'top' | 'monuments';
 
 /** Toolbar groups: members share one button with a flyout once two or more of them are unlocked. */
 const TOOL_GROUPS: { id: string; name: string; members: ToolId[] }[] = [
-  { id: 'power', name: 'Power plants', members: ['coal', 'nuclear', 'windfarm', 'offshore'] },
+  { id: 'power', name: 'Power plants', members: ['coal', 'nuclear', 'windfarm', 'offshore', 'solar'] },
   { id: 'education', name: 'Education', members: ['school', 'university'] },
   { id: 'ports', name: 'Ports', members: ['seaport', 'airport'] },
 ];
@@ -86,7 +87,8 @@ interface ToolGroupUi {
 }
 
 /** Price for a toolbar label; power plants add the power they make. */
-const priceLabel = (id: ToolId): string => `${fmtMoney(TOOLS[id].cost)}${PLANT_OUTPUT[id] ? ` · ⚡${fmtPower(PLANT_OUTPUT[id])}` : ''}`;
+const priceLabel = (id: ToolId): string =>
+  `${fmtMoney(TOOLS[id].cost)}${PLANT_OUTPUT[id] ? ` · ⚡${WEATHER_PLANTS.has(id) ? '~' : ''}${fmtPower(PLANT_OUTPUT[id])}` : ''}`;
 
 /** Toolbar icon size in CSS px (16 px tiles at 2x); wide buildings are cropped to a square from their middle. */
 const TOOL_ICON_PX = 32;

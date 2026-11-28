@@ -162,6 +162,7 @@ export const UPKEEP_CITYHALL = 200; // per year
 export const UPKEEP_SCHOOL = 100;
 export const UPKEEP_WIND = 10;
 export const UPKEEP_OFFSHORE = 30;
+export const UPKEEP_SOLAR = 15;
 export const UPKEEP_UNIVERSITY = 300;
 export const GRAND_CENTRAL_RANGE = 20; // zones within this many tiles of a powered Grand Central count as rail-served
 export const GRAND_CENTRAL_RAIL_BOOST = 1.5; // rail-link demand multiplier for a city with a powered Grand Central

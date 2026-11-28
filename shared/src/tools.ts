@@ -1,5 +1,6 @@
 import * as T from './tiles.ts';
-import { UPKEEP_WIND, UPKEEP_OFFSHORE, CHRISTMAS_TREE_RANGE, gameYearAmount, fmtPower } from './constants.ts';
+import { UPKEEP_WIND, UPKEEP_OFFSHORE, UPKEEP_SOLAR, CHRISTMAS_TREE_RANGE, gameYearAmount, fmtPower } from './constants.ts';
+import { WIND_PEAK, OFFSHORE_PEAK, SOLAR_PEAK, WIND_TYPICAL_SHARE, OFFSHORE_TYPICAL_SHARE, SOLAR_TYPICAL_SHARE } from './weatherpower.ts';
 
 export type ToolId =
   | 'query'
@@ -24,7 +25,8 @@ export type ToolId =
   | 'offshore'
   | 'university'
   | 'grandcentral'
-  | 'christmastree';
+  | 'christmastree'
+  | 'solar';
 
 export interface ToolDef {
   id: ToolId;
@@ -70,6 +72,7 @@ export const TOOLS: Record<ToolId, ToolDef> = {
   school: { id: 'school', name: 'Elementary school', cost: 1500, size: 3, base: T.SCHOOLBASE, hotkey: 'e', icon: T.SCHOOL },
   windfarm: { id: 'windfarm', name: 'Wind farm', cost: 1600, size: 4, base: T.WINDBASE, hotkey: 'z', icon: T.WINDFARM },
   offshore: { id: 'offshore', name: 'Offshore wind farm', cost: 4000, size: 4, base: T.OFFSHOREBASE, hotkey: 'x', icon: T.OFFSHORE },
+  solar: { id: 'solar', name: 'Solar farm', cost: 2500, size: 4, w: 4, h: 4, custom: 'solar', hotkey: '5', icon: T.CUSTOMCENTRE },
   university: { id: 'university', name: 'University', cost: 8000, size: 5, w: 5, h: 4, custom: 'university', hotkey: 'y', icon: T.CUSTOMCENTRE },
   grandcentral: {
     id: 'grandcentral',
@@ -103,6 +106,7 @@ export const TOOL_ORDER: ToolId[] = [
   'nuclear',
   'windfarm',
   'offshore',
+  'solar',
   'school',
   'university',
   'stadium',
@@ -138,15 +142,26 @@ export function footprintOrigin(tool: ToolDef, x: number, y: number): { x0: numb
 // plants are smaller and there are clean alternatives.)
 export const COAL_POWER = 400;
 export const NUCLEAR_POWER = 1200;
-export const WIND_POWER = 40; // a handful of turbines, not a whole farm: wind's price is land, you need many of them
-export const OFFSHORE_POWER = 60; // bigger turbines than on land, dearer to build and keep, but it takes no land
-/** Zones each power plant tool supplies, for labels. */
-export const PLANT_OUTPUT: Partial<Record<ToolId, number>> = { coal: COAL_POWER, nuclear: NUCLEAR_POWER, windfarm: WIND_POWER, offshore: OFFSHORE_POWER };
+// Wind and solar follow the real weather (weatherpower.ts): these are what they make on a typical day.
+export const WIND_POWER = Math.round(WIND_PEAK * WIND_TYPICAL_SHARE); // a handful of turbines, not a whole farm: wind's price is land, you need many of them
+export const OFFSHORE_POWER = Math.round(OFFSHORE_PEAK * OFFSHORE_TYPICAL_SHARE); // bigger turbines than on land, dearer to build and keep, but it takes no land
+export const SOLAR_POWER = Math.round(SOLAR_PEAK * SOLAR_TYPICAL_SHARE); // averaged over day and night
+/** Power each plant makes (typical, for wind and solar), for labels. */
+export const PLANT_OUTPUT: Partial<Record<ToolId, number>> = {
+  coal: COAL_POWER,
+  nuclear: NUCLEAR_POWER,
+  windfarm: WIND_POWER,
+  offshore: OFFSHORE_POWER,
+  solar: SOLAR_POWER,
+};
+/** Plants whose output follows the weather (labels say "about"). */
+export const WEATHER_PLANTS: ReadonlySet<ToolId> = new Set<ToolId>(['windfarm', 'offshore', 'solar']);
 // The trade-off of each plant, one sentence each (toolbar tooltips).
 TOOLS.coal.tradeoff = `Cheap power, ${fmtPower(COAL_POWER)}, but its smog drags down land value for a dozen tiles around.`;
 TOOLS.nuclear.tradeoff = `${fmtPower(NUCLEAR_POWER)} of clean power, if you can find the $${TOOLS.nuclear.cost.toLocaleString('en-US')} up front.`;
-TOOLS.windfarm.tradeoff = `Clean and cheap to run, but a few turbines make only ${fmtPower(WIND_POWER)}, so a wind-powered city needs to dedicate lots of land.`;
-TOOLS.offshore.tradeoff = `${fmtPower(OFFSHORE_POWER)} of clean power: more expensive than turbines on land, but doesn't take up usable land!`;
+TOOLS.windfarm.tradeoff = `Clean and cheap to run, but it follows the real wind: about ${fmtPower(WIND_POWER)} on a typical day, up to ${fmtPower(WIND_PEAK)} in a gale, little in a calm.`;
+TOOLS.offshore.tradeoff = `About ${fmtPower(OFFSHORE_POWER)} of clean power in the steadier sea wind: dearer than turbines on land, but takes no usable land!`;
+TOOLS.solar.tradeoff = `Clean power from the real sun: up to ${fmtPower(SOLAR_PEAK)} at noon under a clear sky, less under clouds, nothing at night.`;
 
 // ---- Milestones ----
 // Special buildings unlock when the city's peak population reaches their threshold; unlocks are permanent.
@@ -163,7 +178,8 @@ export type MilestoneBuilding =
   | 'university'
   | 'stadium'
   | 'airport'
-  | 'offshore';
+  | 'offshore'
+  | 'solar';
 export interface MilestoneDef {
   name: string;
   tool: ToolId;
@@ -220,7 +236,7 @@ export const MILESTONE_BUILDINGS: Record<MilestoneBuilding, MilestoneDef> = {
     pop: 150_000,
     centres: [T.WINDFARM],
     benefits: [
-      `${fmtPower(WIND_POWER)} of clean power: a few turbines, so a city runs on many of them`,
+      `Clean power from the real wind: about ${fmtPower(WIND_POWER)} on a typical day, up to ${fmtPower(WIND_PEAK)}`,
       "No pollution, quiet: neighbours don't mind",
       `$${gameYearAmount(UPKEEP_WIND).toLocaleString('en-US')} a year to run`,
     ],
@@ -232,6 +248,17 @@ export const MILESTONE_BUILDINGS: Record<MilestoneBuilding, MilestoneDef> = {
     pop: 100_000,
     centres: [T.PORT],
     benefits: ['Industrial demand boost', 'Must be within 6 tiles of water', 'Some pollution', 'Needs power'],
+  },
+  solar: {
+    name: 'Solar farm',
+    tool: 'solar',
+    pop: 120_000,
+    centres: [],
+    benefits: [
+      `Clean power from the real sun: up to ${fmtPower(SOLAR_PEAK)} at noon on a clear day`,
+      'Less under clouds, nothing at night: pair it with other plants or buy power from a neighbour',
+      `$${gameYearAmount(UPKEEP_SOLAR).toLocaleString('en-US')} a year to run`,
+    ],
   },
   university: {
     name: 'University',
@@ -261,7 +288,7 @@ export const MILESTONE_BUILDINGS: Record<MilestoneBuilding, MilestoneDef> = {
     pop: 300_000,
     centres: [T.OFFSHORE],
     benefits: [
-      `${fmtPower(OFFSHORE_POWER)} of clean power: more than a wind farm on land, on water you can't build on anyway`,
+      `About ${fmtPower(OFFSHORE_POWER)} of clean power from the steadier sea wind, on water you can't build on anyway`,
       'Must be placed entirely on water',
       'Connect it to shore with an underwater power line',
       `$${gameYearAmount(UPKEEP_OFFSHORE).toLocaleString('en-US')} a year to run`,
@@ -276,6 +303,7 @@ export const MILESTONE_ORDER: readonly MilestoneBuilding[] = [
   'school',
   'cityhall',
   'seaport',
+  'solar',
   'windfarm',
   'university',
   'stadium',
@@ -333,6 +361,7 @@ export const CUSTOM_BUILDINGS: Record<string, CustomDef> = {
   university: { name: 'University', w: 5, h: 4, image: '/assets/buildings/university.png' },
   grandcentral: { name: 'Grand Central', w: 6, h: 3, image: '/assets/buildings/grandcentral.png', frames: 8, frameMs: 500, railRow: 2 },
   christmastree: { name: 'Christmas tree', w: 2, h: 4, image: '/assets/buildings/christmastree.png' },
+  solar: { name: 'Solar farm', w: 4, h: 4, image: '/assets/buildings/solar.png' },
 };
 
 /**

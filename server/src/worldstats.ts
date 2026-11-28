@@ -24,6 +24,8 @@ import {
   NUCLEAR_POWER,
   WIND_POWER,
   OFFSHORE_POWER,
+  SOLAR_POWER,
+  CUSTOMCENTRE,
   warming,
   totalEmissions,
 } from '@globalcity/shared';
@@ -161,7 +163,11 @@ export class WorldStatsCounter {
             powerSupply += OFFSHORE_POWER;
             cleanSupply += OFFSHORE_POWER;
           } // drawn as water on the map
-          else if (v & ZONEBIT) {
+          else if (v & ZONEBIT && (v & LOMASK) === CUSTOMCENTRE && w.buildings.at(x, y)?.kind === 'solar') {
+            plants++;
+            powerSupply += SOLAR_POWER; // typical: what it makes averaged over day and night
+            cleanSupply += SOLAR_POWER;
+          } else if (v & ZONEBIT) {
             if (c === OvClass.Res) res++;
             else if (c === OvClass.Com) com++;
             else if (c === OvClass.Ind) ind++;

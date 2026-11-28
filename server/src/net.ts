@@ -5,8 +5,9 @@
 // message {t:'devIgnite', x, y} ignites tile (x,y) as a random outbreak would (whole building ->
 // rubble + one fire tile); {t:'devFunds', amount} adds money; and so on (onDevMessage). Two work before
 // 'hello' too, for the tests: {t:'devReset'} puts the server back as it was when it booted on an empty save,
-// keeping the loaded world (answered {t:'devReset', ok, ms}), and {t:'devConfig', ...settings} changes the
-// settings in config.ts (answered {t:'devConfig', ok, config} or {ok: false, error}). Any other time these
+// keeping the loaded world (answered {t:'devReset', ok, ms}), {t:'devConfig', ...settings} changes the
+// settings in config.ts (answered {t:'devConfig', ok, config} or {ok: false, error}), and {t:'devWeather', ...}
+// sets the weather everywhere (wind and solar output, snowy roads, floods; answered {t:'devWeather', ok}). Any other time these
 // messages are silently dropped like any unknown message.
 
 import http from 'node:http';
@@ -183,7 +184,7 @@ export class Net {
     this.weather = opts.weather ?? null;
     this.leaderboard = new Leaderboard(players);
     this.worldStats = new WorldStatsCounter(world, players, sim);
-    if (this.devHooks) log('DEV_HOOKS enabled: devIgnite/devFunds/devTraffic/devPeak/devIdle/devRailLink/devPlace/devDisaster accepted');
+    if (this.devHooks) log('DEV_HOOKS enabled: devIgnite/devFunds/devTraffic/devPeak/devIdle/devRailLink/devPlace/devDisaster/devWeather accepted');
   }
 
   private get buildCtx(): { world: World; players: Players; railCitiesAt: (x: number, y: number) => number } {
@@ -492,6 +493,27 @@ export class Net {
         for (const c of this.clients) this.sendStatsIfChanged(c);
       }
       this.sendRaw(client, error ? { t: 'devConfig', ok: false, error } : { t: 'devConfig', ok: true, config });
+      return true;
+    }
+    if (m.t === 'devWeather') {
+      // {t:'devWeather', cloud: 0, wind: 12, snowDepth: 0.3, rate: 8, snowing: true, temp: -5, sun: 45}: this weather everywhere
+      // (fields left out come from the real weather); {t:'devWeather'} with none goes back to the real weather
+      if (!this.weather) return false;
+      const { t: _t, ...o } = m;
+      const num = (k: string): number | undefined => (typeof o[k] === 'number' && Number.isFinite(o[k]) ? (o[k] as number) : undefined);
+      const w = {
+        cloud: num('cloud'),
+        rate: num('rate'),
+        temp: num('temp'),
+        wind: num('wind'),
+        snowDepth: num('snowDepth'),
+        sun: num('sun'),
+        snowing: typeof o.snowing === 'boolean' ? o.snowing : undefined,
+      };
+      const set = Object.fromEntries(Object.entries(w).filter(([, v]) => v !== undefined));
+      this.weather.override = Object.keys(set).length ? set : null;
+      log(`devWeather ${JSON.stringify(this.weather.override)}`);
+      this.sendRaw(client, { t: 'devWeather', ok: true, weather: this.weather.override });
       return true;
     }
     if (!client.player) return false; // the others only after 'hello'
