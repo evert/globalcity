@@ -29,7 +29,8 @@ import {
   chunkLandCount,
   minLandToClaim,
   MILESTONE_BUILDINGS,
-  MILESTONE_ORDER,
+  MILESTONE_LADDER,
+  isSeasonal,
   isMilestoneTool,
   nextMilestone,
   type MilestoneBuilding,
@@ -1135,25 +1136,22 @@ export class UI {
       }
       if (!isMilestoneTool(id)) continue;
       // Milestone buildings: show what is unlocked plus only the next one, so the toolbar never fills with
-      // locked choices. A per-city limit (city hall) shows as "Built" once reached.
+      // locked choices. A per-city limit (city hall) shows as "Built" once reached. A seasonal building (the
+      // Christmas tree) is no milestone: it only appears in its season, locked until the city is big enough.
       const m = MILESTONE_BUILDINGS[id];
       const unlocked = st?.unlocked?.includes(id) ?? false;
-      const isNext = !unlocked && nextMilestone(st?.peakPop ?? 0)?.building === id;
       const atMax = unlocked && m.max !== undefined && (st?.built?.[id] ?? 0) >= m.max;
-      // seasonal (the Christmas tree): unlocked for good, but it can only be built in its months
-      const offSeason = unlocked && m.months !== undefined && !(st?.inSeason?.includes(id) ?? false);
-      btn.classList.toggle('hidden', !unlocked && !isNext);
-      btn.classList.toggle('locked', !unlocked || offSeason);
+      const shown = isSeasonal(id) ? (st?.inSeason?.includes(id) ?? false) : unlocked || nextMilestone(st?.peakPop ?? 0)?.building === id;
+      btn.classList.toggle('hidden', !shown);
+      btn.classList.toggle('locked', !unlocked);
       btn.classList.toggle('built', atMax);
       const cost = btn.querySelector('.cost');
-      if (cost) cost.textContent = !unlocked ? `🔒 ${fmtCompact(m.pop)} pop` : offSeason ? `🔒 ${m.seasonName}` : atMax ? 'Built' : priceLabel(id);
+      if (cost) cost.textContent = !unlocked ? `🔒 ${fmtCompact(m.pop)} pop` : atMax ? 'Built' : priceLabel(id);
       btn.title = !unlocked
         ? `${m.name}: unlocks at ${m.pop.toLocaleString('en-US')} people. ${m.benefits.join('. ')}.`
-        : offSeason
-          ? `${m.name}: can only be built in ${m.seasonName}. ${m.benefits.join('. ')}.`
-          : atMax
-            ? `${m.name}: your city already has one (one per city). It can be rebuilt if it is destroyed.`
-            : `${m.name} — ${priceLabel(id)} (${TOOLS[id].hotkey.toUpperCase()}). ${TOOLS[id].tradeoff ?? `${m.benefits.join('. ')}.`}`;
+        : atMax
+          ? `${m.name}: your city already has one (one per city). It can be rebuilt if it is destroyed.`
+          : `${m.name} — ${priceLabel(id)} (${TOOLS[id].hotkey.toUpperCase()}). ${TOOLS[id].tradeoff ?? `${m.benefits.join('. ')}.`}`;
     }
     this.layoutToolGroups();
   }
@@ -1747,19 +1745,16 @@ export class UI {
     const st = this.state.stats;
     const peak = st?.peakPop ?? 0;
     const next = nextMilestone(peak)?.building;
-    const shown = MILESTONE_ORDER.filter((b) => (st?.unlocked?.includes(b) ?? false) || b === next).reverse(); // next one on top
+    const shown = MILESTONE_LADDER.filter((b) => (st?.unlocked?.includes(b) ?? false) || b === next).reverse(); // next one on top
     const rows = shown.map((b) => {
       const m = MILESTONE_BUILDINGS[b];
       const unlocked = st?.unlocked?.includes(b) ?? false;
       const built = m.max !== undefined && (st?.built?.[b] ?? 0) >= m.max;
-      const offSeason = unlocked && m.months !== undefined && !(st?.inSeason?.includes(b) ?? false);
       const status = built
         ? { cls: 'done', text: 'Built (one per city)' }
-        : offSeason
-          ? { cls: 'ready', text: `Unlocked: build it in ${m.seasonName}` }
-          : unlocked
-            ? { cls: 'ready', text: 'Unlocked: build it from the toolbar' }
-            : { cls: 'locked', text: `${(m.pop - peak).toLocaleString('en-US')} more people` };
+        : unlocked
+          ? { cls: 'ready', text: 'Unlocked: build it from the toolbar' }
+          : { cls: 'locked', text: `${(m.pop - peak).toLocaleString('en-US')} more people` };
       const pct = Math.max(0, Math.min(100, (peak / m.pop) * 100));
       const t = TOOLS[m.tool];
       return el(

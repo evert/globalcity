@@ -128,6 +128,8 @@ import {
   UPKEEP_CITYHALL,
   MILESTONE_BUILDINGS,
   milestoneUnlocksFor,
+  isSeasonal,
+  inSeason,
   lotHash,
   CRIME_LAND_VALUE_THRESHOLD,
   WINDFARM,
@@ -162,7 +164,7 @@ import { type World, chunkIndex, chunkCoords, type ChunkIndex } from './world.ts
 import type { AirportInfo, PortInfo, ActiveDisaster } from '@globalcity/shared';
 import { CHUNKS_X, CHUNKS_Y } from '@globalcity/shared';
 import type { Players, PlayerRecord } from './players.ts';
-import { unlockedOf, refreshMilestoneStats, earn, spend, repayLifeline, closeYear, budgetStats } from './players.ts';
+import { unlockedOf, refreshMilestoneStats, seasonMonth, earn, spend, repayLifeline, closeYear, budgetStats } from './players.ts';
 import { ShippingPlanner } from './shipping.ts';
 import { zoneKind, isPlantCenter, countHouses, plopZone, findZoneCenter, isBuildingTile, clearFootprint } from './zones.ts';
 import { waterNear, SEAPORT_WATER_RANGE } from './tools.ts';
@@ -1311,13 +1313,18 @@ export class Sim {
     refreshMilestoneStats(p);
     for (const b of milestoneUnlocksFor(p.peakPop)) {
       if ((p.announced ?? []).includes(b)) continue;
+      // a seasonal building (the Christmas tree) isn't a milestone: it is announced when its season comes
+      if (isSeasonal(b) && !inSeason(MILESTONE_BUILDINGS[b].tool, seasonMonth())) continue;
       (p.announced ??= []).push(b);
       if ((p.grandfathered ?? []).includes(b)) continue; // they already have one
       const m = MILESTONE_BUILDINGS[b];
+      const a = /^[aeiou]/i.test(m.name) ? 'an' : 'a';
       this.toasts.push({
         playerId: p.id,
         kind: 'success',
-        msg: `Milestone: ${m.pop.toLocaleString('en-US')} people! You can now build ${/^[aeiou]/i.test(m.name) ? 'an' : 'a'} ${milestoneLower(m)}${m.seasonName ? ` in ${m.seasonName}` : ''} (${m.benefits[0].toLowerCase()}). See 🏛 Milestones.`,
+        msg: isSeasonal(b)
+          ? `It's ${m.seasonName}: with ${m.pop.toLocaleString('en-US')} people your city can build ${a} ${milestoneLower(m)} (${m.benefits[0].toLowerCase()}). Find it in the toolbar.`
+          : `Milestone: ${m.pop.toLocaleString('en-US')} people! You can now build ${a} ${milestoneLower(m)} (${m.benefits[0].toLowerCase()}). See 🏛 Milestones.`,
       });
     }
 

@@ -16,6 +16,10 @@ import {
   TOOLS,
   claimCost,
   minLandToClaim,
+  milestonePercent,
+  nextMilestone,
+  MILESTONE_LADDER,
+  MILESTONE_TOTAL,
   santaRoute,
   sleighAt,
   applyBuildRules,
@@ -43,6 +47,18 @@ describe('plots', () => {
     expect(minLandToClaim(1)).toBe(MIN_LAND_TILES_TO_CLAIM);
     expect(minLandToClaim(10)).toBe(MIN_LAND_TILES_TO_CLAIM);
     expect(MIN_LAND_TILES_FIRST_CLAIM).toBeGreaterThan(MIN_LAND_TILES_TO_CLAIM);
+  });
+});
+
+describe('milestones', () => {
+  it('the Christmas tree is not one: every milestone can be reached in any month', () => {
+    expect(MILESTONE_LADDER).not.toContain('christmastree');
+    expect(nextMilestone(MILESTONE_BUILDINGS.fire.pop)?.building, 'after the fire station').toBe('police');
+    const all = [...MILESTONE_LADDER, 'grandcentral'];
+    expect(MILESTONE_TOTAL).toBe(all.length);
+    expect(milestonePercent(all)).toBe(100);
+    expect(milestonePercent([...all, 'christmastree'])).toBe(100);
+    expect(milestonePercent(['christmastree'])).toBe(0);
   });
 });
 

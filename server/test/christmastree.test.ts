@@ -1,5 +1,6 @@
-// Christmas tree: a 2x4 custom building on the milestone ladder (20,000 people, right after the fire station) that
-// can only be built in December: placed in December, refused in November though unlocked.
+// Christmas tree: a 2x4 custom building unlocked at 20,000 people that can only be built in December: placed in
+// December, refused in November though unlocked. It is not a milestone (a city can reach every milestone in any month):
+// it doesn't count towards them, and its notice comes when December does.
 import { describe, it, expect, beforeAll } from 'vitest';
 import { LOMASK, ZONEBIT, CUSTOMFILL, CUSTOMCENTRE } from '@globalcity/shared';
 import { TestClient, resetServer, settle, sleep, TICK } from './support/client.ts';
@@ -27,23 +28,28 @@ function climbToTheTree(month: number): { A: () => TestClient; at: () => { X: nu
     expect(A.stats!.inSeason?.includes('christmastree') ?? false).toBe(month === 12);
   });
 
-  it('is locked below 20,000 people, the milestone after the fire station', async () => {
+  it('is locked below 20,000 people, and is not the next milestone', async () => {
     const r = await A.build('christmastree', X + 1, Y + 1);
     expect(toastsText(r)).toMatch(/Christmas tree unlocks at 20,000 people/);
     A.sendRaw({ t: 'devPeak', pop: 16000 });
     await sleep(TICK * 3);
     expect(A.stats!.unlocked, '16,000 unlocks the fire station').toContain('fire');
     expect(A.stats!.unlocked, '... and not the tree').not.toContain('christmastree');
-    expect(A.stats!.nextMilestone, 'the next milestone after the fire station is the tree').toBe(20000);
+    expect(A.stats!.nextMilestone, 'the next milestone after the fire station is the police station, not the tree').toBe(30000);
   });
 
-  it('unlocks at 20,000 people, with a milestone toast', async () => {
+  it(`unlocks at 20,000 people; ${month === 12 ? 'a notice says so (no milestone)' : 'no notice before December'}`, async () => {
     A.sendRaw({ t: 'devPeak', pop: 21000 });
     await sleep(TICK * 3);
     expect(A.stats!.unlocked, '21,000 unlocks the tree').toContain('christmastree');
     expect(A.stats!.unlocked, '... not police').not.toContain('police');
-    const toast = A.toasts.find((t) => /Milestone: 20,000/.test(`${t.kind}: ${t.msg}`));
-    expect(toast?.msg, 'milestone toast').toMatch(/a Christmas tree in December/);
+    expect(
+      A.toasts.some((t) => /Milestone: 20,000/.test(t.msg)),
+      'not announced as a milestone',
+    ).toBe(false);
+    const notice = A.toasts.find((t) => t.kind === 'success' && /Christmas tree/.test(t.msg));
+    if (month === 12) expect(notice?.msg).toMatch(/It's December: with 20,000 people your city can build a Christmas tree/);
+    else expect(notice, 'announced when December comes, not before').toBeUndefined();
   });
 
   return { A: () => A, at: () => ({ X, Y }) };

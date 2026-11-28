@@ -268,6 +268,7 @@ export const MILESTONE_BUILDINGS: Record<MilestoneBuilding, MilestoneDef> = {
     ],
   },
 };
+/** Every building unlocked by population, in order, seasonal ones included (MILESTONE_LADDER: the milestones proper). */
 export const MILESTONE_ORDER: readonly MilestoneBuilding[] = [
   'fire',
   'christmastree',
@@ -281,11 +282,16 @@ export const MILESTONE_ORDER: readonly MilestoneBuilding[] = [
   'offshore',
   'airport',
 ];
+/** Seasonal buildings (the Christmas tree) unlock with population like the rest, but they are not milestones: a city
+ *  can't be held back from all its milestones by the time of year. */
+export const isSeasonal = (b: MilestoneBuilding): boolean => MILESTONE_BUILDINGS[b].months !== undefined;
+/** The milestones proper: the population ladder without the seasonal buildings. */
+export const MILESTONE_LADDER: readonly MilestoneBuilding[] = MILESTONE_ORDER.filter((b) => !isSeasonal(b));
 /** Everything the Milestones panel lists: the population ladder plus Grand Central (unlocked by a rail link). */
-export const MILESTONE_TOTAL = MILESTONE_ORDER.length + 1;
+export const MILESTONE_TOTAL = MILESTONE_LADDER.length + 1;
 /** Percentage of milestones a city has unlocked, from its unlocked list (ladder, grandfathered and grandcentral). */
 export const milestonePercent = (unlocked: readonly string[]): number =>
-  Math.round((100 * new Set(unlocked.filter((b) => b === 'grandcentral' || (MILESTONE_ORDER as readonly string[]).includes(b))).size) / MILESTONE_TOTAL);
+  Math.round((100 * new Set(unlocked.filter((b) => b === 'grandcentral' || (MILESTONE_LADDER as readonly string[]).includes(b))).size) / MILESTONE_TOTAL);
 export const isMilestoneTool = (t: ToolId): t is MilestoneBuilding => t in MILESTONE_BUILDINGS;
 /** A milestone building's name mid-sentence ("a fire station", "a Christmas tree"). */
 export const milestoneLower = (m: MilestoneDef): string => m.lower ?? m.name.toLowerCase();
@@ -297,11 +303,11 @@ export function inSeason(t: ToolId, month: number): boolean {
 /** The seasonal tools that can be built in month `month` (0 = January). */
 export const seasonalInSeason = (month: number): ToolId[] =>
   MILESTONE_ORDER.filter((b) => MILESTONE_BUILDINGS[b].months?.includes(month)).map((b) => MILESTONE_BUILDINGS[b].tool);
-/** Milestone buildings unlocked by a peak population (not counting grandfathered ones). */
+/** Buildings unlocked by a peak population, seasonal ones included (not counting grandfathered ones). */
 export const milestoneUnlocksFor = (peakPop: number): MilestoneBuilding[] => MILESTONE_ORDER.filter((b) => peakPop >= MILESTONE_BUILDINGS[b].pop);
-/** The next milestone above a peak population, or null when all are reached. */
+/** The next milestone above a peak population, or null when all are reached (seasonal buildings aren't milestones). */
 export function nextMilestone(peakPop: number): { building: MilestoneBuilding; pop: number } | null {
-  const b = MILESTONE_ORDER.find((k) => peakPop < MILESTONE_BUILDINGS[k].pop);
+  const b = MILESTONE_LADDER.find((k) => peakPop < MILESTONE_BUILDINGS[k].pop);
   return b ? { building: b, pop: MILESTONE_BUILDINGS[b].pop } : null;
 }
 /** Which milestone building has this centre tile id (or null). */
